@@ -1,0 +1,54 @@
+{
+  "name": "analise-planificacao-rede",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "electron": "electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@google/genai": "^1.39.0",
+    "electron-updater": "^6.1.9",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^40.1.0",
+    "electron-builder": "^26.7.0",
+    "electron-packager": "^17.1.2",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  },
+  "build": {
+    "appId": "com.naturgy.apr",
+    "productName": "Análise de Planificação de Rede",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/**/*"
+    ],
+    "asar": false,
+    "asarUnpack": false,
+    "nodeGypRebuild": false,
+    "electronVersion": "40.1.0",
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://seu-servidor-updates.com/releases/"
+    }
+  }
+}

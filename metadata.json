@@ -1,0 +1,7 @@
+{
+  "name": "Naturgy Study Selector",
+  "description": "A modern web portal for Naturgy's technical study forms, featuring specialized fields for residential, industrial, and expansion projects with AI-assisted validation.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
