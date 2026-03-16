@@ -1,7 +1,8 @@
 
 import React, { useEffect, useRef } from 'react';
-import { FormData } from '../types';
-import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from '../constants';
+import { FormData } from './types';
+import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from './constants';
+import { formatDate } from './utils';
 
 interface FormFO01Props {
   data: FormData;
@@ -81,9 +82,21 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
   const inputGridClass = "w-full h-full text-center border-none focus:ring-0 outline-none bg-transparent p-0 m-0 block appearance-none text-[10pt]";
   const municipalities = [...MUNICIPALITIES_RJ, ...MUNICIPALITIES_SP];
 
-  const requiredLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-normal";
-  const standardLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-normal";
+  const requiredLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-bold";
+  const standardLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-bold";
   const inputBaseClass = "flex-grow p-1 rounded outline-none font-normal h-8 text-[10pt] border transition-all";
+
+  const renderField = (label: string, value: any, isRequired = false) => {
+    if (readOnly) {
+      return (
+        <div className="flex flex-col border-b border-slate-100 py-1">
+          <span className={isRequired ? requiredLabelClass : standardLabelClass}>{label}</span>
+          <span className="text-[10pt] font-semibold text-slate-800">{value || '-'}</span>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className={`space-y-8 ${readOnly ? 'pointer-events-none opacity-90' : ''}`} style={{ fontSize: '10pt', fontFamily: 'Arial, sans-serif' }}>
@@ -97,148 +110,177 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
       </div>
 
       {/* DADOS DO SOLICITANTE */}
-      <section>
-        <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">DADOS DO SOLICITANTE</div>
-        <div className="p-4 border border-slate-200 rounded-b grid grid-cols-12 gap-x-4 gap-y-3 bg-white">
-          <div className="col-span-12 flex items-center gap-2">
-            <label className={`${standardLabelClass} w-32`}>Naturgy :</label>
-            <select name="naturgyUnit" value={data.naturgyUnit || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`}>
-              <option value="">Selecione...</option>
-              <option value="Capital">Capital</option>
-              <option value="Interior">Interior</option>
-              <option value="SPS">SPS</option>
-            </select>
+      <section className="bg-white border border-slate-200">
+        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">DADOS DO SOLICITANTE</div>
+        {readOnly ? (
+          <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-2 bg-white">
+            <div className="col-span-12">{renderField("Naturgy", data.naturgyUnit)}</div>
+            <div className="col-span-12">{renderField("Tipo de Estudo", data.studyType, true)}</div>
+            {data.studyType === 'Revisão de Estudo' && (
+              <div className="col-span-12">{renderField("Estudo Anterior", data.previousStudy, true)}</div>
+            )}
+            <div className="col-span-12 md:col-span-8">{renderField("Resp. Solicitação", data.requesterName, true)}</div>
+            <div className="col-span-12 md:col-span-4">{renderField("Data Solicitação", formatDate(data.requestDate), true)}</div>
+            <div className="col-span-12 md:col-span-8">{renderField("Área Solicitante", data.requesterArea, true)}</div>
+            <div className="col-span-12 md:col-span-4">{renderField("Telefone", data.phone)}</div>
+            <div className="col-span-12">{renderField("e-mail", data.email, true)}</div>
           </div>
-
-          <div className="col-span-12 flex items-center gap-2">
-            <label className={`${requiredLabelClass} w-32`}>Tipo de Estudo :</label>
-            <select name="studyType" value={data.studyType || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`}>
-              <option value="">Selecione...</option>
-              <option value="Novo Estudo">Novo Estudo</option>
-              <option value="Revisão de Estudo">Revisão de Estudo</option>
-            </select>
-          </div>
-
-          {data.studyType === 'Revisão de Estudo' && (
-            <div className="col-span-12 flex items-center gap-2 animate-in slide-in-from-left-2 duration-300">
-               <label className={`${requiredLabelClass} w-32`}>Estudo Anterior :</label>
-               <input name="previousStudy" value={data.previousStudy || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} placeholder="Ex: ADR-2023-001" />
+        ) : (
+          <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
+            <div className="col-span-12 flex items-center gap-2">
+              <label className={`${standardLabelClass} w-32`}>Naturgy :</label>
+              <select name="naturgyUnit" value={data.naturgyUnit || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
+                <option value="">Selecione...</option>
+                <option value="Capital">Capital</option>
+                <option value="Interior">Interior</option>
+                <option value="SPS">SPS</option>
+              </select>
             </div>
-          )}
 
-          <div className="col-span-12 md:col-span-8 flex items-center gap-2">
-            <label className={`${requiredLabelClass} w-32`}>Resp. Solicitação:</label>
-            <input name="requesterName" value={data.requesterName || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} />
-          </div>
+            <div className="col-span-12 flex items-center gap-2">
+              <label className={`${requiredLabelClass} w-36`}>Tipo de Estudo :</label>
+              <select name="studyType" value={data.studyType || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
+                <option value="">Selecione...</option>
+                <option value="Novo Estudo">Novo Estudo</option>
+                <option value="Revisão de Estudo">Revisão de Estudo</option>
+              </select>
+            </div>
 
-          <div className="col-span-12 md:col-span-4 flex items-center gap-2">
-            <label className={`${requiredLabelClass} w-32 md:w-auto`}>Data Solicitação:</label>
-            <input type="date" name="requestDate" value={data.requestDate || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} />
-          </div>
+            {data.studyType === 'Revisão de Estudo' && (
+              <div className="col-span-12 flex items-center gap-2 animate-in slide-in-from-left-2 duration-300">
+                 <label className={`${requiredLabelClass} w-32`}>Estudo Anterior :</label>
+                 <input name="previousStudy" value={data.previousStudy || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} placeholder="Ex: ADR-2023-001" />
+              </div>
+            )}
 
-          <div className="col-span-12 md:col-span-8 flex items-center gap-2">
-            <label className={`${requiredLabelClass} w-32`}>Área Solicitante:</label>
-            <select name="requesterArea" value={data.requesterArea || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`}>
-              <option value="">Selecione a área...</option>
-              {REQUESTER_AREAS.map(area => (<option key={area} value={area}>{area}</option>))}
-            </select>
-          </div>
+            <div className="col-span-12 md:col-span-8 flex items-center gap-2">
+              <label className={`${requiredLabelClass} w-32`}>Resp. Solicitação:</label>
+              <input name="requesterName" value={data.requesterName || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} />
+            </div>
 
-          <div className="col-span-12 md:col-span-4 flex items-center gap-2">
-            <label className={`${standardLabelClass} w-32 md:w-auto`}>Telefone:</label>
-            <input name="phone" value={data.phone || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} placeholder="(21) 99999-9999" />
-          </div>
+            <div className="col-span-12 md:col-span-4 flex items-center gap-2">
+              <label className={`${requiredLabelClass} w-32 md:w-auto`}>Data Solicitação:</label>
+              <input type="date" name="requestDate" value={data.requestDate || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} />
+            </div>
 
-          <div className="col-span-12 flex items-center gap-2">
-            <label className={`${requiredLabelClass} w-32`}>e-mail:</label>
-            <input type="email" name="email" value={data.email || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} placeholder="email@exemplo.com" />
+            <div className="col-span-12 md:col-span-8 flex items-center gap-2">
+              <label className={`${requiredLabelClass} w-36`}>Área Solicitante:</label>
+              <select name="requesterArea" value={data.requesterArea || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
+                <option value="">Selecione a área...</option>
+                {REQUESTER_AREAS.map(area => (<option key={area} value={area}>{area}</option>))}
+              </select>
+            </div>
+
+            <div className="col-span-12 md:col-span-4 flex items-center gap-2">
+              <label className={`${standardLabelClass} w-32 md:w-auto`}>Telefone:</label>
+              <input name="phone" value={data.phone || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} placeholder="(21) 99999-9999" />
+            </div>
+
+            <div className="col-span-12 flex items-center gap-2">
+              <label className={`${requiredLabelClass} w-32`}>e-mail:</label>
+              <input type="email" name="email" value={data.email || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} placeholder="email@exemplo.com" />
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* DADOS BASE DO ESTUDO */}
-      <section>
-        <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">DADOS BASE DO ESTUDO</div>
-        <div className="p-4 border border-slate-200 rounded-b grid grid-cols-12 gap-x-4 gap-y-3 bg-white">
-          <div className="col-span-12 flex items-center gap-2">
-            <label className={`${requiredLabelClass} w-32`}>Título/Cliente :</label>
-            <input name="studyTitle" value={data.studyTitle || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} />
+      <section className="bg-white border border-slate-200">
+        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">DADOS BASE DO ESTUDO</div>
+        {readOnly ? (
+          <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-2 bg-white">
+            <div className="col-span-12">{renderField("Título/Cliente", data.studyTitle, true)}</div>
+            <div className="col-span-12 md:col-span-6">{renderField("Mercado", data.marketCategory)}</div>
+            <div className="col-span-12">{renderField("Endereço", data.address, true)}</div>
+            <div className="col-span-12 md:col-span-6">{renderField("Cidade", data.city)}</div>
+            <div className="col-span-12 md:col-span-6">{renderField("Bairro", data.neighborhood, true)}</div>
+            <div className="col-span-12 md:col-span-6">{renderField("Tipo de Rede", data.networkType)}</div>
+            <div className="col-span-12 md:col-span-6">{renderField("Pressão", data.pressure)}</div>
+            <div className="col-span-12 md:col-span-6">{renderField("Mapa Localização", data.mapLocation)}</div>
+            <div className="col-span-12 md:col-span-6">{renderField("Tipo Arquivo", data.fileType)}</div>
           </div>
+        ) : (
+          <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
+            <div className="col-span-12 flex items-center gap-2">
+              <label className={`${requiredLabelClass} w-32`}>Título/Cliente :</label>
+              <input name="studyTitle" value={data.studyTitle || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} />
+            </div>
 
-          <div className="col-span-12 md:col-span-6 flex items-center gap-2">
-            <label className={`${standardLabelClass} w-32`}>Mercado:</label>
-            <select name="marketCategory" value={data.marketCategory || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`}>
-              <option value="">Selecione...</option>
-              <option value="Residencial">Residencial</option>
-              <option value="Comercial">Comercial</option>
-              <option value="Residencial/Comercial">Residencial/Comercial</option>
-            </select>
-          </div>
+            <div className="col-span-12 md:col-span-6 flex items-center gap-2">
+              <label className={`${standardLabelClass} w-32`}>Mercado:</label>
+              <select name="marketCategory" value={data.marketCategory || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
+                <option value="">Selecione...</option>
+                <option value="Residencial">Residencial</option>
+                <option value="Comercial">Comercial</option>
+                <option value="Residencial/Comercial">Residencial/Comercial</option>
+              </select>
+            </div>
 
-          <div className="col-span-12 flex items-center gap-2">
-            <label className={`${requiredLabelClass} w-32`}>Endereço:</label>
-            <input name="address" value={data.address || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} />
-          </div>
+            <div className="col-span-12 flex items-center gap-2">
+              <label className={`${requiredLabelClass} w-32`}>Endereço:</label>
+              <input name="address" value={data.address || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} />
+            </div>
 
-          <div className="col-span-12 md:col-span-6 flex items-center gap-2">
-            <label className={`${standardLabelClass} w-32`}>Cidade/Município:</label>
-            <input name="city" list="municipalities" value={data.city || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} />
-          </div>
+            <div className="col-span-12 md:col-span-6 flex items-center gap-2">
+              <label className={`${standardLabelClass} w-32`}>Cidade/Município:</label>
+              <input name="city" list="municipalities" value={data.city || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} />
+            </div>
 
-          <div className="col-span-12 md:col-span-6 flex items-center gap-2">
-            <label className={`${requiredLabelClass} w-32`}>Bairro:</label>
-            <input name="neighborhood" value={data.neighborhood || ''} onChange={handleInputChange} readOnly={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`} />
-          </div>
+            <div className="col-span-12 md:col-span-6 flex items-center gap-2">
+              <label className={`${requiredLabelClass} w-32`}>Bairro:</label>
+              <input name="neighborhood" value={data.neighborhood || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} />
+            </div>
 
-          <div className="col-span-12 md:col-span-6 flex items-center gap-2">
-            <label className={`${standardLabelClass} w-32`}>Tipo de Rede:</label>
-            <select name="networkType" value={data.networkType || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`}>
-              <option value="">Selecione...</option>
-              <option value="Rede interna">Rede interna</option>
-              <option value="Rede externa">Rede externa</option>
-              <option value="Rede externa e interna">Rede externa e interna</option>
-            </select>
-          </div>
+            <div className="col-span-12 md:col-span-6 flex items-center gap-2">
+              <label className={`${standardLabelClass} w-32`}>Tipo de Rede:</label>
+              <select name="networkType" value={data.networkType || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
+                <option value="">Selecione...</option>
+                <option value="Rede interna">Rede interna</option>
+                <option value="Rede externa">Rede externa</option>
+                <option value="Rede externa e interna">Rede externa e interna</option>
+              </select>
+            </div>
 
-          <div className="col-span-12 md:col-span-6 flex items-center gap-2">
-            <label className={`${standardLabelClass} w-32`}>Pressão rede:</label>
-            <select name="pressure" value={data.pressure || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`}>
-              <option value="">Selecione...</option>
-              <option value="BP até 22 mbar">BP até 22 mbar</option>
-              <option value="MP Até 2 bar">MP Até 2 bar</option>
-              <option value="MP Até 4 bar">MP Até 4 bar</option>
-            </select>
-          </div>
+            <div className="col-span-12 md:col-span-6 flex items-center gap-2">
+              <label className={`${standardLabelClass} w-32`}>Pressão rede:</label>
+              <select name="pressure" value={data.pressure || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
+                <option value="">Selecione...</option>
+                <option value="BP até 22 mbar">BP até 22 mbar</option>
+                <option value="MP Até 2 bar">MP Até 2 bar</option>
+                <option value="MP Até 4 bar">MP Até 4 bar</option>
+              </select>
+            </div>
 
-          <div className="col-span-12 md:col-span-6 flex items-center gap-2">
-            <label className={`${standardLabelClass} w-32`}>Mapa Localização:</label>
-            <select name="mapLocation" value={data.mapLocation || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`}>
-              <option value="">Selecione...</option>
-              <option value="Croqui de Rede Interna">Croqui de Rede Interna</option>
-              <option value="Mapa de Localização Geogas">Mapa de Localização Geogas</option>
-              <option value="Planta de Situação">Planta de Situação</option>
-              <option value="Não aplicável">Não aplicável</option>
-            </select>
-          </div>
+            <div className="col-span-12 md:col-span-6 flex items-center gap-2">
+              <label className={`${standardLabelClass} w-32`}>Mapa Localização:</label>
+              <select name="mapLocation" value={data.mapLocation || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
+                <option value="">Selecione...</option>
+                <option value="Croqui de Rede Interna">Croqui de Rede Interna</option>
+                <option value="Mapa de Localização Geogas">Mapa de Localização Geogas</option>
+                <option value="Planta de Situação">Planta de Situação</option>
+                <option value="Não aplicável">Não aplicável</option>
+              </select>
+            </div>
 
-          <div className="col-span-12 md:col-span-6 flex items-center gap-2">
-            <label className={`${standardLabelClass} w-32`}>Tipo Arquivo:</label>
-            <select name="fileType" value={data.fileType || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border-slate-200 bg-white`}>
-              <option value="">Selecione...</option>
-              <option value="Arquivo JPG">Arquivo JPG</option>
-              <option value="Arquivo PNG">Arquivo PNG</option>
-              <option value="Arquivo PDF">Arquivo PDF</option>
-              <option value="Arquivo KMZ">Arquivo KMZ</option>
-              <option value="Outros">Outros</option>
-            </select>
+            <div className="col-span-12 md:col-span-6 flex items-center gap-2">
+              <label className={`${standardLabelClass} w-32`}>Tipo Arquivo:</label>
+              <select name="fileType" value={data.fileType || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
+                <option value="">Selecione...</option>
+                <option value="Arquivo JPG">Arquivo JPG</option>
+                <option value="Arquivo PNG">Arquivo PNG</option>
+                <option value="Arquivo PDF">Arquivo PDF</option>
+                <option value="Arquivo KMZ">Arquivo KMZ</option>
+                <option value="Outros">Outros</option>
+              </select>
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* GRADE DE CONSUMO */}
-      <section className="overflow-x-auto">
-        <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">CARGAS / VAZÃO PREVISTA</div>
-        <div className="grid grid-cols-4 border border-slate-300 min-w-[650px] bg-white text-[10px]">
+      <section className="overflow-x-auto border border-slate-200">
+        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">CARGAS / VAZÃO PREVISTA</div>
+        <div className="grid grid-cols-4 min-w-[500px] w-full bg-white text-[10px]">
           <div className="border-b border-r bg-white font-bold p-2.5 text-[#004080] uppercase tracking-tighter">Mercado</div>
           <div className="border-b border-r bg-white font-bold p-2.5 text-center text-[#004080] uppercase tracking-tighter">Nº Clientes</div>
           <div className="border-b border-r bg-white font-bold p-2.5 text-center text-[#004080] uppercase tracking-tighter">Vazão / Unidade (m³/h)</div>
@@ -270,25 +312,32 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
       </section>
 
       {/* CONSIDERAÇÕES E PRAZOS */}
-      <section className="bg-white border border-slate-200 rounded-lg p-5">
-         <h4 className="font-bold text-[#004080] mb-4 uppercase text-[10px] border-b border-slate-200 pb-2">Considerações sobre a solicitação</h4>
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
-            <div className="flex items-center gap-4">
-               <label className="text-[10px] text-[#004080] uppercase font-bold w-32 shrink-0">Prazo dias:</label>
-               <input type="text" readOnly value="até 5 dias úteis" className="flex-grow p-2 border border-slate-300 rounded bg-white text-slate-700 text-center font-bold h-9" />
-            </div>
-            <div className="flex items-center gap-4">
-               <label className="text-[10px] text-[#004080] uppercase tracking-tight font-bold w-48 shrink-0">Data entrega estimada :</label>
-               <input type="date" readOnly value={data.estimatedDeliveryDate || ''} className="flex-grow p-1 rounded outline-none font-bold h-9 text-[10pt] border-slate-200 border bg-white text-[#004080] text-center" />
-            </div>
-         </div>
+      <section className="bg-white border border-slate-200 p-5">
+         <h4 className="font-bold text-[#004080] mb-4 uppercase text-[10px] border-b border-slate-100 pb-2">Considerações sobre a solicitação</h4>
+         {readOnly ? (
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+             {renderField("Prazo dias", "até 5 dias úteis")}
+             {renderField("Previsão de Entrega", formatDate(data.estimatedDeliveryDate))}
+           </div>
+         ) : (
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+              <div className="flex items-center gap-4">
+                 <label className="text-[10px] text-[#004080] uppercase font-bold min-w-[80px]">Prazo dias:</label>
+                 <input type="text" readOnly value="até 5 dias úteis" className="flex-1 p-2 border border-slate-300 rounded bg-white text-slate-700 text-center font-bold h-10 shadow-sm" />
+              </div>
+              <div className="flex items-center gap-4">
+                 <label className="text-[10px] text-[#004080] uppercase tracking-tight font-bold min-w-[120px]">Previsão de Entrega:</label>
+                 <input type="date" name="estimatedDeliveryDate" value={data.estimatedDeliveryDate || ''} readOnly className="flex-1 p-2 rounded border border-slate-300 outline-none font-bold h-10 text-[10pt] bg-white text-[#004080] text-center shadow-sm" />
+              </div>
+           </div>
+         )}
       </section>
 
       {/* DOCUMENTAÇÃO E ANEXOS */}
-      <section>
-        <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">DOCUMENTAÇÃO E ANEXOS</div>
-        <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
-          {!readOnly && (
+      {!readOnly && (
+        <section>
+          <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">DOCUMENTAÇÃO E ANEXOS</div>
+          <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
             <div 
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 hover:border-[#FF8000] transition-all cursor-pointer group"
@@ -309,44 +358,48 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
                 accept=".pdf,.jpg,.jpeg,.png,.dwg,.kmz"
               />
             </div>
-          )}
 
-          {data.selectedFiles && data.selectedFiles.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-              {data.selectedFiles.map((file, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <i className="fa-solid fa-file-lines text-[#004080]"></i>
-                    <span className="text-xs font-medium text-slate-700 truncate">{file.name}</span>
-                    <span className="text-[10px] text-slate-400 whitespace-nowrap">({(file.size / 1024).toFixed(0)} KB)</span>
-                  </div>
-                  {!readOnly && (
+            {data.selectedFiles && data.selectedFiles.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                {data.selectedFiles.map((file, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <i className="fa-solid fa-file-lines text-[#004080]"></i>
+                      <span className="text-xs font-medium text-slate-700 truncate">{file.name}</span>
+                      <span className="text-[10px] text-slate-400 whitespace-nowrap">({(file.size / 1024).toFixed(0)} KB)</span>
+                    </div>
                     <button 
                       onClick={() => removeFile(idx)}
                       className="p-1 hover:text-red-500 transition-colors text-slate-300"
                     >
                       <i className="fa-solid fa-xmark"></i>
                     </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* COMENTÁRIOS E OBSERVAÇÕES */}
-      <section>
+      <section className="mt-8">
         <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">COMENTÁRIOS:</div>
-        <div className="p-4 border border-slate-200 rounded-b bg-white">
-          <textarea 
-            name="comments" 
-            value={data.comments || ''} 
-            onChange={handleInputChange} 
-            rows={6} 
-            className="w-full p-4 border border-slate-200 rounded-xl outline-none bg-white font-normal text-slate-700 text-[10pt] leading-relaxed shadow-inner" 
-            placeholder="Digite aqui as observações técnicas do estudo..." 
-          />
+        <div className={`p-4 border border-slate-200 ${readOnly ? '' : 'shadow-sm'} rounded-b bg-white`}>
+          {readOnly ? (
+            <div className="min-h-[100px] text-[10pt] text-slate-700 whitespace-pre-wrap leading-relaxed">
+              {data.comments || 'Nenhum comentário registrado.'}
+            </div>
+          ) : (
+            <textarea 
+              name="comments" 
+              value={data.comments || ''} 
+              onChange={handleInputChange} 
+              rows={6} 
+              className="w-full p-4 border border-slate-200 rounded-xl outline-none bg-white font-normal text-slate-700 text-[10pt] leading-relaxed shadow-inner" 
+              placeholder="Digite aqui as observações técnicas do estudo..." 
+            />
+          )}
         </div>
       </section>
 

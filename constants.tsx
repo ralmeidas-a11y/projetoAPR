@@ -5,49 +5,49 @@ import { FormType, FormOption } from './types';
 export const FORM_OPTIONS: FormOption[] = [
   {
     id: FormType.RESIDENTIAL_COMMERCIAL,
-    label: 'PE.00492-FO.01 - Clientes Residenciais / Comerciais',
+    label: 'Clientes Residenciais / Comerciais',
     description: 'Estudos de viabilidade para condomínios, residências individuais e pequenos negócios.',
     icon: 'fa-house-user'
   },
   {
     id: FormType.EXPANSION_AREAS,
-    label: 'PE.00492-FO.02 - Gaseificações Totais ou Parciais de Áreas em expansão ou novos Municípios',
+    label: 'Gaseificações Totais ou Parciais de Áreas em expansão ou novos Municípios',
     description: 'Planejamento de infraestrutura para novas malhas urbanas e distritos municipais.',
     icon: 'fa-city'
   },
   {
     id: FormType.THERMO_GENERATION,
-    label: 'PE.00492-FO.03 - Termogeração (UTEs)',
+    label: 'Termogeração (UTEs)',
     description: 'Projetos técnicos para Usinas Termelétricas e cogeração de energia de grande porte.',
     icon: 'fa-industry'
   },
   {
     id: FormType.LARGE_CLIENTS,
-    label: 'PE.00492-FO.04 - Grandes Clientes (Industrial/GNV/Climatização/Etc.)',
+    label: 'Grandes Clientes (Industrial/GNV/Climatização/Etc.)',
     description: 'Demandas industriais, postos de GNV e sistemas centralizados de climatização.',
     icon: 'fa-gas-pump'
   }
 ];
 
 export const MUNICIPALITIES_RJ = [
-  "Rio de Janeiro", "São Gonçalo", "Duque de Caxias", "Nova Iguaçu", "Niterói", 
-  "Belford Roxo", "Campos dos Goytacazes", "São João de Meriti", "Petrópolis", 
-  "Volta Redonda", "Magé", "Itaboraí", "Mesquita", "Nova Friburgo", "Barra Mansa", 
-  "Cabo Frio", "Macaé", "Nilópolis", "Teresópolis", "Queimados", "Resende", 
+  "Rio de Janeiro", "São Gonçalo", "Duque de Caxias", "Nova Iguaçu", "Niterói",
+  "Belford Roxo", "Campos dos Goytacazes", "São João de Meriti", "Petrópolis",
+  "Volta Redonda", "Magé", "Itaboraí", "Mesquita", "Nova Friburgo", "Barra Mansa",
+  "Cabo Frio", "Macaé", "Nilópolis", "Teresópolis", "Queimados", "Resende",
   "Angra dos Reis", "Itaguaí", "Araruama", "Maricá", "Rio das Ostras"
 ].sort();
 
 export const MUNICIPALITIES_SP = [
-  "São Paulo", "Guarulhos", "Campinas", "São Bernardo do Campo", "Santo André", 
-  "São José dos Campos", "Osasco", "Ribeirão Preto", "Sorocaba", "Mauá", 
-  "São José do Rio Preto", "Mogi das Cruzes", "Santos", "Diadema", "Jundiaí", 
-  "Piracicaba", "Carapicuíba", "Bauru", "Itaquaquecetuba", "São Vicente", 
+  "São Paulo", "Guarulhos", "Campinas", "São Bernardo do Campo", "Santo André",
+  "São José dos Campos", "Osasco", "Ribeirão Preto", "Sorocaba", "Mauá",
+  "São José do Rio Preto", "Mogi das Cruzes", "Santos", "Diadema", "Jundiaí",
+  "Piracicaba", "Carapicuíba", "Bauru", "Itaquaquecetuba", "São Vicente",
   "Franca", "Guarujá", "Praia Grande", "Taubaté", "Limeira", "Suzano"
 ].sort();
 
 export const REQUESTER_AREAS = [
   "Delegação Centro Sul",
-  "Delegação Comercial Lagos e Zone Fluminense",
+  "Delegação Comercial Lagos e Zona Fluminense",
   "Delegação Leste",
   "Delegação Leste Fluminense Litorânea",
   "Delegação Leste Fluminense Serrana",
@@ -71,6 +71,7 @@ export const CORPORATE_EMAIL_DOMAINS = [
   '@br.gasnatural.com',     // Corporativo Brasil
   '@gasnatural.com',        // Corporativo Internacional
   '@naturgygroup.com',      // Grupo Naturgy
+  '@gmail.com',             // Adicionado para teste conforme solicitado
 ];
 
 // Função helper para validar domínio corporativo
@@ -85,14 +86,13 @@ export const getFormattedDomains = (): string => {
   return CORPORATE_EMAIL_DOMAINS.map(d => `${d}`).join(' ou ');
 };
 export const APP_NAME = 'Análise de Planificação de Rede';
+import logoImg from './logo.png';
+
 export const NaturgyLogo = () => {
-  const logoPath = 'C:\\Users\\00805217\\NATURGY\\SolicitaWebEstu - Documentos\\Solicitacoes\\logo.png';
-  const logoUrl = `file:///${logoPath.replace(/\\\\/g, '/')}`;
-  
   return (
     <div className="flex items-center justify-center">
       <img
-        src={logoUrl}
+        src={logoImg}
         alt="Naturgy Logo"
         style={{
           maxWidth: '180px',

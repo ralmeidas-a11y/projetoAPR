@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { User, UserRole } from '../types';
-import { isValidCorporateEmail, getFormattedDomains } from '../constants';
+import { User, UserRole } from './types';
+import { isValidCorporateEmail, getFormattedDomains } from './constants';
 
 interface UserManagementProps {
   users: User[];
@@ -16,15 +16,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<UserRole>(UserRole.ANALISTA);
-  const [newPerms, setNewPerms] = useState<('validar' | 'executar')[]>([]);
-
-  const togglePermission = (user: User, perm: 'validar' | 'executar') => {
-    const currentPerms = user.permissions || [];
-    const newPerms = currentPerms.includes(perm) 
-      ? currentPerms.filter(p => p !== perm) 
-      : [...currentPerms, perm];
-    onUpdateUser({ ...user, permissions: newPerms });
-  };
+  const [newPerms, setNewPerms] = useState<('validar' | 'executar' | 'controle_qualidade')[]>([]);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,23 +27,51 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
       return;
     }
 
-    const newUser: User = {
-      id: crypto.randomUUID(),
-      name: newName,
-      email: newEmail.toLowerCase(),
-      role: newRole,
-      permissions: newPerms,
-      profileComplete: true
-    };
+    if (editingUser) {
+      onUpdateUser({
+        ...editingUser,
+        name: newName,
+        email: newEmail.toLowerCase(),
+        role: newRole,
+        permissions: newPerms
+      });
+    } else {
+      const newUser: User = {
+        id: crypto.randomUUID(),
+        name: newName,
+        email: newEmail.toLowerCase(),
+        role: newRole,
+        password: '123456', // Definir senha padrão inicial
+        permissions: newPerms,
+        profileComplete: false, // Forçar preenchimento de perfil no primeiro acesso
+        requiresPasswordChange: true
+      };
+      onCreateUser(newUser);
+    }
 
-    onCreateUser(newUser);
+    resetForm();
+  };
+
+  const resetForm = () => {
     setNewName('');
     setNewEmail('');
+    setNewRole(UserRole.ANALISTA);
     setNewPerms([]);
+    setEditingUser(null);
     setShowCreateForm(false);
   };
 
-  const toggleNewPerm = (perm: 'validar' | 'executar') => {
+  const startEdit = (user: User) => {
+    setEditingUser(user);
+    setNewName(user.name);
+    setNewEmail(user.email);
+    setNewRole(user.role);
+    setNewPerms(user.permissions || []);
+    setShowCreateForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const toggleNewPerm = (perm: 'validar' | 'executar' | 'controle_qualidade') => {
     setNewPerms(prev => prev.includes(perm) ? prev.filter(p => p !== perm) : [...prev, perm]);
   };
 
@@ -64,19 +86,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
           <div className="flex items-center gap-4">
             <button 
               onClick={() => {
-                if (window.confirm('⚠️ ATENÇÃO: Isso vai APAGAR TODOS os usuários e solicitações!\n\nDeseja continuar?')) {
-                  localStorage.clear();
-                  sessionStorage.clear();
-                  console.log('%c🗑️ Todos os dados foram apagados!', 'color: red; font-weight: bold; font-size: 14px');
-                  setTimeout(() => { window.location.href = window.location.href; }, 500);
-                }
+                if (showCreateForm) resetForm();
+                else setShowCreateForm(true);
               }}
-              className="px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95 bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-900/20 flex items-center gap-2"
-            >
-              <i className="fa-solid fa-trash-alt"></i> Apagar Tudo
-            </button>
-            <button 
-              onClick={() => setShowCreateForm(!showCreateForm)}
               className={`px-8 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all active:scale-95 flex items-center gap-2 ${showCreateForm ? 'bg-red-500 text-white' : 'bg-orange-500 text-white shadow-lg shadow-orange-900/20 hover:bg-white hover:text-orange-500'}`}
             >
               {showCreateForm ? <><i className="fa-solid fa-xmark"></i> Cancelar</> : <><i className="fa-solid fa-user-plus"></i> Novo Analista</>}
@@ -86,8 +98,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
 
         {showCreateForm && (
           <form onSubmit={handleCreateSubmit} className="p-10 bg-slate-50 border-b border-slate-200 animate-in slide-in-from-top-4 duration-300">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="space-y-2 col-span-1">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
                 <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Nome Completo</label>
                 <input 
                   type="text" 
@@ -98,18 +110,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                   className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:border-[#004080] focus:ring-2 focus:ring-blue-100 text-sm font-medium cursor-text transition-colors placeholder:text-slate-400"
                 />
               </div>
-              <div className="space-y-2 col-span-1">
+              <div className="space-y-2">
                 <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">E-mail Corporativo</label>
                 <input 
                   type="email" 
                   required 
                   value={newEmail} 
                   onChange={e => setNewEmail(e.target.value)}
-                  placeholder="usuario@naturgy.com"
+                  placeholder="exemplo@gmail.com"
                   className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:border-[#004080] focus:ring-2 focus:ring-blue-100 text-sm font-medium cursor-text transition-colors placeholder:text-slate-400"
                 />
               </div>
-              <div className="space-y-2 col-span-1">
+              <div className="space-y-2">
                 <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Papel</label>
                 <select 
                   value={newRole} 
@@ -120,30 +132,41 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                   <option value={UserRole.ADM}>Administrador</option>
                 </select>
               </div>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-4 sm:pt-6 col-span-1 sm:col-span-2 md:col-span-1">
-                <label className="flex items-center gap-3 cursor-pointer group flex-shrink-0">
-                   <input 
-                     type="checkbox" 
-                     checked={newPerms.includes('validar')} 
-                     onChange={() => toggleNewPerm('validar')} 
-                     className="w-5 h-5 rounded border-slate-300 text-[#004080] focus:ring-[#004080] cursor-pointer" 
-                   />
-                   <span className="text-[10px] font-black uppercase text-slate-700 group-hover:text-[#004080] transition-colors">Validar</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer group flex-shrink-0">
-                   <input 
-                     type="checkbox" 
-                     checked={newPerms.includes('executar')} 
-                     onChange={() => toggleNewPerm('executar')} 
-                     className="w-5 h-5 rounded border-slate-300 text-[#004080] focus:ring-[#004080] cursor-pointer" 
-                   />
-                   <span className="text-[10px] font-black uppercase text-slate-700 group-hover:text-[#004080] transition-colors">Executar</span>
-                </label>
+              <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-4 pt-6 col-span-1 md:col-span-3 border-t border-slate-200 mt-2">
+                <div className="flex flex-wrap items-center gap-6">
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                     <input 
+                       type="checkbox" 
+                       checked={newPerms.includes('validar')} 
+                       onChange={() => toggleNewPerm('validar')} 
+                       className="w-5 h-5 rounded border-slate-300 text-[#004080] focus:ring-[#004080] cursor-pointer" 
+                     />
+                     <span className="text-[10px] font-black uppercase text-slate-700 group-hover:text-[#004080] transition-colors">Validar</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                     <input 
+                       type="checkbox" 
+                       checked={newPerms.includes('executar')} 
+                       onChange={() => toggleNewPerm('executar')} 
+                       className="w-5 h-5 rounded border-slate-300 text-[#004080] focus:ring-[#004080] cursor-pointer" 
+                     />
+                     <span className="text-[10px] font-black uppercase text-slate-700 group-hover:text-[#004080] transition-colors">Executar</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                     <input 
+                       type="checkbox" 
+                       checked={newPerms.includes('controle_qualidade')} 
+                       onChange={() => toggleNewPerm('controle_qualidade')} 
+                       className="w-5 h-5 rounded border-slate-300 text-[#004080] focus:ring-[#004080] cursor-pointer" 
+                     />
+                     <span className="text-[10px] font-black uppercase text-slate-700 group-hover:text-[#004080] transition-colors">Controle Qualidade</span>
+                  </label>
+                </div>
                 <button 
                   type="submit" 
-                  className="ml-auto px-6 py-3 bg-[#004080] text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-orange-500 transition-all active:scale-95 shadow-lg hover:shadow-orange-200"
+                  className={`px-8 py-3 w-full sm:w-auto mt-4 sm:mt-0 ${editingUser ? 'bg-indigo-600' : 'bg-[#004080]'} text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-orange-500 transition-all active:scale-95 shadow-lg hover:shadow-orange-200 flex-shrink-0`}
                 >
-                  Criar Conta
+                  {editingUser ? 'Salvar Alterações' : 'Criar Conta'}
                 </button>
               </div>
             </div>
@@ -158,6 +181,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                 <th className="px-8 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Papel</th>
                 <th className="px-8 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest text-center">Validar Cadastro</th>
                 <th className="px-8 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest text-center">Executar Estudo</th>
+                <th className="px-8 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest text-center">Controle Qualidade</th>
                 <th className="px-8 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest text-right">Ações</th>
               </tr>
             </thead>
@@ -176,30 +200,49 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                   <td className="px-8 py-5 text-center">
                     <input 
                       type="checkbox" 
-                      disabled={u.role === UserRole.ADM}
+                      disabled
                       checked={u.permissions?.includes('validar') || u.role === UserRole.ADM} 
-                      onChange={() => togglePermission(u, 'validar')}
-                      className="w-5 h-5 rounded border-slate-200 text-[#004080] focus:ring-[#004080] cursor-pointer disabled:opacity-30"
+                      readOnly
+                      className="w-5 h-5 rounded border-slate-200 text-[#004080] bg-slate-100 cursor-not-allowed opacity-60"
                     />
                   </td>
                   <td className="px-8 py-5 text-center">
                     <input 
                       type="checkbox" 
-                      disabled={u.role === UserRole.ADM}
+                      disabled
                       checked={u.permissions?.includes('executar') || u.role === UserRole.ADM} 
-                      onChange={() => togglePermission(u, 'executar')}
-                      className="w-5 h-5 rounded border-slate-200 text-[#004080] focus:ring-[#004080] cursor-pointer disabled:opacity-30"
+                      readOnly
+                      className="w-5 h-5 rounded border-slate-200 text-[#004080] bg-slate-100 cursor-not-allowed opacity-60"
+                    />
+                  </td>
+                  <td className="px-8 py-5 text-center">
+                    <input 
+                      type="checkbox" 
+                      disabled
+                      checked={u.permissions?.includes('controle_qualidade') || u.role === UserRole.ADM} 
+                      readOnly
+                      className="w-5 h-5 rounded border-slate-200 text-[#004080] bg-slate-100 cursor-not-allowed opacity-60"
                     />
                   </td>
                   <td className="px-8 py-5 text-right">
-                    {u.role !== UserRole.ADM && (
+                    <div className="flex justify-end gap-2">
                       <button 
-                        onClick={() => onDeleteUser(u.id)}
-                        className="w-10 h-10 rounded-xl bg-slate-50 text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100"
+                        onClick={() => startEdit(u)}
+                        className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 hover:bg-[#004080] hover:text-white transition-all flex items-center justify-center border border-blue-100"
+                        title="Editar Perfil"
                       >
-                        <i className="fa-solid fa-trash-can"></i>
+                        <i className="fa-solid fa-user-pen"></i>
                       </button>
-                    )}
+                      {u.role !== UserRole.ADM && (
+                        <button 
+                          onClick={() => setUserToDelete(u)}
+                          className="w-10 h-10 rounded-xl bg-slate-50 text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center border border-slate-100"
+                          title="Remover Usuário"
+                        >
+                          <i className="fa-solid fa-trash-can"></i>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -208,33 +251,44 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
         </div>
       </div>
 
-      <div className="flex gap-4">
-        {users.length > 1 && (
-          <button 
-            onClick={() => {
-              if (window.confirm('Remover todos os usuários exceto Admin? Esta ação não pode ser desfeita.')) {
-                onResetUsers?.();
-              }
-            }}
-            className="px-8 py-4 bg-red-50 text-red-600 border border-red-100 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-95"
-          >
-            <i className="fa-solid fa-redo mr-2"></i> Limpar e Manter Apenas Admin
-          </button>
-        )}
-      </div>
-      
-      <div className="bg-orange-50 border border-orange-100 rounded-3xl p-6 flex items-center gap-6">
-         <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-orange-500 shadow-sm border border-orange-200">
-            <i className="fa-solid fa-circle-info text-xl"></i>
-         </div>
-         <div>
-            <h4 className="text-xs font-black text-orange-800 uppercase tracking-widest">Informação de Segurança</h4>
-            <p className="text-[10px] text-orange-700/70 font-bold uppercase mt-1 leading-relaxed">
-              Usuários Solicitantes não aparecem nesta lista pois são detectados automaticamente pelo Agente Microsoft Corporativo. 
-              Administradores possuem todas as permissões técnicas por padrão.
-            </p>
-         </div>
-      </div>
+      {/* Modal de Confirmação de Exclusão */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#004080]/40 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-white">
+            <div className="bg-red-500 p-8 text-center text-white">
+              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/20">
+                <i className="fa-regular fa-trash-can text-2xl"></i>
+              </div>
+              <h3 className="text-xl font-black uppercase tracking-tight">Confirmar Exclusão</h3>
+            </div>
+            
+            <div className="p-10 text-center space-y-6">
+              <p className="text-slate-600 font-medium">
+                Deseja realmente remover o acesso de <span className="font-black text-[#004080]">{userToDelete.name}</span>? 
+                Esta ação enviará todos os dados associados para a lixeira e não pode ser desfeita.
+              </p>
+
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={() => setUserToDelete(null)}
+                  className="py-4 px-6 bg-slate-50 text-slate-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all border border-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => {
+                    onDeleteUser(userToDelete.id);
+                    setUserToDelete(null);
+                  }}
+                  className="py-4 px-6 bg-red-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-200"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

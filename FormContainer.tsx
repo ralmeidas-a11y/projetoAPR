@@ -1,11 +1,15 @@
-
-import React, { useState, useMemo } from 'react';
-import { FormType, FormData, StudyStatus, User, UserRole } from '../types';
-import { FORM_OPTIONS } from '../constants';
+import React, { useState, useMemo, useRef } from 'react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import { FormType, FormData, StudyStatus, User, UserRole } from './types';
+import { FORM_OPTIONS } from './constants';
+import { formatToLocalTime, getGMT3ISOString, isWithinLast12Months } from './utils';
 import { FormFO01 } from './FormFO01';
 import { FormFO02 } from './FormFO02';
 import { FormFO03 } from './FormFO03';
 import { FormFO04 } from './FormFO04';
+import { StorageService, getRequestPath } from './storage';
+import { ValidationModal } from './ValidationModal';
 
 interface FormContainerProps {
   formType: FormType;
@@ -17,7 +21,7 @@ interface FormContainerProps {
   allUsers?: User[];
   allRequests?: FormData[];
   readOnly?: boolean;
-  onStatusUpdate?: (id: string, status: StudyStatus, reason?: string, assignedTo?: string) => void;
+  onStatusUpdate?: (id: string, status: StudyStatus, reason?: string, assignedTo?: string, additionalData?: Partial<FormData>) => void;
   onStartExecution?: (request: FormData) => void;
   onViewRequest?: (request: FormData) => void;
 }
@@ -31,7 +35,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     status: StudyStatus.PENDENTE,
     user_id: userId,
     formType: formType,
-    requestDate: new Date().toISOString().split('T')[0],
+    requestDate: getGMT3ISOString().split('T')[0],
     studyType: 'Novo Estudo',
     naturgyUnit: currentUser?.naturgyUnit || '',
     requesterName: currentUser?.name || '',
@@ -54,25 +58,58 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   const [rejectionReason, setRejectionReason] = useState('');
   const [assignedAnalyst, setAssignedAnalyst] = useState(initialData?.assignedTo || '');
 
+  const [showPrecedentWarning, setShowPrecedentWarning] = useState(false);
+  const [hasShownWarning, setHasShownWarning] = useState(false);
+
   const currentOption = FORM_OPTIONS.find(o => o.id === formType);
   const isAdmin = currentUser?.role === UserRole.ADM;
+  const executors = useMemo(() => allUsers.filter(u => u.permissions?.includes('executar') || u.role === UserRole.ADM), [allUsers]);
   const isOwner = initialData?.assignedTo === currentUser?.id;
+  const [supabaseFiles, setSupabaseFiles] = useState<any[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Carregar arquivos do Supabase se initialData existir
+  React.useEffect(() => {
+    let isMounted = true;
+    const fetchFiles = async () => {
+      if (!initialData?.studyNumber) return;
+      setIsLoadingFiles(true);
+      try {
+        const files = await StorageService.getRequestFiles(initialData.studyNumber, 'Solicitacao');
+        if (isMounted) setSupabaseFiles(files);
+      } catch (err) {
+        console.error('Error loading Supabase files:', err);
+      } finally {
+        if (isMounted) setIsLoadingFiles(false);
+      }
+    };
+    fetchFiles();
+    return () => { isMounted = false; };
+  }, [initialData?.studyNumber]);
   
-  // Regra de segurança para visualização
-  const isRestricted = readOnly && initialData?.assignedTo && !isOwner && !isAdmin;
+
 
   const precedentStudy = useMemo(() => {
-    if (initialData || !formData.address || !formData.city) return null;
+    if (initialData || !formData.address || !formData.city || allRequests.length === 0) return null;
     const normalize = (s: string) => s?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() || "";
     const addr = normalize(formData.address);
     const city = normalize(formData.city);
-    if (addr.length < 5) return null;
-    return allRequests.find(r => normalize(r.address) === addr && normalize(r.city) === city);
-  }, [allRequests, formData.address, formData.city, initialData]);
+    if (addr.length < 5 || city.length < 2) return null;
+    
+    // Check if the current form itself is matching (e.g., during edit)
+    return allRequests.find(r => 
+      r.id !== formData.id && 
+      normalize(r.address) === addr && 
+      normalize(r.city) === city
+    );
+  }, [allRequests, formData.address, formData.city, initialData, formData.id]);
 
   const studyHistory = useMemo(() => {
     if (!formData.studyNumber) return [];
-    const baseCode = (formData.studyNumber || '').split('-REV')[0].replace('PROV-', '');
+    const cleanCode = (formData.studyNumber || '').replace('PROV-', '');
+    const revMatch = cleanCode.match(/(.+)-REV\d+$/i);
+    const baseCode = revMatch ? revMatch[1] : cleanCode;
     return allRequests
       .filter(r => (r.studyNumber || '').replace('PROV-', '').startsWith(baseCode))
       .sort((a, b) => {
@@ -82,29 +119,87 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       });
   }, [allRequests, formData.studyNumber]);
 
+  React.useEffect(() => {
+    if (precedentStudy && !hasShownWarning && !initialData) {
+      const activeStatus = [
+        StudyStatus.PENDENTE, 
+        StudyStatus.EM_ANALISE, 
+        StudyStatus.AGUARDANDO_EXECUCAO, 
+        StudyStatus.EM_EXECUCAO, 
+        StudyStatus.CONTROLE_QUALIDADE
+      ].includes(precedentStudy.status);
+      
+      const recentlyCompleted = precedentStudy.status === StudyStatus.CONCLUIDO && isWithinLast12Months(precedentStudy.createdAt);
+
+      if (activeStatus || recentlyCompleted) {
+        setShowPrecedentWarning(true);
+      }
+    }
+  }, [precedentStudy, hasShownWarning, initialData]);
+
   const handleUpdateData = (newData: Partial<FormData>) => {
     if (readOnly) return;
     setFormData(prev => ({ ...prev, ...newData }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnly) return;
     setIsSubmitting(true);
+    
+    try {
+      // 1. Snapshot do formulário via html2canvas para criar um PDF espelho 100% fiel
+      let generatedPdfFile: File | undefined;
+      
+      if (formRef.current) {
+        try {
+          const canvas = await html2canvas(formRef.current, { 
+            scale: 2, 
+            useCORS: true,
+            backgroundColor: '#ffffff'
+          });
+          
+          const imgData = canvas.toDataURL('image/jpeg', 1.0);
+          const pdf = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: 'a4'
+          });
+          
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+          
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+          const pdfBlob = pdf.output('blob');
+          const fileName = `Formulario_Oficial_${formData.studyNumber || formData.id}.pdf`;
+          generatedPdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+          console.log('[FormContainer] html2canvas snapshot successfully generated!');
+        } catch (canvasErr) {
+          console.error('[FormContainer] Error capturing DOM snapshot:', canvasErr);
+        }
+      }
+
+      // IMPORTANTE: Isso deve ocorrer ANTES de qualquer validação técnica posterior
+      await StorageService.uploadOfficialForm(formData, generatedPdfFile);
+      console.log('[FormContainer] Official form PDF generation process completed');
+    } catch (err) {
+      console.error('[FormContainer] Failed to generate PDF mirror during submission:', err);
+      // Prosseguir mesmo se o PDF falhar para não bloquear o envio dos dados
+    }
+
     setTimeout(() => {
       setIsSubmitting(false);
       onSubmit(formData);
     }, 1200);
   };
 
-  const handleConfirmValidation = () => {
+  const handleConfirmValidation = (assignedAnalyst: string, validationData: Partial<FormData>) => {
     if (onStatusUpdate && initialData) {
-      // Se for ADM reatribuindo, mantém o status atual (Ex: EM_EXECUCAO), senão muda para Aguardando
-      const newStatus = (initialData.status === StudyStatus.PENDENTE || initialData.status === StudyStatus.EM_ANALISE) 
-        ? StudyStatus.AGUARDANDO_EXECUCAO 
-        : initialData.status;
-
-      onStatusUpdate(initialData.id, newStatus, undefined, assignedAnalyst || undefined);
+      if (initialData.status === StudyStatus.PENDENTE || initialData.status === StudyStatus.EM_ANALISE) {
+        onStatusUpdate(initialData.id, StudyStatus.AGUARDANDO_EXECUCAO, undefined, assignedAnalyst || undefined, validationData);
+      } else {
+        onStatusUpdate(initialData.id, initialData.status, undefined, assignedAnalyst || undefined, validationData);
+      }
       setShowValidationModal(false);
       onBack();
     }
@@ -135,21 +230,88 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     }
   };
 
+  const handleFileAction = async (file: any) => {
+    // 1. Tentar abrir usando API do Electron se disponível
+    if (typeof window !== 'undefined' && (window as any).api?.openFile && file.path) {
+      try {
+        await (window as any).api.openFile(file.path);
+        return;
+      } catch (err) {
+        console.error('Erro ao abrir via API:', err);
+      }
+    }
+
+    // 2. Se tivermos o objeto File real (blob), fazer download no navegador
+    if (file instanceof File || (file.size && file.type)) {
+      try {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return;
+      } catch (err) {
+        console.error('Erro ao baixar blob:', err);
+      }
+    }
+
+    // 3. Fallback: Se tivermos o studyNumber, tentar abrir a pasta
+    if (initialData?.studyNumber) {
+       alert(`Não foi possível abrir o arquivo diretamente. Abrindo a pasta da solicitação: ${initialData.studyNumber}`);
+       if ((window as any).api?.openFolder) {
+         const folderPath = `solicitantes/${initialData.requesterName}/${initialData.studyNumber}`;
+         await (window as any).api.openFolder(folderPath);
+       }
+    } else {
+      alert("Arquivo não disponível para pré-visualização direta.");
+    }
+  };
+
   const renderForm = () => {
     const commonProps = { data: formData, onChange: handleUpdateData, readOnly };
     switch (formType) {
       case FormType.RESIDENTIAL_COMMERCIAL: return <FormFO01 {...commonProps} />;
       case FormType.EXPANSION_AREAS: return <FormFO02 {...commonProps} />;
-      case FormType.THERMO_GENERATION: return <FormFO03 {...commonProps} />;
-      case FormType.LARGE_CLIENTS: return <FormFO04 {...commonProps} />;
+      case FormType.THERMO_GENERATION: return <FormFO04 {...commonProps} />;
+      case FormType.LARGE_CLIENTS: return <FormFO03 {...commonProps} />;
       default: return null;
     }
   };
+   // Regra de segurança para vísibilidade técnica (Estudo sendo feito)
+  const isPendingExecution = initialData?.status === StudyStatus.AGUARDANDO_EXECUCAO || initialData?.status === StudyStatus.EM_EXECUCAO;
+  const isRequesterView = currentUser?.role === UserRole.SOLICITANTE;
+  
+  // Analistas vêem o que é deles ou o que está na fila (exceto se atribuído a outro)
+  const isRestricted = readOnly && initialData?.assignedTo && !isOwner && !isAdmin;
+  
+  // Solicitante não vê detalhes técnicos enquanto está em execução
+  const showInProgressMessage = isRequesterView && isPendingExecution && readOnly;
+
+  if (showInProgressMessage) {
+    return (
+      <div className="bg-white rounded-3xl p-16 text-center animate-in zoom-in-95 duration-300 shadow-2xl border border-slate-100 max-w-2xl mx-auto">
+        <div className="w-20 h-20 bg-blue-50 text-[#004080] rounded-full flex items-center justify-center mx-auto mb-8 text-3xl shadow-inner border border-blue-100">
+          <i className="fa-solid fa-clock-rotate-left fa-spin"></i>
+        </div>
+        <h2 className="text-2xl font-black text-[#004080] uppercase tracking-tight mb-4">Estudo em Execução</h2>
+        <p className="text-slate-500 text-sm leading-relaxed mb-10 font-medium">
+          Este estudo ainda está em processo de execução técnica. Os detalhes e arquivos finais estarão disponíveis para visualização uma vez que o processo esteja <span className="inline-block relative font-black text-green-600 tracking-tight">
+            <span className="absolute inset-0 bg-green-400/20 blur-lg rounded-full animate-pulse"></span>
+            <span className="relative bg-clip-text text-transparent bg-gradient-to-r from-green-600 to-emerald-500">concluído</span>
+          </span>.
+        </p>
+        <button onClick={onBack} className="px-12 py-4 bg-[#004080] text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-orange-500 transition-all shadow-lg active:scale-95">
+          Voltar para minhas solicitações
+        </button>
+      </div>
+    );
+  }
 
   const canValidate = isAdmin || currentUser?.permissions?.includes('validar');
   const canExecute = currentUser?.permissions?.includes('executar');
-  const executors = allUsers.filter(u => u.permissions?.includes('executar') || u.role === UserRole.ADM);
-
   // Se o analista tentar forçar entrada em algo que não é dele
   if (isRestricted) {
     return (
@@ -208,27 +370,63 @@ export const FormContainer: React.FC<FormContainerProps> = ({
           </div>
         )}
 
-        {showValidationModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
-              <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight mb-4">{initialData?.assignedTo ? 'Reatribuir Estudo' : 'Validar e Atribuir Estudo'}</h3>
-              <p className="text-xs text-slate-500 font-bold uppercase mb-6">Defina o analista responsável pela execução técnica.</p>
-              <div className="space-y-4">
-                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Responsável pela Execução</label>
-                 <select 
-                   value={assignedAnalyst}
-                   onChange={(e) => setAssignedAnalyst(e.target.value)}
-                   className="w-full p-4 border border-slate-200 rounded-2xl outline-none focus:border-[#004080] bg-white text-sm font-bold text-slate-700"
-                 >
-                   <option value="">Sistema (Fila Comum)</option>
-                   {executors.map(exec => (
-                     <option key={exec.id} value={exec.id}>{exec.name}</option>
-                   ))}
-                 </select>
+        {showValidationModal && initialData && (
+          <ValidationModal 
+            initialData={initialData}
+            executors={executors}
+            onConfirm={handleConfirmValidation}
+            onCancel={() => setShowValidationModal(false)}
+          />
+        )}
+
+        {showPrecedentWarning && precedentStudy && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 border-t-8 border-orange-500">
+              <div className="w-16 h-16 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center mb-6 text-2xl">
+                <i className="fa-solid fa-triangle-exclamation"></i>
               </div>
-              <div className="flex justify-end gap-4 mt-10">
-                <button onClick={() => setShowValidationModal(false)} className="px-6 py-2 text-slate-400 font-bold uppercase text-[10px]">Cancelar</button>
-                <button onClick={handleConfirmValidation} className="px-8 py-3 bg-green-600 text-white rounded-xl font-black uppercase text-[10px] shadow-lg shadow-green-200">Salvar Atribuição</button>
+              <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight mb-2">ESTUDO JÁ CONCLUÍDO OU ESTUDO VIGENTE</h3>
+              <p className="text-xs text-slate-500 font-bold mb-6 leading-relaxed">
+                Identificamos que já existe uma solicitação (<span className="text-[#004080]">{precedentStudy.studyNumber}</span>) para este endereço com status "<span className="text-orange-600">{precedentStudy.status}</span>". 
+                {precedentStudy.status === StudyStatus.CONCLUIDO ? ' Estudos concluídos permanecem vigentes por 12 meses.' : ' Este estudo ainda está em processamento técnico.'}
+              </p>
+              
+              <div className="bg-slate-50 rounded-2xl p-4 mb-8">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Detalhes do Estudo Encontrado</p>
+                <p className="text-xs font-bold text-slate-700">{precedentStudy.studyTitle || 'Sem Título'}</p>
+                <p className="text-[10px] text-slate-500 mt-1 uppercase">{precedentStudy.address}, {precedentStudy.city}</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                <button 
+                  onClick={async () => {
+                    setShowPrecedentWarning(false);
+                    if ((window as any).api?.openFolder) {
+                      const path = getRequestPath(precedentStudy.studyNumber);
+                      await (window as any).api.openFolder(path);
+                    } else {
+                      onViewRequest?.(precedentStudy);
+                    }
+                  }}
+                  className="w-full py-4 bg-[#004080] text-white rounded-xl font-black text-[10px] shadow-lg"
+                >
+                  Visualizar Estudo Existente
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowPrecedentWarning(false);
+                    setHasShownWarning(true);
+                  }}
+                  className="w-full py-4 border border-slate-200 text-slate-500 rounded-xl font-black text-[10px] hover:bg-slate-50"
+                >
+                  Ignorar e Continuar Novo Estudo
+                </button>
+                <button 
+                  onClick={onBack}
+                  className="w-full py-2 text-slate-400 font-bold text-[9px]"
+                >
+                  Cancelar e Voltar
+                </button>
               </div>
             </div>
           </div>
@@ -250,31 +448,65 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                </div>
             </div>
           </div>
-          <div className={`px-6 py-3 rounded-2xl border flex items-center gap-3 ${readOnly ? 'bg-blue-50 border-blue-100 text-blue-700' : 'bg-orange-50 border-orange-100 text-orange-700'}`}>
-             <i className={`fa-solid ${readOnly ? 'fa-magnifying-glass-chart' : 'fa-file-contract'} text-lg`}></i>
-             <span className="text-xs font-black uppercase tracking-widest">
-               {formData.status}
-             </span>
-          </div>
+
         </div>
 
         <form onSubmit={handleSubmit}>
-          {renderForm()}
+          <div ref={formRef} className="bg-white p-4 rounded-xl">
+            {renderForm()}
+          </div>
 
           {formData.selectedFiles && formData.selectedFiles.length > 0 && (
             <section className="mt-8 p-6 bg-slate-50 rounded-2xl border border-slate-200">
                <h4 className="text-[10px] font-black text-[#004080] uppercase tracking-widest mb-4">Arquivos Anexados</h4>
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {formData.selectedFiles.map((file, idx) => (
+                  {[...supabaseFiles, ...(formData.selectedFiles || []).filter(lf => !supabaseFiles.some(sf => sf.name === lf.name))].map((file, idx) => (
                     <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
-                      <span className="text-xs font-medium text-slate-700 truncate max-w-[200px]">{file.name}</span>
-                      <button 
-                        type="button"
-                        onClick={() => alert('Download do arquivo: ' + file.name)} 
-                        className="text-[#004080] hover:text-orange-500 transition-all font-black text-[10px] uppercase"
-                      >
-                        <i className="fa-solid fa-download mr-1"></i> Baixar
-                      </button>
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <i className="fa-solid fa-file-pdf text-[#004080]"></i>
+                        <span className="text-xs font-medium text-slate-700 truncate max-w-[150px]">{file.name}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          type="button"
+                          onClick={async () => {
+                            if (file.fullPath) {
+                              const url = await StorageService.getFileUrl(file.fullPath);
+                              if (url) window.open(url, '_blank');
+                            } else if (file instanceof File || (file.size && file.type)) {
+                              const url = URL.createObjectURL(file);
+                              window.open(url, '_blank');
+                            }
+                          }} 
+                          className="px-3 py-1 bg-blue-50 text-[#004080] hover:bg-[#004080] hover:text-white rounded-lg transition-all font-black text-[9px] uppercase shadow-sm"
+                        >
+                          <i className="fa-solid fa-eye mr-1"></i> Visualizar
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={async () => {
+                            if (file.fullPath) {
+                              const url = await StorageService.getFileUrl(file.fullPath);
+                              if (url) {
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = file.name;
+                                a.click();
+                              }
+                            } else if (file instanceof File || (file.size && file.type)) {
+                              const url = URL.createObjectURL(file);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = file.name;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            }
+                          }} 
+                          className="px-3 py-1 bg-[#FF8000] text-white hover:bg-orange-600 rounded-lg transition-all font-black text-[9px] uppercase shadow-sm"
+                        >
+                          <i className="fa-solid fa-download mr-1"></i> Baixar
+                        </button>
+                      </div>
                     </div>
                   ))}
                </div>
@@ -285,11 +517,14 @@ export const FormContainer: React.FC<FormContainerProps> = ({
             <div className="flex gap-4">
               {readOnly ? (
                 <>
-                  {canValidate && (formData.status === StudyStatus.PENDENTE || formData.status === StudyStatus.EM_ANALISE) && (
+                  {(isAdmin || currentUser?.permissions?.includes('validar')) && (formData.status === StudyStatus.PENDENTE || formData.status === StudyStatus.EM_ANALISE) && (
                     <>
                       <button type="button" onClick={() => setShowRejectionModal(true)} className="px-8 py-4 rounded-xl border border-red-100 text-red-600 font-black uppercase text-xs">Reprovar</button>
                       <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-green-600 text-white font-black uppercase text-xs shadow-lg shadow-green-200 transition-all">Validar Estudo</button>
                     </>
+                  )}
+                  {(isAdmin || currentUser?.permissions?.includes('validar')) && (formData.status !== StudyStatus.PENDENTE && formData.status !== StudyStatus.EM_ANALISE && formData.status !== StudyStatus.CONCLUIDO && formData.status !== StudyStatus.CANCELADO) && (
+                    <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">Gerenciar Atribuição</button>
                   )}
                   {canExecute && (formData.status === StudyStatus.AGUARDANDO_EXECUCAO || formData.status === StudyStatus.EM_EXECUCAO) && isOwner && (
                     <button type="button" onClick={handleStartExecutionLocal} className="px-10 py-4 rounded-xl bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">

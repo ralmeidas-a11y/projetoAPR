@@ -2,8 +2,8 @@
 export enum FormType {
   RESIDENTIAL_COMMERCIAL = 'PE.00492-FO.01',
   EXPANSION_AREAS = 'PE.00492-FO.02',
-  THERMO_GENERATION = 'PE.00492-FO.03',
-  LARGE_CLIENTS = 'PE.00492-FO.04'
+  THERMO_GENERATION = 'PE.00492-FO.04',
+  LARGE_CLIENTS = 'PE.00492-FO.03'
 }
 
 export enum UserRole {
@@ -33,15 +33,16 @@ export interface User {
   area?: string;
   naturgyUnit?: string;
   profileComplete?: boolean;
-  permissions?: ('validar' | 'executar')[];
+  permissions?: ('validar' | 'executar' | 'controle_qualidade')[];
   folderPath?: string;
   createdAt?: string;
   lastAccess?: string;
+  requiresPasswordChange?: boolean;
+  password?: string;
 }
 
 export interface ElectronAPI {
   getCorporateEmail: () => Promise<string | null>;
-  getSharePointPath: () => Promise<string | null>;
   checkUserFolder: (userName: string) => Promise<{ exists: boolean; synced: boolean; userFolderPath?: string }>;
   createUserFolder: (userName: string) => Promise<{ success: boolean; userFolderPath: string; error?: string }>;
   createRequestFolder: (folderData: any) => Promise<{ success: boolean; baseFolderPath?: string; message: string }>;
@@ -99,6 +100,7 @@ export interface FormData {
   studyTitle?: string;
   marketCategory?: string;
   address?: string;
+  number?: string;
   city?: string;
   neighborhood?: string;
   networkType?: string;
@@ -119,16 +121,7 @@ export interface FormData {
     }
   };
 
-  // FO.03
-  uteName?: string;
-  pressMaxUTE?: number | '';
-  pressMinUTE?: number | '';
-  instantFlow?: number | '';
-  qdc?: number | '';
-  pressMaxUPGN?: number | '';
-  pressMinUPGN?: number | '';
-
-  // FO.04
+  // FO.03 (Large Clients - industrial/GNV/etc)
   clientName?: string;
   deliveryPoint?: string;
   instantConsumption?: number | '';
@@ -146,6 +139,15 @@ export interface FormData {
   contractualPressure?: number | '';
   currentPressureRange?: string;
 
+  // FO.04 (UTE - Termogeração)
+  uteName?: string;
+  pressMaxUTE?: number | '';
+  pressMinUTE?: number | '';
+  instantFlow?: number | '';
+  qdc?: number | '';
+  pressMaxUPGN?: number | '';
+  pressMinUPGN?: number | '';
+
   numClientsRes?: number | '';
   flowUnitRes?: number | '';
   totalFlowRes?: number | '';
@@ -161,4 +163,17 @@ export interface FormData {
   categorizedFiles?: { [category: string]: any[] }; // Arquivos gerados pelo analista (Resposta, Cálculos, Outros)
   executionStartTime?: number;
   totalExecutionTime?: number; // em segundos
+  startedAt?: string;
+  completedAt?: string;
+  hasExpansion?: boolean;
+  updatedAt?: string;
+  
+  // Validation fields
+  gasType?: string;
+  mapReceived?: boolean;
+  relevantStudy?: boolean;
+  gniName?: string;
+  studySubType?: string;
+  difficulty?: string;
+  validatorObservations?: string;
 }

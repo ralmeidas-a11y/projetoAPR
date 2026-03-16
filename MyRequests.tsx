@@ -1,6 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
-import { FormData, StudyStatus, User, UserRole } from '../types';
+import { StudyStatus, FormData, User, UserRole } from './types';
+import { formatToLocalTime, normalizeArea } from './utils';
+import { FileBrowserModal } from './FileBrowserModal';
 
 interface MyRequestsProps {
   requests: FormData[];
@@ -18,20 +20,34 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
   const [requestToCancel, setRequestToCancel] = useState<FormData | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const [openingFolder, setOpeningFolder] = useState<string | null>(null);
+  const [browsingRequest, setBrowsingRequest] = useState<FormData | null>(null);
+  const [activeTab, setActiveTab] = useState<'personal' | 'area'>('personal');
   const itemsPerPage = 6;
 
   // Lógica para exibir todas as solicitações sem duplicar por revisão
   const latestRequests = useMemo(() => {
     if (!requests || requests.length === 0) return [];
     
+    // Filtrar primeiro por dono/área antes de agrupar revisões
+    const filteredByTab = requests.filter(req => {
+      if (activeTab === 'personal') {
+        return req.user_id === currentUser?.id;
+      } else {
+        // Aba 'Área': solicitações da mesma área mas que NÃO são do usuário logado
+        const currentUserAreaNormalized = normalizeArea(currentUser?.area);
+        return currentUserAreaNormalized && 
+               normalizeArea(req.requesterArea) === currentUserAreaNormalized && 
+               req.user_id !== currentUser.id;
+      }
+    });
+
     // Agrupar por estudo base (sem revisão)
     const groups: { [key: string]: FormData } = {};
     
-    requests.forEach(req => {
+    filteredByTab.forEach(req => {
       // Pegar código base (antes de -REV ou PROV-)
-      let baseCode = (req.studyNumber || '').split('-REV')[0];
-      baseCode = baseCode.replace('PROV-', '');
+      const cleanCode = (req.studyNumber || '').replace('PROV-', '');
+      const baseCode = cleanCode.split('-REV')[0];
       
       if (!baseCode) return; // Skip se não tem código
 
@@ -40,10 +56,10 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
         groups[baseCode] = req;
       } else {
         // Comparar versões (REV)
-        const currentRevMatch = (req.studyNumber || '').match(/-REV(\d+)$/);
+        const currentRevMatch = (req.studyNumber || '').match(/-REV(\d+)$/i);
         const currentRev = currentRevMatch ? parseInt(currentRevMatch[1]) : 0;
         
-        const storedRevMatch = (groups[baseCode].studyNumber || '').match(/-REV(\d+)$/);
+        const storedRevMatch = (groups[baseCode].studyNumber || '').match(/-REV(\d+)$/i);
         const storedRev = storedRevMatch ? parseInt(storedRevMatch[1]) : 0;
         
         // Manter a versão mais recente
@@ -63,11 +79,13 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
         const code = (req.studyNumber || '').toLowerCase();
         const address = (req.address || '').toLowerCase();
         const city = (req.city || '').toLowerCase();
+        const requester = (req.requesterName || '').toLowerCase();
         
         return title.includes(query) || 
                code.includes(query) || 
                address.includes(query) || 
-               city.includes(query);
+               city.includes(query) ||
+               requester.includes(query);
       });
     }
 
@@ -77,7 +95,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       const dateB = b.requestDate || '1900-01-01';
       return dateB.localeCompare(dateA);
     });
-  }, [requests, searchQuery]);
+  }, [requests, searchQuery, activeTab, currentUser]);
   
   const totalPages = Math.ceil(latestRequests.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -98,7 +116,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
     }
   };
 
-  const getFO = (type: string) => type.split('-').pop() || '';
+  const getFO = (type: string) => (type || '').split('-').pop() || '';
 
   const canCancel = (status: StudyStatus) => {
     return status !== StudyStatus.CANCELADO && status !== StudyStatus.CONCLUIDO;
@@ -121,48 +139,8 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
     setCurrentPage(1); // Volta para a primeira página ao buscar
   };
 
-  const handleOpenFolder = async (req: FormData) => {
-    if (!req.studyNumber || req.studyNumber.startsWith('PROV-') || !req.requesterName) {
-      return;
-    }
-
-    setOpeningFolder(req.id);
-    try {
-      if (typeof window !== 'undefined' && (window as any).api?.openFolder) {
-        // Abrir pasta raiz do estudo (solicitante vê Solicitação e Resposta como subpastas)
-        // Apenas abrir pasta já existente, sem tentar criar
-        const folderPath = `${(window as any).api?.expectedSharePointPath || ''}/solicitantes/${req.requesterName}/${req.studyNumber}`;
-        
-        const result = await (window as any).api.openFolder(folderPath);
-        
-        if (result?.success) {
-          console.log(`%c📁 Pasta da solicitação aberta: ${req.studyNumber}`, "color: #16a34a; font-weight: bold;");
-        } else {
-          // Se não conseguir abrir, tenta criar
-          if ((window as any).api?.createRequestFolder) {
-            const createResult = await (window as any).api.createRequestFolder({
-              email: req.email || '',
-              userName: req.requesterName,
-              requestId: req.studyNumber
-            });
-
-            if (createResult.success) {
-              await (window as any).api.openFolder(createResult.baseFolderPath);
-              console.log(`%c📁 Pasta da solicitação criada e aberta: ${req.studyNumber}`, "color: #16a34a; font-weight: bold;");
-            } else if (createResult.requiresSync) {
-              alert(`SharePoint não sincronizado.\n\nPor favor, sincronize a pasta "SolicitaWeb Estudos" do SharePoint antes de tentar acessar os arquivos.\n\nLink: ${createResult.sharePointUrl}`);
-            } else {
-              alert(`Erro ao criar/abrir pasta: ${createResult.message}`);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Erro ao abrir pasta:', error);
-      alert('Erro ao abrir pasta da solicitação');
-    } finally {
-      setOpeningFolder(null);
-    }
+  const handleOpenFolder = (req: FormData) => {
+    setBrowsingRequest(req);
   };
 
   return (
@@ -201,9 +179,30 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       )}
 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gradient-to-r from-[#004080] to-[#004080]/90 p-6 rounded-3xl border border-blue-200 shadow-lg">
-        <div className="shrink-0">
-          <h2 className="text-2xl font-black text-white uppercase tracking-tight">Minhas Solicitações</h2>
-          <p className="text-blue-100 text-xs mt-1">Versão mais recente de cada estudo</p>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+          <div className="shrink-0">
+            <h2 className="text-2xl font-black text-white uppercase tracking-tight">
+              {activeTab === 'personal' ? 'Minhas Solicitações' : 'Solicitações da Área'}
+            </h2>
+            <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mt-1">
+              Naturgy SPS • {currentUser?.area || 'CEP'}
+            </p>
+          </div>
+
+          <div className="flex bg-white/10 p-1 rounded-2xl border border-white/20">
+            <button 
+              onClick={() => { setActiveTab('personal'); setCurrentPage(1); }}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'personal' ? 'bg-white text-[#004080] shadow-md' : 'text-blue-100 hover:text-white hover:bg-white/5'}`}
+            >
+              Meus Pedidos
+            </button>
+            <button 
+              onClick={() => { setActiveTab('area'); setCurrentPage(1); }}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'area' ? 'bg-white text-[#004080] shadow-md' : 'text-blue-100 hover:text-white hover:bg-white/5'}`}
+            >
+              Equipe / Área
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
@@ -258,6 +257,14 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                       <h3 className="font-black text-[#004080] text-sm leading-tight group-hover:text-orange-500 transition-colors">
                         {req.studyTitle || req.clientName || 'Sem Título'}
                       </h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                        {activeTab === 'area' ? `Por: ${req.requesterName} • ` : ''}Enviado em: {req.createdAt ? formatToLocalTime(req.createdAt) : 'Data não disponível'}
+                      </p>
+                      {isCompleted && (req.completedAt || req.updatedAt) && (
+                        <p className="text-[10px] text-green-600 font-bold uppercase tracking-widest mt-0.5">
+                          Concluído em: {formatToLocalTime(req.completedAt || req.updatedAt!)}
+                        </p>
+                      )}
                     </div>
                     <div className={`px-2 py-1 rounded-full border text-[8px] font-black uppercase tracking-widest whitespace-nowrap flex-shrink-0 ${getStatusStyle(req.status)}`}>
                       {req.status}
@@ -282,29 +289,19 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                   <div className="flex gap-2">
                     <button 
                       type="button"
-                      onClick={() => onViewRequest(req)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenFolder(req);
+                      }}
                       disabled={isCancelled}
-                      className="flex-1 py-2 bg-[#004080] text-white font-black uppercase text-xs tracking-widest rounded-lg hover:bg-orange-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                      className="flex-1 py-2 bg-green-50 text-green-600 font-black uppercase text-xs tracking-widest rounded-lg hover:bg-green-600 hover:text-white transition-all border border-green-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-2"
+                      title="Navegador de Arquivos e Formulário"
                     >
-                      Ver
+                      <i className="fa-solid fa-folder-open text-xs"></i>
+                      Ver Arquivos
                     </button>
-
-                    {req.studyNumber && !req.studyNumber.startsWith('PROV-') && (
-                      <button 
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenFolder(req);
-                        }}
-                        disabled={openingFolder === req.id}
-                        className="w-10 h-10 bg-green-50 text-green-600 rounded-lg hover:bg-green-600 hover:text-white transition-all flex items-center justify-center border border-green-200 active:scale-90 disabled:opacity-40"
-                        title="Abrir Pasta"
-                      >
-                        {openingFolder === req.id ? <i className="fa-solid fa-spinner fa-spin text-sm"></i> : <i className="fa-solid fa-folder text-sm"></i>}
-                      </button>
-                    )}
                     
-                    {canCancel(req.status) && (
+                    {activeTab === 'personal' && canCancel(req.status) && (
                       <button 
                         type="button"
                         onClick={(e) => {
@@ -319,14 +316,14 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                     )}
                   </div>
 
-                  {req.status === StudyStatus.REJEITADO && req.rejectionReason && (
+                  {activeTab === 'personal' && req.status === StudyStatus.REJEITADO && req.rejectionReason && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-2">
                       <p className="text-[9px] font-black text-red-600 uppercase tracking-widest mb-1">Motivo da Rejeição:</p>
                       <p className="text-[11px] text-red-700 font-semibold leading-tight whitespace-pre-wrap">{req.rejectionReason}</p>
                     </div>
                   )}
 
-                  {(req.status === StudyStatus.REJEITADO || req.status === StudyStatus.EM_ANALISE) && (
+                  {activeTab === 'personal' && (req.status === StudyStatus.REJEITADO || req.status === StudyStatus.EM_ANALISE) && (
                     <button 
                       type="button"
                       onClick={() => onEditRequest(req)}
@@ -337,7 +334,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                     </button>
                   )}
 
-                  {isCompleted && onRequestRevision && (
+                  {activeTab === 'personal' && isCompleted && onRequestRevision && (
                     <button 
                       type="button"
                       onClick={() => onRequestRevision(req)}
@@ -383,6 +380,14 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
             <i className="fa-solid fa-chevron-right"></i>
           </button>
         </div>
+      )}
+      {browsingRequest && currentUser && (
+        <FileBrowserModal 
+          request={browsingRequest} 
+          user={currentUser!} 
+          allRequests={requests}
+          onClose={() => setBrowsingRequest(null)} 
+        />
       )}
     </div>
   );

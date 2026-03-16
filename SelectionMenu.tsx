@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { FormType } from '../types';
-import { FORM_OPTIONS } from '../constants';
+import { FormType } from './types';
+import { FORM_OPTIONS } from './constants';
 
 interface SelectionMenuProps {
   onStart: (id: FormType) => void;
