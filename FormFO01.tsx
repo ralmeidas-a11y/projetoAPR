@@ -56,7 +56,12 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
     if (type === 'number') {
       processedValue = value === '' ? '' : (name.includes('numClients') ? (parseInt(value, 10) || 0) : (parseFloat(value) || 0));
     }
-    onChange({ [name]: processedValue });
+    
+    if (name === 'studyTitle') {
+      onChange({ [name]: processedValue, studyTitle: value });
+    } else {
+      onChange({ [name]: processedValue });
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,9 +87,9 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
   const inputGridClass = "w-full h-full text-center border-none focus:ring-0 outline-none bg-transparent p-0 m-0 block appearance-none text-[10pt]";
   const municipalities = [...MUNICIPALITIES_RJ, ...MUNICIPALITIES_SP];
 
-  const requiredLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-bold";
-  const standardLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-bold";
-  const inputBaseClass = "flex-grow p-1 rounded outline-none font-normal h-8 text-[10pt] border transition-all";
+  const requiredLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-bold pb-0.5";
+  const standardLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-bold pb-0.5";
+  const inputBaseClass = "flex-grow p-1 rounded outline-none font-normal h-8 text-[10pt] border transition-all mb-0.5";
 
   const renderField = (label: string, value: any, isRequired = false) => {
     if (readOnly) {
@@ -288,19 +293,35 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
 
           <div className="border-b border-r p-2.5 font-medium">Residencial:</div>
           <div className="border-b border-r">
-            <input type="number" name="numClientsRes" disabled={!isResActive || readOnly} value={isResActive ? (data.numClientsRes ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+            {readOnly ? (
+              <div className="flex items-center justify-center h-full font-bold">{data.numClientsRes || '-'}</div>
+            ) : (
+              <input type="number" name="numClientsRes" disabled={!isResActive} value={isResActive ? (data.numClientsRes ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+            )}
           </div>
           <div className="border-b border-r">
-            <input type="number" step="0.01" name="flowUnitRes" disabled={!isResActive || readOnly} value={isResActive ? (data.flowUnitRes ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+            {readOnly ? (
+              <div className="flex items-center justify-center h-full font-bold">{data.flowUnitRes || '-'}</div>
+            ) : (
+              <input type="number" step="0.01" name="flowUnitRes" disabled={!isResActive} value={isResActive ? (data.flowUnitRes ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+            )}
           </div>
           <div className="border-b p-2.5 text-center font-bold">{formatBR(isResActive ? data.totalFlowRes : 0)}</div>
 
           <div className="border-b border-r p-2.5 font-medium">Comercial:</div>
           <div className="border-b border-r">
-            <input type="number" name="numClientsCom" disabled={!isComActive || readOnly} value={isComActive ? (data.numClientsCom ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+            {readOnly ? (
+              <div className="flex items-center justify-center h-full font-bold">{data.numClientsCom || '-'}</div>
+            ) : (
+              <input type="number" name="numClientsCom" disabled={!isComActive} value={isComActive ? (data.numClientsCom ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+            )}
           </div>
           <div className="border-b border-r">
-            <input type="number" step="0.01" name="flowUnitCom" disabled={!isComActive || readOnly} value={isComActive ? (data.flowUnitCom ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+            {readOnly ? (
+              <div className="flex items-center justify-center h-full font-bold">{data.flowUnitCom || '-'}</div>
+            ) : (
+              <input type="number" step="0.01" name="flowUnitCom" disabled={!isComActive} value={isComActive ? (data.flowUnitCom ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+            )}
           </div>
           <div className="border-b p-2.5 text-center font-bold">{formatBR(isComActive ? data.totalFlowCom : 0)}</div>
 
@@ -334,10 +355,10 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
       </section>
 
       {/* DOCUMENTAÇÃO E ANEXOS */}
-      {!readOnly && (
-        <section>
-          <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">DOCUMENTAÇÃO E ANEXOS</div>
-          <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
+      <section>
+        <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">DOCUMENTAÇÃO E ANEXOS</div>
+        <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
+          {!readOnly && (
             <div 
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 hover:border-[#FF8000] transition-all cursor-pointer group"
@@ -358,29 +379,34 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
                 accept=".pdf,.jpg,.jpeg,.png,.dwg,.kmz"
               />
             </div>
+          )}
 
-            {data.selectedFiles && data.selectedFiles.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                {data.selectedFiles.map((file, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <i className="fa-solid fa-file-lines text-[#004080]"></i>
-                      <span className="text-xs font-medium text-slate-700 truncate">{file.name}</span>
-                      <span className="text-[10px] text-slate-400 whitespace-nowrap">({(file.size / 1024).toFixed(0)} KB)</span>
-                    </div>
+          {data.selectedFiles && data.selectedFiles.length > 0 && (
+            <div className={`grid grid-cols-1 ${!readOnly ? 'md:grid-cols-2' : ''} gap-3 mt-4`}>
+              {data.selectedFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="flex items-center gap-3 flex-grow min-w-0">
+                    <i className="fa-solid fa-file-lines text-[#004080] shrink-0"></i>
+                    <span className="text-xs font-medium text-slate-700 break-all">{file.name}</span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
+                  </div>
+                  {!readOnly && (
                     <button 
                       onClick={() => removeFile(idx)}
                       className="p-1 hover:text-red-500 transition-colors text-slate-300"
                     >
                       <i className="fa-solid fa-xmark"></i>
                     </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {readOnly && (!data.selectedFiles || data.selectedFiles.length === 0) && (
+            <p className="text-xs text-slate-400 italic text-center py-4">Nenhum documento anexo à solicitação.</p>
+          )}
+        </div>
+      </section>
 
       {/* COMENTÁRIOS E OBSERVAÇÕES */}
       <section className="mt-8">

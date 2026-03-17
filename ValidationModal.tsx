@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FormData, StudyStatus, FormType } from './types';
+import { useDialog } from './AppDialog';
 
 interface ValidationModalProps {
   initialData: FormData;
@@ -7,6 +8,7 @@ interface ValidationModalProps {
   onConfirm: (assignedTo: string, validationData: Partial<FormData>) => void;
   onReject?: (reason: string) => void;
   onCancel: () => void;
+  onOpenFiles?: () => void;
 }
 
 export const ValidationModal: React.FC<ValidationModalProps> = ({
@@ -14,8 +16,10 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
   executors,
   onConfirm,
   onReject,
-  onCancel
+  onCancel,
+  onOpenFiles
 }) => {
+  const { showAlert } = useDialog();
   const [assignedAnalyst, setAssignedAnalyst] = useState(initialData?.assignedTo || '');
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -58,7 +62,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
   
   const handleReject = () => {
     if (!rejectionReason.trim()) {
-      alert('Por favor, informe o motivo da rejeição.');
+      showAlert('Por favor, informe o motivo da rejeição.', 'Campo Obrigatório', 'warning');
       return;
     }
     onReject?.(rejectionReason);
@@ -66,30 +70,42 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-white rounded-3xl p-8 w-full max-w-4xl shadow-2xl animate-in zoom-in-95 duration-200 my-8">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight">
-            {initialData?.assignedTo ? 'Reatribuir Estudo' : 'Validar e Atribuir Estudo'}
-          </h3>
+      <div className="bg-white rounded-3xl p-6 w-full max-w-7xl shadow-2xl animate-in zoom-in-95 duration-200 my-4">
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight">
+              {initialData?.assignedTo ? 'Reatribuir Estudo' : 'Validar e Atribuir Estudo'}
+            </h3>
+            {onOpenFiles && (
+              <button 
+                onClick={onOpenFiles}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-50 text-green-600 hover:bg-green-600 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest border border-green-100 shadow-sm active:scale-95"
+                title="Ver arquivos da solicitação"
+              >
+                <i className="fa-solid fa-folder-open"></i>
+                Ver Pasta
+              </button>
+            )}
+          </div>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 transition-colors">
             <i className="fa-solid fa-times text-xl"></i>
           </button>
         </div>
 
-        <p className="text-xs text-slate-500 font-bold uppercase mb-6">
+        <p className="text-xs text-slate-500 font-bold uppercase mb-4">
           Preencha os dados técnicos e atribua o estudo a um analista para execução.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
           {/* Coluna 1: Demanda e Parâmetros e Atribuição */}
-          <div className="space-y-6">
-            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-              <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-widest border-b border-slate-200 pb-2 mb-4">Demanda e Parâmetros Técnicos</h4>
+          <div className="space-y-4">
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+              <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-widest border-b border-slate-200 pb-1 mb-3">Demanda e Parâmetros Técnicos</h4>
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tipo de Gás</label>
-                  <select value={gasType} onChange={e => setGasType(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
+                  <select value={gasType} onChange={e => setGasType(e.target.value)} className="w-full p-2 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
                     <option value="">Selecione</option>
                     <option value="GN">GN</option>
                     <option value="GLP">GLP</option>
@@ -105,7 +121,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                       setSuggestedPressureRange(e.target.value);
                       setMinPressure(defaultMinPressure(e.target.value));
                     }} 
-                    className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]"
+                    className="w-full p-2 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]"
                   >
                     <option value="">Selecione</option>
                     {/* FO01 opções baseadas no pedido anterior */}
@@ -124,16 +140,16 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                       type="number" 
                       value={minPressure} 
                       onChange={e => setMinPressure(e.target.value === '' ? '' : Number(e.target.value))} 
-                      className="w-full p-3 border border-slate-200 rounded-l-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]"
+                      className="w-full p-2 border border-slate-200 rounded-l-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]"
                     />
-                    <span className="bg-slate-100 border border-l-0 border-slate-200 px-3 py-3 rounded-r-xl text-xs font-bold text-[#004080]">
+                    <span className="bg-slate-100 border border-l-0 border-slate-200 px-3 py-2 rounded-r-xl text-xs font-bold text-[#004080]">
                       {suggestedPressureRange === 'BP-N' ? 'mbar' : 'bar'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-6 mt-4 pt-4 border-t border-slate-200">
+              <div className="flex gap-6 mt-2 pt-2 border-t border-slate-200">
                 <label className="flex items-center gap-2 cursor-pointer group">
                   <div className={`w-5 h-5 rounded flex items-center justify-center transition-colors border ${mapReceived ? 'bg-[#004080] border-[#004080]' : 'bg-white border-slate-300 group-hover:border-[#004080]'}`}>
                     {mapReceived && <i className="fa-solid fa-check text-white text-[10px]"></i>}
@@ -157,7 +173,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
               <select 
                 value={assignedAnalyst}
                 onChange={(e) => setAssignedAnalyst(e.target.value)}
-                className="w-full p-4 border border-slate-200 rounded-2xl outline-none focus:border-[#004080] bg-slate-50 text-sm font-bold text-[#004080]"
+                className="w-full p-3 border border-slate-200 rounded-2xl outline-none focus:border-[#004080] bg-slate-50 text-sm font-bold text-[#004080]"
               >
                 <option value="">Sistema (Fila Comum)</option>
                 {executors.map(exec => (
@@ -168,13 +184,13 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
           </div>
 
           {/* Coluna 2: Controle da Análise (GNI) e Observacoes */}
-          <div className="space-y-6">
-            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-               <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-widest border-b border-slate-200 pb-2 mb-4">Controle da Análise (GNI)</h4>
+          <div className="space-y-4">
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+               <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-widest border-b border-slate-200 pb-1 mb-3">Controle da Análise (GNI)</h4>
                
                <div>
                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nomes GNI</label>
-                 <select value={gniName} onChange={e => setGniName(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
+                 <select value={gniName} onChange={e => setGniName(e.target.value)} className="w-full p-2 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
                     <option value="">Selecione</option>
                     <option value="Abastecimento Novos Municípios GNC - Análise de zonas de expansão">Abastecimento Novos Municípios GNC - Análise de zonas de expansão</option>
                     <option value="Análise de redes MP-BP (D+C) - Residencial/Comercial - Estudo de Viabilidade Técnica">Análise de redes MP-BP (D+C) - Residencial/Comercial - Estudo de Viabilidade Técnica</option>
@@ -190,7 +206,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
 
                <div>
                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tipo de Estudo</label>
-                 <select value={studyType} onChange={e => setStudyType(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
+                 <select value={studyType} onChange={e => setStudyType(e.target.value)} className="w-full p-2 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
                     <option value="">Selecione</option>
                     <option value="Confiabilidade da Rede">Confiabilidade da Rede</option>
                     <option value="Conversão GN">Conversão GN</option>
@@ -214,7 +230,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                <div className="grid grid-cols-2 gap-4">
                  <div>
                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sub-tipo de Estudo</label>
-                   <select value={studySubType} onChange={e => setStudySubType(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
+                   <select value={studySubType} onChange={e => setStudySubType(e.target.value)} className="w-full p-2 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
                       <option value="">Selecione</option>
                       <option value="Análise de Pressões e Vazões">Análise de Pressões e Vazões</option>
                       <option value="Climatização">Climatização</option>
@@ -254,7 +270,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                  </div>
                  <div>
                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Dificuldade</label>
-                   <select value={difficulty} onChange={e => setDifficulty(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
+                   <select value={difficulty} onChange={e => setDifficulty(e.target.value)} className="w-full p-2 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]">
                       <option value="">Selecione</option>
                       <option value="Fácil">Fácil</option>
                       <option value="Médio">Médio</option>
@@ -269,22 +285,22 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                <textarea 
                   value={validatorObservations}
                   onChange={e => setValidatorObservations(e.target.value)}
-                  className="w-full p-4 border border-slate-200 rounded-2xl outline-none focus:border-[#004080] bg-slate-50 text-sm font-medium text-[#004080] h-28 resize-none"
+                  className="w-full p-2.5 border border-slate-200 rounded-2xl outline-none focus:border-[#004080] bg-slate-50 text-sm font-medium text-[#004080] h-20 resize-none"
                   placeholder="Instruções ou notas adicionais para o analista responsável pela execução..."
                />
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4 mt-8 pt-6 border-t border-slate-100">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 mt-4 pt-4 border-t border-slate-100">
           <div className="flex gap-4">
             <button onClick={onCancel} className="px-6 py-3 text-slate-400 font-bold uppercase text-[10px] hover:text-slate-600 transition-colors">Cancelar</button>
             {onReject && (
               <button 
                 onClick={() => setIsRejecting(!isRejecting)} 
-                className={`px-6 py-3 rounded-xl font-black uppercase text-[10px] transition-all border ${isRejecting ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-400 border-slate-200 hover:text-red-500 hover:border-red-200'}`}
+                className={`px-10 py-3 rounded-xl font-black uppercase text-xs transition-all shadow-lg active:scale-95 ${isRejecting ? 'bg-indigo-50 text-indigo-600 border border-indigo-200 shadow-indigo-50' : 'bg-red-600 text-white shadow-red-200 hover:bg-red-700'}`}
               >
-                {isRejecting ? 'Voltar' : 'Rejeitar Estudo'}
+                {isRejecting ? 'Voltar para Validação' : 'Rejeitar Estudo'}
               </button>
             )}
           </div>
@@ -311,8 +327,8 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                 onClick={handleConfirm} 
                 className="w-full md:w-auto px-10 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-black uppercase text-xs shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2 active:scale-95"
               >
-                <i className="fa-solid fa-check"></i>
-                Validar Estudo e Atribuir
+                <i className="fa-solid fa-paper-plane"></i>
+                Enviar para Execução
               </button>
             )}
           </div>

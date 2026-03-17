@@ -209,7 +209,7 @@ export const StorageService = {
     }));
   },
 
-  addRequest: async (request: FormData) => {
+  addRequest: async (request: FormData, providedPdf?: File | Blob) => {
     const cleanRequest = { ...request };
     if (cleanRequest.selectedFiles) {
       cleanRequest.selectedFiles = cleanRequest.selectedFiles.map(f => ({
@@ -256,38 +256,38 @@ export const StorageService = {
     await ensureFolder(getRequestPath(request.studyNumber, 'Calculos'));
     await ensureFolder(getRequestPath(request.studyNumber, 'Outros'));
     
-    // 1. Upload files currently in selection (Requester)
-    if (request.selectedFiles && request.selectedFiles.length > 0) {
-      for (const file of request.selectedFiles) {
-        if (file instanceof File || file.base64) {
-          const filePath = `${baseFolder}/Solicitacao/${file.name}`;
-          let fileData: any = file;
-          
-          if (!(file instanceof File) && file.base64) {
-            const byteCharacters = atob(file.base64);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            fileData = new Blob([byteArray], { type: file.type || 'application/pdf' });
-          }
+    // 0. Limpeza: Deletar arquivos do Storage que foram removidos no App
+    // Para garantir que "mudanças feitas no app reflitam no dashboard"
+    const categoriesToCleanup = ['Solicitacao', 'Resposta', 'Calculos', 'Outros'];
+    for (const cat of categoriesToCleanup) {
+      const folderPath = getRequestPath(request.studyNumber, cat);
+      const { data: currentStorageFiles } = await supabase.storage.from('request-files').list(folderPath);
+      
+      if (currentStorageFiles) {
+        // Obter lista de nomes que o App enviou para esta categoria
+        let appFileNames: string[] = [];
+        if (cat === 'Solicitacao') {
+          appFileNames = (request.selectedFiles || []).map(f => f.name);
+        } else {
+          appFileNames = (request.categorizedFiles?.[cat] || []).map(f => f.name);
+        }
 
-          const { error: uploadError } = await supabase.storage
-            .from('request-files')
-            .upload(filePath, fileData, { upsert: true });
+        const filesToDelete = currentStorageFiles
+          .filter(f => f.name !== '.keep' && !f.name.startsWith('Formulario')) // Não deletar o keep nem o formulário oficial aqui
+          .filter(f => !appFileNames.includes(f.name));
 
-          if (uploadError) console.error(`Error uploading ${file.name}:`, uploadError);
+        if (filesToDelete.length > 0) {
+          console.log(`[StorageService] Deleting ${filesToDelete.length} files from ${cat} because they were removed in the App.`);
+          await supabase.storage.from('request-files').remove(filesToDelete.map(f => `${folderPath}/${f.name}`));
         }
       }
     }
 
-    // 2. Categorized Files (Analista)
-    if (request.categorizedFiles) {
-      for (const [category, files] of Object.entries(request.categorizedFiles)) {
-        if (files && files.length > 0) {
-          for (const file of files) {
-            const filePath = `${baseFolder}/${category}/${file.name}`;
+    // 1. Upload files currently in selection (Requester)
+    if (request.selectedFiles && request.selectedFiles.length > 0) {
+      for (const file of request.selectedFiles) {
+          if (file instanceof File || (file && typeof file === 'object' && 'base64' in file)) {
+            const filePath = `${baseFolder}/Solicitacao/${file.name}`;
             let fileData: any = file;
             
             if (!(file instanceof File) && file.base64) {
@@ -304,7 +304,35 @@ export const StorageService = {
               .from('request-files')
               .upload(filePath, fileData, { upsert: true });
 
-            if (uploadError) console.error(`Error uploading ${file.name} to ${category}:`, uploadError);
+            if (uploadError) console.error(`[StorageService] Error uploading ${file.name}:`, uploadError);
+          }
+      }
+    }
+
+    // 2. Categorized Files (Analista)
+    if (request.categorizedFiles) {
+      for (const [category, files] of Object.entries(request.categorizedFiles)) {
+        if (files && files.length > 0) {
+          for (const file of files) {
+            if (file instanceof File || (file && typeof file === 'object' && 'base64' in file)) {
+              const filePath = `${baseFolder}/${category}/${file.name}`;
+              let fileData: any = file;
+              
+              if (!(file instanceof File) && file.base64) {
+                const byteCharacters = atob(file.base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                  byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                fileData = new Blob([byteArray], { type: file.type || 'application/pdf' });
+              }
+              const { error: uploadError } = await supabase.storage
+                .from('request-files')
+                .upload(filePath, fileData, { upsert: true });
+
+              if (uploadError) console.error(`[StorageService] Error uploading ${file.name} to ${category}:`, uploadError);
+            }
           }
         }
       }
@@ -316,10 +344,44 @@ export const StorageService = {
 
     if (error) throw error;
     
-    // PDF form upload is now handled exclusively by FormContainer.tsx via html2canvas snapshot
-    // before calling onSubmit, ensuring a true visual mirror of the web form.
+    // 3. Sincronização Automática: Garantir que a lista de arquivos no Banco reflita o Storage REAL
+    // Buscamos o que está no storage agora (após os uploads acima) para as 4 categorias
+    const categories = ['Solicitacao', 'Resposta', 'Calculos', 'Outros'];
+    const updatedCategorizedFiles: any = {};
     
-    return request;
+    for (const cat of categories) {
+      const folderPath = getRequestPath(request.studyNumber, cat);
+      const { data: storageFiles } = await supabase.storage.from('request-files').list(folderPath);
+      
+      if (storageFiles) {
+        updatedCategorizedFiles[cat] = storageFiles
+          .filter(f => f.name !== '.keep')
+          .map(f => ({
+            name: f.name,
+            size: f.metadata?.size || 0,
+            type: f.metadata?.mimetype || 'application/octet-stream',
+            lastModified: new Date(f.created_at).getTime()
+          }));
+      }
+    }
+
+    // Atualizamos o registro no banco com a lista fidedigna do storage
+    const finalData = { 
+      ...cleanRequest, 
+      selectedFiles: updatedCategorizedFiles['Solicitacao'] || [],
+      categorizedFiles: updatedCategorizedFiles 
+    };
+
+    await supabase
+      .from('requests')
+      .update({ data: finalData })
+      .eq('id', request.id);
+
+    // Alinhado com a solicitação do usuário: Sempre que houver edição/adição, 
+    // regeneramos o PDF para garantir que o arquivo no storage reflita os dados mais recentes.
+    await StorageService.uploadOfficialForm({ ...request, data: finalData } as any, providedPdf);
+    
+    return { ...request, data: finalData };
   },
 
   deleteRequest: async (requestId: string) => {
@@ -359,11 +421,51 @@ export const StorageService = {
 
       if (providedPdf) {
         console.log(`[StorageService] Using true DOM Snapshot PDF for: ${fullPath}`);
+        
+        // Se este for o PDF oficial (sem PROV-) e o estudo foi validado agora,
+        // limpamos o PDF provisório se ele existir.
+        if (!request.studyNumber.startsWith('PROV-')) {
+          const provFileName = `Formulario - PROV-${request.studyNumber}.pdf`;
+          const provFullPath = `${folderPath}/${provFileName}`;
+          await supabase.storage.from('request-files').remove([provFullPath]);
+        }
+
         const { error } = await supabase.storage.from('request-files').upload(fullPath, providedPdf, { upsert: true });
         
         if (error) throw error;
         console.log('[StorageService] DOM Snapshot PDF uploaded successfully');
         return;
+      }
+
+      // === Sem PDF fornecido: tentar reutilizar o PDF provisório ===
+      // Isso acontece ao validar: após moveStorageFolder, o arquivo PROV- foi movido 
+      // para a nova pasta mas ainda com o nome antigo. Aqui o "renomeamos" via copy+delete.
+      if (!request.studyNumber.startsWith('PROV-')) {
+        const provFileName = `Formulario - PROV-${request.studyNumber}.pdf`;
+        const provFullPath = `${folderPath}/${provFileName}`;
+
+        console.log(`[StorageService] No PDF provided. Trying to reuse PROV- snapshot: ${provFullPath}`);
+
+        // Tenta copiar o arquivo PROV- para o nome oficial
+        const { error: copyErr } = await supabase.storage
+          .from('request-files')
+          .copy(provFullPath, fullPath);
+
+        if (!copyErr) {
+          // Renomeação bem-sucedida: remove o arquivo PROV-
+          await supabase.storage.from('request-files').remove([provFullPath]);
+          console.log(`[StorageService] Successfully renamed ${provFileName} -> ${fileName}`);
+          return; // ✅ Preserva o PDF de alta qualidade do snapshot original
+        } else {
+          console.warn(`[StorageService] PROV- PDF not found or copy failed: ${copyErr.message}. Checking if official PDF already exists...`);
+          
+          // Verifica se o PDF oficial já existe (ex: segunda chamada)
+          const { data: existing } = await supabase.storage.from('request-files').list(folderPath);
+          if (existing?.some(f => f.name === fileName)) {
+            console.log(`[StorageService] Official PDF ${fileName} already exists. Skipping generation.`);
+            return; // Nada a fazer
+          }
+        }
       }
 
       console.log(`[StorageService] Generating Fallback PDF with manual coords: ${fullPath}`);
@@ -678,9 +780,74 @@ export const StorageService = {
   },
 
   // === Supabase Storage Helpers ===
+  
+  syncFilesFromStorage: async (studyNumber: string) => {
+    try {
+      if (!studyNumber) return null;
+      
+      const categories = ['Solicitacao', 'Resposta', 'Calculos', 'Outros'];
+      const updatedCategorizedFiles: any = {};
+      
+      for (const cat of categories) {
+        const folderPath = getRequestPath(studyNumber, cat);
+        const { data: storageFiles } = await supabase.storage.from('request-files').list(folderPath);
+        
+        if (storageFiles) {
+          updatedCategorizedFiles[cat] = storageFiles
+            .filter(f => f.name !== '.keep')
+            .map(f => ({
+              name: f.name,
+              size: f.metadata?.size || 0,
+              type: f.metadata?.mimetype || 'application/octet-stream',
+              lastModified: new Date(f.created_at).getTime()
+            }));
+        }
+      }
+
+      // Buscar registro atual no banco
+      const { data: dbRow } = await supabase
+        .from('requests')
+        .select('*')
+        .eq('study_number', studyNumber)
+        .single();
+      
+      if (!dbRow) return null;
+
+      const currentData = dbRow.data as FormData;
+      
+      // Verificar se houve mudança real (comparação simples de nomes e quantidades)
+      const currentSolicitacao = currentData.selectedFiles || [];
+      const newSolicitacao = updatedCategorizedFiles['Solicitacao'] || [];
+      
+      const hasChanges = JSON.stringify(currentData.categorizedFiles) !== JSON.stringify(updatedCategorizedFiles);
+
+      if (hasChanges) {
+        console.log(`[StorageService] Sync triggered for ${studyNumber}. Discrepancy detected.`);
+        const finalData = { 
+          ...currentData, 
+          selectedFiles: newSolicitacao,
+          categorizedFiles: updatedCategorizedFiles 
+        };
+
+        await supabase
+          .from('requests')
+          .update({ data: finalData })
+          .eq('study_number', studyNumber);
+          
+        return finalData;
+      }
+      return currentData;
+    } catch (err) {
+      console.error('[StorageService] Sync failed:', err);
+      return null;
+    }
+  },
 
   getRequestFiles: async (studyNumber: string, category: string = 'Solicitacao'): Promise<any[]> => {
     const folderPath = getRequestPath(studyNumber, category);
+
+    // Trigger sync in background or immediately? Let's do it immediately for the first load to ensure accuracy
+    await StorageService.syncFilesFromStorage(studyNumber);
 
     const { data, error } = await supabase.storage
       .from('request-files')
@@ -711,6 +878,17 @@ export const StorageService = {
     }
 
     return data.signedUrl;
+  },
+
+  deleteFile: async (fullPath: string) => {
+    const { error } = await supabase.storage
+      .from('request-files')
+      .remove([fullPath]);
+    
+    if (error) {
+      console.error('Error deleting file:', error);
+      throw error;
+    }
   },
 
   migrateRequestsToStorage: async (onProgress?: (msg: string) => void) => {

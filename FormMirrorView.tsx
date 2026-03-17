@@ -7,6 +7,7 @@ import { FormFO03 } from './FormFO03';
 import { FormFO04 } from './FormFO04';
 import { formatDate } from './utils';
 import { ValidationModal } from './ValidationModal';
+import { useDialog } from './AppDialog';
 
 interface FormMirrorViewProps {
   data: FormData;
@@ -20,6 +21,7 @@ interface FormMirrorViewProps {
 export const FormMirrorView: React.FC<FormMirrorViewProps> = ({ 
   data, onBack, currentUser, allUsers = [], onStatusUpdate, onStartExecution 
 }) => {
+  const { showAlert } = useDialog();
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -55,7 +57,7 @@ export const FormMirrorView: React.FC<FormMirrorViewProps> = ({
 
   const handleConfirmRejection = () => {
     if (!rejectionReason.trim()) {
-      alert('É obrigatório justificar o motivo da reprovação.');
+      showAlert('É obrigatório justificar o motivo da reprovação.', 'Campo Obrigatório', 'warning');
       return;
     }
     if (onStatusUpdate) {

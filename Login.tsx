@@ -5,6 +5,7 @@ import { NaturgyBranding } from './NaturgyBranding';
 import { StorageService } from './storage';
 import bcrypt from 'bcryptjs';
 import { EmailService } from './emailService';
+import { useDialog } from './AppDialog';
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -12,6 +13,7 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
+  const { showToast } = useDialog();
   const [users, setUsers] = useState<User[]>([]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,7 +21,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
   const [error, setError] = useState('');
   const [isDetecting, setIsDetecting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const [resetEmail, setResetEmail] = useState('');
   const [resetCodeInput, setResetCodeInput] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -36,7 +38,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
       }
     };
     fetchUsers();
-    
+
     let cancelled = false;
     (async () => {
       try {
@@ -71,11 +73,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
       const emailLower = email.toLowerCase().trim();
       const latestUsers = await StorageService.getUsers();
       let foundUser = latestUsers.find(u => u.email.toLowerCase() === emailLower);
-      
+
       if (foundUser) {
-        const storedHash = foundUser.password || ''; 
+        const storedHash = foundUser.password || '';
         let isMatch = false;
-        
+
         if (storedHash && (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$'))) {
           try {
             isMatch = bcrypt.compareSync(password, storedHash);
@@ -85,7 +87,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
         } else {
           isMatch = password === storedHash || ((!storedHash || storedHash === '') && password === '123456');
         }
-        
+
         if (isMatch) {
           onLogin(foundUser);
         } else {
@@ -108,7 +110,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
     try {
       const users = await StorageService.getUsers();
       const user = users.find(u => u.email.toLowerCase() === resetEmail.toLowerCase().trim());
-      
+
       if (!user) {
         setError('E-mail não encontrado no sistema.');
         setIsLoading(false);
@@ -163,7 +165,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
       await StorageService.updateUserPassword(resetEmail, hash);
       setResetStep(0);
       setEmail(resetEmail);
-      alert('Senha redefinida com sucesso!');
+      showToast('Senha redefinida com sucesso!', 'success');
     } catch (err) {
       setError('Erro ao atualizar senha');
     } finally {
@@ -175,12 +177,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
     <div className="min-h-screen bg-[#F0F4F8] flex flex-col font-sans selection:bg-orange-100">
       <div className="flex-grow flex items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-4xl bg-white rounded-[2.5rem] shadow-[0_20px_60px_-15px_rgba(0,64,128,0.15)] overflow-hidden flex flex-col md:flex-row min-h-[620px] border border-white/20">
-          
+
           {/* Lado Esquerdo */}
           <div className="w-full md:w-1/2 p-8 md:p-14 flex flex-col justify-center bg-[#004080]">
             <div className="mb-10 text-center md:text-left">
               <h2 className="text-2xl font-black text-white uppercase tracking-tight mb-2">Autenticação</h2>
-              <p className="text-slate-300 text-xs font-bold uppercase tracking-widest">Acesso via Microsoft Account</p>
+              <p className="text-slate-300 text-xs font-bold uppercase tracking-widest"></p>
             </div>
 
             <form onSubmit={handleFormLogin} className="space-y-6">
@@ -191,7 +193,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                 </label>
                 <div className="relative group">
                   <i className={`fa-solid ${isDetecting ? 'fa-circle-notch fa-spin' : 'fa-user-check'} absolute left-4 top-1/2 -translate-y-1/2 text-white/50 transition-colors`}></i>
-                  <input 
+                  <input
                     type="email"
                     required
                     readOnly={isAutoEmail}
@@ -209,7 +211,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                 </label>
                 <div className="relative group">
                   <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-white/50 transition-colors"></i>
-                  <input 
+                  <input
                     type="password"
                     required
                     value={password}
@@ -219,7 +221,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                   />
                 </div>
                 <div className="flex justify-end pr-1">
-                  <button 
+                  <button
                     type="button"
                     onClick={() => { setResetStep(1); setResetEmail(email); setError(''); }}
                     className="text-[10px] font-black text-white/40 uppercase tracking-widest hover:text-orange-400 transition-colors"
@@ -236,7 +238,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                 </div>
               )}
 
-              <button 
+              <button
                 type="submit"
                 disabled={isLoading || isDetecting}
                 className={`w-full py-5 rounded-[1.25rem] font-black uppercase text-xs tracking-[0.2em] shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-4 disabled:opacity-50 ${isDetecting ? 'bg-white/20 text-white/60' : 'bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/50 hover:shadow-orange-600/50'}`}
@@ -250,7 +252,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
 
               {!isDetecting && (
                 <div className="text-center pt-2">
-                  <button 
+                  <button
                     type="button"
                     onClick={onCreateAccount}
                     className="text-[10px] font-black text-white/60 uppercase tracking-widest hover:text-orange-400 transition-colors"
@@ -266,7 +268,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
           <div className="w-full md:w-1/2 bg-white p-12 text-[#004080] flex flex-col justify-between relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-slate-100 rounded-full -mr-32 -mt-32 blur-3xl"></div>
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-orange-100 rounded-full -ml-24 -mb-24 blur-3xl"></div>
-            
+
             <div className="relative z-10">
               <div className="inline-block mb-16 transform -rotate-2">
                 <div className="scale-125 origin-top-left">
@@ -299,7 +301,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                 <form onSubmit={handleRequestReset} className="space-y-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">E-mail Corporativo</label>
-                    <input 
+                    <input
                       type="email" required value={resetEmail}
                       onChange={(e) => setResetEmail(e.target.value)}
                       placeholder="exemplo@gmail.com"
@@ -316,8 +318,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
               {resetStep === 2 && (
                 <form onSubmit={handleVerifyCode} className="space-y-6">
                   <div className="space-y-2 text-center">
-                    <p className="text-[11px] text-slate-500 font-medium mb-4">Código enviado para <br/><span className="font-bold text-[#004080]">{resetEmail}</span></p>
-                    <input 
+                    <p className="text-[11px] text-slate-500 font-medium mb-4">Código enviado para <br /><span className="font-bold text-[#004080]">{resetEmail}</span></p>
+                    <input
                       type="text" required maxLength={6} value={resetCodeInput}
                       onChange={(e) => setResetCodeInput(e.target.value.replace(/\D/g, ''))}
                       placeholder="000000"
@@ -335,7 +337,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                 <form onSubmit={handleResetPassword} className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Nova Senha</label>
-                    <input 
+                    <input
                       type="password" required value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="••••••••"
@@ -344,7 +346,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Confirmar Senha</label>
-                    <input 
+                    <input
                       type="password" required value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="••••••••"

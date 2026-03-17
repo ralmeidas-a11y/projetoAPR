@@ -22,11 +22,22 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [browsingRequest, setBrowsingRequest] = useState<FormData | null>(null);
   const [activeTab, setActiveTab] = useState<'personal' | 'area'>('personal');
+  const [statusFilter, setStatusFilter] = useState('Todas');
   const itemsPerPage = 6;
 
   // Lógica para exibir todas as solicitações sem duplicar por revisão
   const latestRequests = useMemo(() => {
     if (!requests || requests.length === 0) return [];
+
+    const statusFilters = {
+      'Todas': () => true,
+      'Pendentes/Novas': (r: FormData) => r.status === StudyStatus.PENDENTE || r.status === StudyStatus.REJEITADO || r.status === StudyStatus.EM_ANALISE,
+      'Cadastradas': (r: FormData) => r.status === StudyStatus.AGUARDANDO_EXECUCAO,
+      'Em Execução': (r: FormData) => r.status === StudyStatus.EM_EXECUCAO,
+      'Controle de Qualidade': (r: FormData) => r.status === StudyStatus.CONTROLE_QUALIDADE,
+      'Concluídas': (r: FormData) => r.status === StudyStatus.CONCLUIDO,
+      'Canceladas': (r: FormData) => r.status === StudyStatus.CANCELADO
+    };
     
     // Filtrar primeiro por dono/área antes de agrupar revisões
     const filteredByTab = requests.filter(req => {
@@ -89,6 +100,9 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       });
     }
 
+    // Aplicar filtro de status
+    result = result.filter(statusFilters[statusFilter as keyof typeof statusFilters] || (() => true));
+
     // Ordenar por data (mais recente primeiro)
     return result.sort((a, b) => {
       const dateA = a.requestDate || '1900-01-01';
@@ -105,13 +119,13 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
     switch (status) {
       case StudyStatus.EM_ANALISE: return 'bg-blue-50 text-blue-600 border-blue-200';
       case StudyStatus.PENDENTE: return 'bg-amber-50 text-amber-600 border-amber-200 font-bold';
-      case StudyStatus.REJEITADO: return 'bg-red-50 text-red-600 border-red-200';
-      case StudyStatus.AGUARDANDO_EXECUCAO:
-      case StudyStatus.EM_EXECUCAO:
-      case StudyStatus.CONTROLE_QUALIDADE: return 'bg-orange-50 text-orange-600 border-orange-200';
+      case StudyStatus.REJEITADO: return 'bg-amber-50 text-amber-600 border-amber-200';
+      case StudyStatus.AGUARDANDO_EXECUCAO: return 'bg-orange-50 text-orange-600 border-orange-200';
+      case StudyStatus.EM_EXECUCAO: return 'bg-purple-50 text-purple-600 border-purple-200';
+      case StudyStatus.CONTROLE_QUALIDADE: return 'bg-purple-50 text-purple-600 border-purple-200 font-black';
       case StudyStatus.VALIDADO:
       case StudyStatus.CONCLUIDO: return 'bg-green-50 text-green-600 border-green-200';
-      case StudyStatus.CANCELADO: return 'bg-slate-100 text-slate-400 border-slate-200';
+      case StudyStatus.CANCELADO: return 'bg-red-50 text-red-600 border-red-200';
       default: return 'bg-slate-50 text-slate-400';
     }
   };
@@ -225,6 +239,24 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
           >
             <i className="fa-solid fa-plus text-xs"></i> Novo
           </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex gap-2 p-1 bg-slate-50 rounded-xl overflow-x-auto shrink-0 no-scrollbar w-full md:w-auto">
+          {['Todas', 'Pendentes/Novas', 'Cadastradas', 'Em Execução', 'Controle de Qualidade', 'Concluídas', 'Canceladas'].map(s => (
+            <button
+              key={s}
+              onClick={() => { setStatusFilter(s); setCurrentPage(1); }}
+              className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${statusFilter === s ? 'bg-white shadow-sm text-[#004080]' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        
+        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-2 rounded-xl border border-dashed border-slate-200">
+           Exibindo <span className="text-[#004080] font-black">{latestRequests.length}</span> solicitações
         </div>
       </div>
 

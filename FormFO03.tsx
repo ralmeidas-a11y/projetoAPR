@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { FormData } from './types';
 import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from './constants';
@@ -15,15 +14,22 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    if (readOnly) return;
     const { name, value, type } = e.target;
     let processedValue: string | number = value;
     if (type === 'number') {
       processedValue = value === '' ? '' : parseFloat(value);
     }
-    onChange({ [name]: processedValue });
+    
+    if (name === 'clientName') {
+      onChange({ [name]: processedValue, studyTitle: value });
+    } else {
+      onChange({ [name]: processedValue });
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
       const currentFiles = data.selectedFiles || [];
@@ -32,6 +38,7 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
   };
 
   const removeFile = (index: number) => {
+    if (readOnly) return;
     const currentFiles = data.selectedFiles || [];
     const updatedFiles = currentFiles.filter((_, i) => i !== index);
     onChange({ selectedFiles: updatedFiles });
@@ -39,6 +46,7 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
 
   // Logic & Calculations for FO.04 (now FO.03)
   useEffect(() => {
+    if (readOnly) return;
     const updates: Partial<FormData> = {};
     
     // 1. Total Predicted Flow Calculation (Instant + Increment)
@@ -75,23 +83,23 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
     if (Object.keys(updates).length > 0) {
       onChange(updates);
     }
-  }, [data.instantConsumption, data.consumptionIncrement, data.workHours, data.workDaysPerWeek, data.requestDate, data.totalPredictedFlow]);
+  }, [data.instantConsumption, data.consumptionIncrement, data.workHours, data.workDaysPerWeek, data.requestDate, data.totalPredictedFlow, readOnly]);
 
   const municipalities = [...MUNICIPALITIES_RJ, ...MUNICIPALITIES_SP];
 
   const renderField = (label: string, value: any, isRequired = false) => {
     return (
       <div className="flex flex-col border-b border-slate-100 py-1">
-        <span className="text-[9px] text-[#004080] font-bold uppercase tracking-tight">{label}</span>
-        <span className="text-[10pt] font-semibold text-slate-800">{value || '-'}</span>
+        <span className="text-[9px] text-[#004080] font-bold uppercase tracking-tight pb-0.5">{label}</span>
+        <span className="text-[10pt] font-semibold text-slate-800 pb-0.5">{value || '-'}</span>
       </div>
     );
   };
   
   // Clean UI classes (removed font-bold from labels)
-  const requiredLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-normal";
-  const standardLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-normal";
-  const inputBaseClass = "flex-grow p-1 rounded outline-none font-normal h-8 text-[10pt]";
+  const requiredLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-normal pb-0.5";
+  const standardLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-normal pb-0.5";
+  const inputBaseClass = "flex-grow p-1 rounded outline-none font-normal h-8 text-[10pt] mb-0.5";
 
   // Alphabetized Options
   const marketOptions = [
@@ -108,7 +116,9 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
   const naturgyOptions = ["Capital", "Interior", "SPS"].sort();
   const studyTypeOptions = ["Novo Estudo", "Revisão de Estudo"].sort();
   const pressureRangeOptions = ["AP", "MP"].sort();
-  const deliveryPointOptions = ["Aproximado", "Entrada Ramal"].sort();  return (
+  const deliveryPointOptions = ["Aproximado", "Entrada Ramal"].sort();
+
+  return (
     <div className={`${readOnly ? 'w-full' : 'max-w-4xl mx-auto'} space-y-6 ${readOnly ? 'pb-4' : 'pb-20'}`}>
       <datalist id="municipalities">
         {municipalities.map(city => <option key={city} value={city} />)}
@@ -295,35 +305,19 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
                      <span className="text-[8px] font-bold text-slate-400">Nm³/h</span>
                   </div>
                </div>
-               
-               {/* CAMPO PRESSÃO MÍNIMA */}
-               <div 
-                 className="flex flex-col gap-1 relative group"
-                 onMouseEnter={() => setShowPressureTooltip(true)}
-                 onMouseLeave={() => setShowPressureTooltip(false)}
-               >
-                  <label className={`${standardLabelClass} cursor-help underline decoration-dotted decoration-slate-300 w-max`}>
-                    Pressão mínima:
-                  </label>
-                  {showPressureTooltip && (
-                    <div className="absolute left-0 bottom-full mb-2 p-3 bg-white border border-slate-200 rounded-lg shadow-xl text-[9px] text-slate-600 z-20 w-72 animate-in fade-in zoom-in-95 leading-relaxed font-normal">
-                      Informe a pressão mínima desejada para o cliente, lembrando que a pressão de garantia normativa é 2 bares para rede até 4 bares para clientes GNV e 7 bares para Termogeração. Nos demais clientes, será 1 bar para redes MP e 5 bares para redes em AP.
-                    </div>
-                  )}
+               <div className="flex flex-col gap-1">
+                  <label className={`${standardLabelClass}`}>Pressão Mínima:</label>
                   <div className="flex items-center gap-2">
-                     <input type="number" name="minPressure" value={data.minPressure ?? ''} onChange={handleInputChange} className="w-full p-1 border border-slate-200 rounded text-center h-8 font-normal bg-white" />
+                     <input type="number" name="minPressure" value={data.minPressure ?? ''} onChange={handleInputChange} className="w-full p-1 border border-slate-200 rounded text-center h-8 bg-white" />
                      <span className="text-[8px] font-bold text-slate-400">bar</span>
                   </div>
                </div>
-
                <div className="flex flex-col gap-1">
                   <label className={`${standardLabelClass}`}>Faixa de pressão sugerida:</label>
-                  <div className="flex items-center gap-2">
-                     <select name="suggestedPressureRange" value={data.suggestedPressureRange || ''} onChange={handleInputChange} className="w-full p-1 border border-slate-200 rounded bg-white text-center h-8 text-[9px] font-normal">
-                        <option value="">Selecione...</option>
-                        {pressureRangeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                     </select>
-                  </div>
+                  <select name="suggestedPressureRange" value={data.suggestedPressureRange || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white text-[9px]`}>
+                     <option value="">Selecione...</option>
+                     {pressureRangeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
                </div>
             </div>
           </div>
@@ -332,65 +326,40 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
 
       {/* DADOS BASE PARA EXPANSÃO (CLIENTE EM SERVIÇO) */}
       <section className="bg-white border border-slate-200">
-        <div className="bg-white text-[#004080] px-4 py-1.5 font-bold rounded-t text-[9px] uppercase border-b border-slate-200 flex justify-between items-center">
-           <span>DADOS BASE PARA EXPANSÃO DE CONSUMO EM UM CLIENTE EM SERVIÇO</span>
-           <div className="flex items-center gap-4">
-              {!readOnly && (
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <div className="relative">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only" 
-                      checked={!!data.hasExpansion}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        if (!checked) {
-                          onChange({ 
-                            hasExpansion: false,
-                            sapIsuCode: '',
-                            industryName: '',
-                            currentConsumption: '',
-                            contractualPressure: '',
-                            currentPressureRange: ''
-                          });
-                        } else {
-                          onChange({ hasExpansion: true });
-                        }
-                      }}
-                    />
-                    <div className={`w-8 h-4 rounded-full transition-colors ${data.hasExpansion ? 'bg-orange-500' : 'bg-slate-300'}`}></div>
-                    <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${data.hasExpansion ? 'translate-x-4' : ''}`}></div>
+         <div className="bg-[#004080] text-white px-4 py-1.5 flex items-center justify-between rounded-t">
+            <span className="font-bold text-[10px] uppercase">DADOS BASE PARA EXPANSÃO DE CONSUMO EM UM CLIENTE EM SERVIÇO</span>
+            {!readOnly && (
+               <div className="flex items-center gap-2">
+                  <div 
+                     onClick={() => onChange({ hasExpansion: !data.hasExpansion })}
+                     className={`w-10 h-5 rounded-full relative transition-all cursor-pointer ${data.hasExpansion ? 'bg-orange-500' : 'bg-slate-300'}`}
+                  >
+                     <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${data.hasExpansion ? 'right-1' : 'left-1'}`} />
                   </div>
-                  <span className="text-[8px] font-black tracking-widest uppercase">{data.hasExpansion ? 'Habilitado' : 'Habilitar'}</span>
-                </label>
-              )}
-              <div className="flex items-center gap-2">
-                 <span className="text-[8px] font-normal">Código SAP ISU:</span>
-                 <input 
-                   name="sapIsuCode" 
-                   value={data.sapIsuCode || ''} 
-                   onChange={handleInputChange} 
-                   readOnly={readOnly || !data.hasExpansion} 
-                   className={`w-32 bg-white border border-slate-200 rounded h-5 px-2 text-[10px] outline-none font-normal ${!data.hasExpansion && !readOnly ? 'opacity-50 cursor-not-allowed' : ''}`} 
-                 />
-              </div>
-           </div>
-        </div>
+                  <span className="text-[8px] font-bold uppercase tracking-tight">Habilitar</span>
+               </div>
+            )}
+         </div>
         
         {readOnly ? (
-           <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-2 bg-white">
-              <div className="col-span-12 md:col-span-8">{renderField("Nome da Industria", data.industryName)}</div>
-              <div className="col-span-12 md:col-span-4">{renderField("SAP ISU", data.sapIsuCode)}</div>
-              <div className="col-span-12 md:col-span-6">{renderField("Cidade/Município", data.city)}</div>
-              <div className="col-span-12 md:col-span-6">{renderField("Bairro", data.neighborhood)}</div>
-              <div className="col-span-12 md:col-span-4">{renderField("Consumo Atual", `${data.currentConsumption || '0'} m³/h`)}</div>
-              <div className="col-span-12 md:col-span-4">{renderField("Pressão Contratual", `${data.contractualPressure || '0'} bar`)}</div>
-              <div className="col-span-12 md:col-span-4">{renderField("Faixa Pressão Atual", data.currentPressureRange)}</div>
-           </div>
-        ) : (
-          <div className={`p-4 grid grid-cols-12 gap-x-4 gap-y-3 bg-white transition-opacity ${!data.hasExpansion ? 'opacity-40 pointer-events-none' : ''}`}>
-             <div className="col-span-12 md:col-span-8 flex flex-col gap-1">
-                <label className={`${standardLabelClass}`}>Nome da Industria:</label>
+           data.hasExpansion ? (
+            <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-2 bg-white">
+               <div className="col-span-12">{renderField("Nome da Indústria", data.industryName)}</div>
+               <div className="col-span-12 md:col-span-8">{renderField("Cidade/Município", data.city)}</div>
+               <div className="col-span-12 md:col-span-4">{renderField("Bairro", data.neighborhood)}</div>
+               <div className="col-span-12 md:col-span-4">{renderField("Consumo Atual", `${data.currentConsumption || '0'} m³/h`)}</div>
+               <div className="col-span-12 md:col-span-4">{renderField("Pressão Contratual", `${data.contractualPressure || '0'} bar`)}</div>
+               <div className="col-span-12 md:col-span-4">{renderField("Faixa de Pressão Atual", data.currentPressureRange)}</div>
+            </div>
+           ) : (
+             <div className="p-8 text-center bg-slate-50/50">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Não houve expansão de consumo informada para este estudo.</span>
+             </div>
+           )
+         ) : (
+           <div className={`p-4 grid grid-cols-12 gap-x-4 gap-y-3 transition-all duration-300 ${!data.hasExpansion ? 'opacity-40 grayscale' : ''}`}>
+             <div className="col-span-12 flex flex-col gap-1">
+                <label className={`${standardLabelClass}`}>Nome da Indústria:</label>
                 <input name="industryName" value={data.industryName || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`} disabled={!data.hasExpansion} />
              </div>
              <div className="col-span-12 md:col-span-8 flex flex-col gap-1">
@@ -423,14 +392,14 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
                 </select>
              </div>
           </div>
-        )}
+         )}
       </section>
 
       {/* Documentação e Anexos */}
-      {!readOnly && (
-        <section>
-          <div className="bg-[#004080] text-white px-4 py-2 font-normal rounded-t-lg uppercase">Documentação e Anexos</div>
-          <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
+      <section>
+        <div className="bg-[#004080] text-white px-4 py-2 font-normal rounded-t-lg uppercase">Documentação e Anexos</div>
+        <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
+          {!readOnly && (
             <div 
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center gap-3 hover:border-[#FF8000] transition-all cursor-pointer group bg-white"
@@ -451,29 +420,34 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
                 accept=".pdf,.jpg,.jpeg,.png,.dwg,.kmz"
               />
             </div>
+          )}
 
-            {data.selectedFiles && data.selectedFiles.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                {data.selectedFiles.map((file, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <i className="fa-solid fa-file-lines text-[#004080]"></i>
-                      <span className="text-xs font-medium text-slate-700 truncate">{file.name}</span>
-                      <span className="text-[10px] text-slate-400 whitespace-nowrap">({(file.size / 1024).toFixed(0)} KB)</span>
-                    </div>
+          {data.selectedFiles && data.selectedFiles.length > 0 && (
+            <div className={`grid grid-cols-1 ${!readOnly ? 'md:grid-cols-2' : ''} gap-3 mt-4`}>
+              {data.selectedFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="flex items-center gap-3 flex-grow min-w-0">
+                    <i className="fa-solid fa-file-lines text-[#004080] shrink-0"></i>
+                    <span className="text-xs font-medium text-slate-700 break-all">{file.name}</span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
+                  </div>
+                  {!readOnly && (
                     <button 
                       onClick={() => removeFile(idx)}
                       className="p-1 hover:text-red-500 transition-colors text-slate-300"
                     >
                       <i className="fa-solid fa-xmark"></i>
                     </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {readOnly && (!data.selectedFiles || data.selectedFiles.length === 0) && (
+            <p className="text-xs text-slate-400 italic text-center py-4">Nenhum documento anexo à solicitação.</p>
+          )}
+        </div>
+      </section>
 
       {/* CONSIDERAÇÕES E PRAZOS */}
       <section className="bg-white border border-slate-200 rounded-lg p-4">

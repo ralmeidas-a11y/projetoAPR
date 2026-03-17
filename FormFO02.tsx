@@ -26,7 +26,12 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
     if (type === 'number') {
       processedValue = value === '' ? '' : parseFloat(value);
     }
-    onChange({ [name]: processedValue });
+    
+    if (name === 'studyTitle') {
+      onChange({ [name]: processedValue, studyTitle: value });
+    } else {
+      onChange({ [name]: processedValue });
+    }
   };
 
   const handleGridChange = (rowKey: string, colKey: string, value: string) => {
@@ -85,11 +90,14 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
   const renderField = (label: string, value: any, isRequired = false) => {
     return (
       <div className="flex flex-col border-b border-slate-100 py-1">
-        <span className="text-[9px] text-[#004080] font-bold uppercase tracking-tight">{label}</span>
-        <span className="text-[10pt] font-semibold text-slate-800">{value || '-'}</span>
+        <span className="text-[9px] text-[#004080] font-bold uppercase tracking-tight pb-0.5">{label}</span>
+        <span className="text-[10pt] font-semibold text-slate-800 pb-0.5">{value || '-'}</span>
       </div>
     );
   };
+
+  const standardLabelClass = "text-[9px] font-bold text-[#004080] uppercase tracking-tight pb-0.5";
+  const requiredLabelClass = "text-[9px] font-bold text-[#004080] uppercase tracking-tight pb-0.5";
 
   return (
     <div className={`${readOnly ? 'w-full' : 'max-w-4xl mx-auto'} space-y-6 ${readOnly ? 'pb-4' : 'pb-20'}`}>
@@ -101,8 +109,6 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
       <div className="bg-[#004080] text-white text-center py-2 px-4 rounded font-bold uppercase tracking-wide text-xs">
         ESTUDO ADR PARA GASEIFICAÇÕES TOTAIS OU PARCIAIS DE ÁREAS EM EXPANSÃO OU NOVOS MUNICÍPIOS
       </div>
-
-
 
       {/* Dados do Solicitante */}
       <section className="bg-white border border-slate-200">
@@ -123,8 +129,8 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
          ) : (
            <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-3 bg-white">
             <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-slate-500 uppercase">Naturgy:</label>
-              <select name="naturgyUnit" value={data.naturgyUnit || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded bg-white outline-none font-normal">
+              <label className={standardLabelClass}>Naturgy:</label>
+              <select name="naturgyUnit" value={data.naturgyUnit || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded bg-white outline-none font-normal h-10">
                 <option value="">Selecione...</option>
                 <option value="Capital">Capital</option>
                 <option value="Interior">Interior</option>
@@ -132,41 +138,41 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
               </select>
             </div>
             <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Tipo de Estudo:</label>
-              <select name="studyType" value={data.studyType || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded bg-white outline-none font-normal">
+              <label className={requiredLabelClass}>Tipo de Estudo:</label>
+              <select name="studyType" value={data.studyType || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded bg-white outline-none font-normal h-10">
                 <option value="">Selecione...</option>
                 <option value="Novo Estudo">Novo Estudo</option>
                 <option value="Revisão de Estudo">Revisão de Estudo</option>
               </select>
             </div>
             <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Data da Solicitação:</label>
-              <input type="date" name="requestDate" value={data.requestDate || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white" />
+              <label className={requiredLabelClass}>Data da Solicitação:</label>
+              <input type="date" name="requestDate" value={data.requestDate || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white h-10" />
             </div>
             {data.studyType === 'Revisão de Estudo' && (
               <div className="col-span-12 flex flex-col gap-1">
-                <label className="text-[9px] font-normal text-[#004080] uppercase">Estudo Anterior:</label>
-                <input name="previousStudy" value={data.previousStudy || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white" placeholder="Código do estudo anterior para revisão" />
+                <label className={requiredLabelClass}>Estudo Anterior:</label>
+                <input name="previousStudy" value={data.previousStudy || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white h-10" placeholder="Código do estudo anterior para revisão" />
               </div>
             )}
             <div className="col-span-12 md:col-span-8 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Resp. Solicitação:</label>
-              <input name="requesterName" value={data.requesterName || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white" placeholder="Nome Completo" />
+              <label className={requiredLabelClass}>Resp. Solicitação:</label>
+              <input name="requesterName" value={data.requesterName || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white h-10" placeholder="Nome Completo" />
             </div>
             <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Telefone:</label>
-              <input name="phone" value={data.phone || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white" placeholder="(XX) XXXXX-XXXX" />
+              <label className={requiredLabelClass}>Telefone:</label>
+              <input name="phone" value={data.phone || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white h-10" placeholder="(XX) XXXXX-XXXX" />
             </div>
             <div className="col-span-12 md:col-span-8 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Área Solicitante:</label>
-              <select name="requesterArea" value={data.requesterArea || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none bg-white font-normal">
+              <label className={requiredLabelClass}>Área Solicitante:</label>
+              <select name="requesterArea" value={data.requesterArea || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none bg-white font-normal h-10">
                 <option value="">Selecione a área...</option>
                 {REQUESTER_AREAS.map(area => (<option key={area} value={area}>{area}</option>))}
               </select>
             </div>
             <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">E-mail:</label>
-              <input type="email" name="email" value={data.email || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white" />
+              <label className={requiredLabelClass}>E-mail:</label>
+              <input type="email" name="email" value={data.email || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white h-10" />
             </div>
           </div>
          )}
@@ -185,33 +191,33 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
         ) : (
           <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-3 bg-white">
             <div className="col-span-12 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Título Projeto:</label>
-              <input name="studyTitle" value={data.studyTitle || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white" />
+              <label className={requiredLabelClass}>Título Projeto:</label>
+              <input name="studyTitle" value={data.studyTitle || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none font-normal bg-white h-10" />
             </div>
             <div className="col-span-12 md:col-span-3 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Estado:</label>
-              <select name="state" value={data.state || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none bg-white font-normal">
+              <label className={standardLabelClass}>Estado:</label>
+              <select name="state" value={data.state || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded outline-none bg-white font-normal h-10">
                 <option value="">Selecione...</option>
-                <option value="Outros">Outros</option>
                 <option value="Rio de Janeiro">Rio de Janeiro</option>
-                <option value="Rio/São Paulo">Rio/São Paulo</option>
                 <option value="São Paulo">São Paulo</option>
+                <option value="Rio/São Paulo">Rio/São Paulo</option>
+                <option value="Outros">Outros</option>
               </select>
             </div>
             <div className="col-span-12 md:col-span-5 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Cidade/Município:</label>
+              <label className={requiredLabelClass}>Cidade/Município:</label>
               <input 
                 name="city" 
                 list="municipalities"
                 value={data.city || ''} 
                 onChange={handleInputChange} 
-                className="p-2 border border-slate-300 rounded outline-none font-normal bg-white" 
+                className="p-2 border border-slate-300 rounded outline-none font-normal bg-white h-10" 
                 placeholder="Digite o nome da cidade para sugestões..."
               />
             </div>
             <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
-              <label className="text-[9px] font-normal text-[#004080] uppercase">Tipo de Gaseificação:</label>
-              <select name="gasificationType" value={data.gasificationType || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded bg-white outline-none font-normal">
+              <label className={standardLabelClass}>Tipo de Gaseificação:</label>
+              <select name="gasificationType" value={data.gasificationType || ''} onChange={handleInputChange} className="p-2 border border-slate-300 rounded bg-white outline-none font-normal h-10">
                 <option value="">Selecione...</option>
                 <option value="Parcial">Parcial</option>
                 <option value="Total">Total</option>
@@ -235,35 +241,35 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
           {rows.map((row) => (
             <React.Fragment key={row.key}>
               <div className={`${gridCellBase} ${colLeft} border-b border-r font-medium`}>{row.label}</div>
-              <div className={`${gridCellBase} ${colCenter} border-b border-r h-full p-0`}>
+              <div className={`${gridCellBase} ${colCenter} border-b border-r h-full p-0 flex items-center justify-center`}>
                 {readOnly ? (
-                  <span className="font-semibold">{data.gridDataFO02?.[row.key]?.atuais || '-'}</span>
+                  <span className="font-semibold text-slate-700">{data.gridDataFO02?.[row.key]?.atuais || '-'}</span>
                 ) : (
                   <input type="number" value={data.gridDataFO02?.[row.key]?.atuais ?? ''} onChange={(e) => handleGridChange(row.key, 'atuais', e.target.value)} className={inputGridClass} />
                 )}
               </div>
-              <div className={`${gridCellBase} ${colCenter} border-b border-r h-full p-0`}>
+              <div className={`${gridCellBase} ${colCenter} border-b border-r h-full p-0 flex items-center justify-center`}>
                 {readOnly ? (
-                  <span className="font-semibold">{data.gridDataFO02?.[row.key]?.y2 || '-'}</span>
+                  <span className="font-semibold text-slate-700">{data.gridDataFO02?.[row.key]?.y2 || '-'}</span>
                 ) : (
                   <input type="number" value={data.gridDataFO02?.[row.key]?.y2 ?? ''} onChange={(e) => handleGridChange(row.key, 'y2', e.target.value)} className={inputGridClass} />
                 )}
               </div>
-              <div className={`${gridCellBase} ${colCenter} border-b border-r h-full p-0`}>
+              <div className={`${gridCellBase} ${colCenter} border-b border-r h-full p-0 flex items-center justify-center`}>
                 {readOnly ? (
-                  <span className="font-semibold">{data.gridDataFO02?.[row.key]?.y5 || '-'}</span>
+                  <span className="font-semibold text-slate-700">{data.gridDataFO02?.[row.key]?.y5 || '-'}</span>
                 ) : (
                   <input type="number" value={data.gridDataFO02?.[row.key]?.y5 ?? ''} onChange={(e) => handleGridChange(row.key, 'y5', e.target.value)} className={inputGridClass} />
                 )}
               </div>
-              <div className={`${gridCellBase} ${colCenter} border-b border-r h-full p-0`}>
+              <div className={`${gridCellBase} ${colCenter} border-b border-r h-full p-0 flex items-center justify-center`}>
                 {readOnly ? (
-                  <span className="font-semibold">{data.gridDataFO02?.[row.key]?.y20 || '-'}</span>
+                  <span className="font-semibold text-slate-700">{data.gridDataFO02?.[row.key]?.y20 || '-'}</span>
                 ) : (
                   <input type="number" value={data.gridDataFO02?.[row.key]?.y20 ?? ''} onChange={(e) => handleGridChange(row.key, 'y20', e.target.value)} className={inputGridClass} />
                 )}
               </div>
-              <div className={`${gridCellBase} ${colCenter} border-b bg-white h-full p-0`}>
+              <div className={`${gridCellBase} ${colCenter} border-b bg-white h-full p-0 flex items-center justify-center`}>
                 {readOnly ? (
                   <span className="font-bold text-[#004080]">{formatBR(data.gridDataFO02?.[row.key]?.totalQ)}</span>
                 ) : (
@@ -273,18 +279,18 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
             </React.Fragment>
           ))}
 
-          <div className={`${gridCellBase} ${colLeft} border-r font-bold bg-white`}>Totais:</div>
-          <div className={`${gridCellBase} ${colCenter} border-r font-bold bg-white text-[#004080]`}>{calculateTotals('atuais')}</div>
-          <div className={`${gridCellBase} ${colCenter} border-r font-bold bg-white text-[#004080]`}>{calculateTotals('y2')}</div>
-          <div className={`${gridCellBase} ${colCenter} border-r font-bold bg-white text-[#004080]`}>{calculateTotals('y5')}</div>
-          <div className={`${gridCellBase} ${colCenter} border-r font-bold bg-white text-[#004080]`}>{calculateTotals('y20')}</div>
-          <div className={`${gridCellBase} ${colCenter} font-bold bg-[#004080] text-white`}>{formatBR(calculateTotals('totalQ'))}</div>
+          <div className={`${gridCellBase} ${colLeft} border-r font-bold bg-white uppercase`}>Totais:</div>
+          <div className={`${gridCellBase} ${colCenter} border-r font-bold bg-white text-[#004080]`}>{formatBR(calculateTotals('atuais'))}</div>
+          <div className={`${gridCellBase} ${colCenter} border-r font-bold bg-white text-[#004080]`}>{formatBR(calculateTotals('y2'))}</div>
+          <div className={`${gridCellBase} ${colCenter} border-r font-bold bg-white text-[#004080]`}>{formatBR(calculateTotals('y5'))}</div>
+          <div className={`${gridCellBase} ${colCenter} border-r font-bold bg-white text-[#004080]`}>{formatBR(calculateTotals('y20'))}</div>
+          <div className={`border-slate-200 flex items-center h-14 overflow-hidden ${colCenter} font-bold bg-[#004080] text-white`}>{formatBR(calculateTotals('totalQ'))}</div>
         </div>
       </section>
 
-      {/* Technical Requirements */}
+      {/* Requisitos Técnicos */}
       <section className="p-6 border border-slate-200 rounded-lg bg-white">
-        <h4 className="font-bold text-[#004080] mb-4 uppercase text-xs">Requisitos técnicos para instalação de infraestrutura:</h4>
+        <h4 className="font-bold text-[#004080] mb-4 uppercase text-[9px]">Requisitos técnicos para instalação de infraestrutura:</h4>
         <ul className="space-y-3 text-[9pt] text-slate-600 list-none">
           <li className="flex gap-2">
             <span className="font-bold text-[#004080]">a.</span>
@@ -306,11 +312,11 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
       </section>
 
       {/* Documentação e Anexos */}
-      {!readOnly && (
-        <section>
-          <div className="bg-[#004080] text-white px-4 py-2 font-normal rounded-t-lg uppercase">Documentação e Anexos</div>
-          <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
-            <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center gap-3 hover:border-[#FF8000] transition-all cursor-pointer group bg-white">
+      <section>
+        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold rounded-t text-[10px] uppercase">Documentação e Anexos</div>
+        <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
+          {!readOnly && (
+            <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center gap-3 hover:border-[#FF8000] transition-all cursor-pointer group bg-white text-center">
               <div className="w-12 h-12 rounded-full bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-[#FF8000] group-hover:bg-white transition-all shadow-sm">
                 <i className="fa-solid fa-cloud-arrow-up text-xl"></i>
               </div>
@@ -320,28 +326,35 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
               </div>
               <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileChange} accept=".pdf,.kmz,.jpg,.jpeg,.png,.dwg" />
             </div>
+          )}
 
-            {data.selectedFiles && data.selectedFiles.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                {data.selectedFiles.map((file, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <i className="fa-solid fa-file-lines text-[#004080]"></i>
-                      <span className="text-xs font-medium text-slate-700 truncate">{file.name}</span>
-                      <span className="text-[10px] text-slate-400 whitespace-nowrap">({(file.size / 1024).toFixed(0)} KB)</span>
-                    </div>
-                    <button onClick={() => removeFile(idx)} className="p-1 hover:text-red-500 transition-colors text-slate-300"><i className="fa-solid fa-xmark"></i></button>
+          {data.selectedFiles && data.selectedFiles.length > 0 && (
+            <div className={`grid grid-cols-1 ${!readOnly ? 'md:grid-cols-2' : ''} gap-3 mt-4`}>
+              {data.selectedFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="flex items-center gap-3 flex-grow min-w-0">
+                    <i className="fa-solid fa-file-lines text-[#004080] shrink-0"></i>
+                    <span className="text-xs font-medium text-slate-700 break-all">{file.name}</span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
+                  {!readOnly && (
+                    <button onClick={() => removeFile(idx)} className="p-1 hover:text-red-500 transition-colors text-slate-300">
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {readOnly && (!data.selectedFiles || data.selectedFiles.length === 0) && (
+            <p className="text-xs text-slate-400 italic text-center py-4 uppercase font-bold tracking-widest">Nenhum documento anexo à solicitação.</p>
+          )}
+        </div>
+      </section>
 
       {/* Comentários */}
       <section>
-        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">Comentários</div>
+        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold rounded-t text-[10px] uppercase">Comentários</div>
         <div className={`p-4 border border-slate-200 bg-white ${readOnly ? '' : 'rounded-b-lg'}`}>
           {readOnly ? (
             <div className="min-h-[80px] text-[10pt] text-slate-700 whitespace-pre-wrap">
@@ -352,8 +365,6 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
           )}
         </div>
       </section>
-
-      
     </div>
   );
 };

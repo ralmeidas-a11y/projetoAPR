@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { FormData, User, UserRole, StudyStatus } from './types';
 import { StorageService, getRequestPath } from './storage';
 import { FormMirrorView } from './FormMirrorView';
+import { useDialog } from './AppDialog';
 
 interface FileBrowserModalProps {
   request: FormData;
@@ -11,12 +12,14 @@ interface FileBrowserModalProps {
   allRequests?: FormData[];
   onStatusUpdate?: (id: string, status: StudyStatus, reason?: string, assignedTo?: string, additionalData?: Partial<FormData>) => void;
   onStartExecution?: (request: FormData) => void;
+  restrictToCategory?: string;
 }
 
 export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({ 
-  request, user, onClose, allUsers = [], allRequests = [], onStatusUpdate, onStartExecution 
+  request, user, onClose, allUsers = [], allRequests = [], onStatusUpdate, onStartExecution, restrictToCategory 
 }) => {
-  const [activeCategory, setActiveCategory] = useState<string>('Solicitacao');
+  const { showConfirm, showToast } = useDialog();
+  const [activeCategory, setActiveCategory] = useState<string>(restrictToCategory || 'Solicitacao');
   const [files, setFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewingFormMirror, setViewingFormMirror] = useState(false);
@@ -51,9 +54,16 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
   }, [allRequests, activeRevision, request]);
 
   const categories = ['Solicitacao', 'Resposta', 'Calculos', 'Outros'];
-  const availableCategories = isStaff 
-    ? categories 
-    : categories.filter(c => c === 'Solicitacao' || (c === 'Resposta' && selectedRevisionData.status === StudyStatus.CONCLUIDO));
+  const availableCategories = useMemo(() => {
+    const base = isStaff 
+      ? categories 
+      : categories.filter(c => c === 'Solicitacao' || (c === 'Resposta' && selectedRevisionData.status === StudyStatus.CONCLUIDO));
+    
+    if (restrictToCategory) {
+      return base.filter(c => c === restrictToCategory);
+    }
+    return base;
+  }, [isStaff, restrictToCategory, selectedRevisionData.status]);
 
   const loadFiles = useCallback(async () => {
     if (!activeRevision) return;
@@ -133,7 +143,7 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       
       <div className="relative w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col max-h-[90vh]">
@@ -182,22 +192,24 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="bg-white border-b border-slate-200 px-6 py-4 flex gap-2 overflow-x-auto no-scrollbar">
-          {availableCategories.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-                activeCategory === cat 
-                ? 'bg-[#004080] text-white shadow-md' 
-                : 'bg-slate-50 text-slate-400 border border-slate-200 hover:text-slate-600'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
+        {/* Tabs - Hidden if restricted to single category */}
+        {availableCategories.length > 1 && (
+          <div className="bg-white border-b border-slate-200 px-6 py-4 flex gap-2 overflow-x-auto no-scrollbar">
+            {availableCategories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                  activeCategory === cat 
+                  ? 'bg-[#004080] text-white shadow-md' 
+                  : 'bg-slate-50 text-slate-400 border border-slate-200 hover:text-slate-600'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* File List */}
         <div className="flex-grow overflow-y-auto p-6 bg-slate-50/30 custom-scrollbar">
@@ -237,7 +249,7 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                           link.href = url;
                           link.download = file.name;
                           link.click();
-                        } else alert('Erro ao buscar arquivo.');
+                        } else showToast('Erro ao buscar arquivo.', 'error');
                       }}
                       className="h-9 w-9 rounded-xl bg-slate-100 text-slate-600 hover:bg-[#004080] hover:text-white transition-all flex items-center justify-center active:scale-90"
                       title="Download"
@@ -246,18 +258,43 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                     </button>
                     
                     {!file.isVirtualForm && (
-                      <button 
-                        onClick={async () => {
-                          const url = await StorageService.getFileUrl(file.fullPath);
-                          if (url) window.open(url, '_blank');
-                          else alert('Erro ao abrir arquivo.');
-                        }}
-                        className={`h-9 ${file.name.startsWith('Formulario') ? 'px-4 bg-orange-500 text-white shadow-lg shadow-orange-100' : 'w-9 bg-slate-100 text-slate-600'} rounded-xl hover:bg-orange-600 hover:text-white transition-all flex items-center justify-center gap-2 active:scale-90 font-black uppercase text-[9px] tracking-widest`}
-                        title="Visualizar em Nova Guia"
-                      >
-                        <i className="fa-solid fa-eye text-xs"></i>
-                        {file.name.startsWith('Formulario') ? 'Ver' : null}
-                      </button>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={async () => {
+                            const url = await StorageService.getFileUrl(file.fullPath);
+                            if (url) window.open(url, '_blank');
+                            else showToast('Erro ao abrir arquivo.', 'error');
+                          }}
+                          className={`h-9 ${file.name.startsWith('Formulario') ? 'px-4 bg-orange-500 text-white shadow-lg shadow-orange-100' : 'w-9 bg-slate-100 text-slate-600'} rounded-xl hover:bg-orange-600 hover:text-white transition-all flex items-center justify-center gap-2 active:scale-90 font-black uppercase text-[9px] tracking-widest`}
+                          title="Visualizar em Nova Guia"
+                        >
+                          <i className="fa-solid fa-eye text-xs"></i>
+                          {file.name.startsWith('Formulario') ? 'Ver' : null}
+                        </button>
+
+                        <button 
+                          onClick={async () => {
+                            const ok = await showConfirm(`Deseja realmente excluir o arquivo "${file.name}"? Esta ação removerá o arquivo permanentemente do Storage e do Banco de Dados.`, 'Excluir Arquivo');
+                            if (ok) {
+                              setLoading(true);
+                              try {
+                                await StorageService.deleteFile(file.fullPath);
+                                // Após deletar fisicamente, disparar um sync para limpar o banco também
+                                await StorageService.syncFilesFromStorage(activeRevision);
+                                await loadFiles();
+                              } catch (err) {
+                                showToast('Erro ao excluir arquivo', 'error');
+                              } finally {
+                                setLoading(false);
+                              }
+                            }
+                          }}
+                          className="h-9 w-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center active:scale-90"
+                          title="Excluir Arquivo"
+                        >
+                          <i className="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

@@ -4,6 +4,7 @@ import { User } from './types';
 import { NaturgyLogo, REQUESTER_AREAS } from './constants';
 import { StorageService } from './storage';
 import bcrypt from 'bcryptjs';
+import { useDialog } from './AppDialog';
 
 
 interface OnboardingProps {
@@ -12,6 +13,7 @@ interface OnboardingProps {
 }
 
 export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
+  const { showAlert } = useDialog();
   // Perfil estados
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email || '');
@@ -31,17 +33,17 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
     e.preventDefault();
     
     if (!name.trim() || !email.trim() || !area || !phone.trim() || !naturgyUnit || !password) {
-      alert('Por favor, preencha todos os campos, incluindo a senha');
+      showAlert('Por favor, preencha todos os campos, incluindo a senha', 'Campos Obrigatórios', 'warning');
       return;
     }
 
     if (password.length < 6) {
-      alert('A senha deve ter pelo menos 6 caracteres');
+      showAlert('A senha deve ter pelo menos 6 caracteres', 'Senha Inválida', 'warning');
       return;
     }
 
     if (password !== confirmPassword) {
-      alert('As senhas não coincidem');
+      showAlert('As senhas não coincidem', 'Senha Inválida', 'warning');
       return;
     }
 
@@ -74,7 +76,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
       }, 1500);
     } catch (error) {
       console.error('Erro ao atualizar perfil:', error);
-      alert('Erro ao atualizar perfil');
+      showAlert('Erro ao atualizar perfil', 'Erro', 'error');
     } finally {
       setIsLoading(false);
     }

@@ -10,12 +10,14 @@ import { FormFO03 } from './FormFO03';
 import { FormFO04 } from './FormFO04';
 import { StorageService, getRequestPath } from './storage';
 import { ValidationModal } from './ValidationModal';
+import { FileBrowserModal } from './FileBrowserModal';
+import { useDialog } from './AppDialog';
 
 interface FormContainerProps {
   formType: FormType;
   initialData?: FormData;
   onBack: () => void;
-  onSubmit: (data: FormData) => void;
+  onSubmit: (data: FormData, pdfFile?: File) => void;
   userId: string;
   currentUser?: User;
   allUsers?: User[];
@@ -29,10 +31,12 @@ interface FormContainerProps {
 export const FormContainer: React.FC<FormContainerProps> = ({ 
   formType, initialData, onBack, onSubmit, userId, currentUser, allUsers = [], allRequests = [], readOnly = false, onStatusUpdate, onStartExecution, onViewRequest 
 }) => {
+  const { showAlert } = useDialog();
+  const [browsingPrecedentStudy, setBrowsingPrecedentStudy] = useState<FormData | null>(null);
   const [formData, setFormData] = useState<FormData>(initialData || {
     id: crypto.randomUUID(),
     studyNumber: '',
-    status: StudyStatus.PENDENTE,
+    status: StudyStatus.EM_ANALISE,
     user_id: userId,
     formType: formType,
     requestDate: getGMT3ISOString().split('T')[0],
@@ -67,6 +71,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   const isOwner = initialData?.assignedTo === currentUser?.id;
   const [supabaseFiles, setSupabaseFiles] = useState<any[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
 
   // Carregar arquivos do Supabase se initialData existir
@@ -77,7 +82,10 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       setIsLoadingFiles(true);
       try {
         const files = await StorageService.getRequestFiles(initialData.studyNumber, 'Solicitacao');
-        if (isMounted) setSupabaseFiles(files);
+        if (isMounted) {
+          const filtered = files.filter(f => f.name !== '.keep');
+          setSupabaseFiles(filtered);
+        }
       } catch (err) {
         console.error('Error loading Supabase files:', err);
       } finally {
@@ -153,11 +161,41 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       
       if (formRef.current) {
         try {
-          const canvas = await html2canvas(formRef.current, { 
+          // Ativa modo de exportação para ocultar elementos administrativos e inputs
+          setIsExporting(true);
+          
+          // Pequena pausa para garantir que o React renderizou o estado isExporting
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Garante que o scroll esteja no topo para captura completa sem cortes do viewport
+          window.scrollTo(0, 0);
+          
+          const element = formRef.current;
+          
+          // Temporary style to ensure correct capture
+          const originalStyle = element.style.cssText;
+          element.style.width = '1200px'; 
+          element.style.height = 'auto';
+          element.style.overflow = 'visible';
+          
+          const canvas = await html2canvas(element, { 
             scale: 2, 
             useCORS: true,
-            backgroundColor: '#ffffff'
+            backgroundColor: '#ffffff',
+            windowWidth: 1200,
+            width: 1200,
+            onclone: (clonedDoc) => {
+              const clonedElement = clonedDoc.body.querySelector('.bg-white.p-4.rounded-xl');
+              if (clonedElement instanceof HTMLElement) {
+                clonedElement.style.width = '1200px';
+                clonedElement.style.height = 'auto';
+                clonedElement.style.overflow = 'visible';
+              }
+            }
           });
+          
+          element.style.cssText = originalStyle;
+          setIsExporting(false); // Volta ao normal
           
           const imgData = canvas.toDataURL('image/jpeg', 1.0);
           const pdf = new jsPDF({
@@ -173,23 +211,22 @@ export const FormContainer: React.FC<FormContainerProps> = ({
           const pdfBlob = pdf.output('blob');
           const fileName = `Formulario_Oficial_${formData.studyNumber || formData.id}.pdf`;
           generatedPdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-          console.log('[FormContainer] html2canvas snapshot successfully generated!');
         } catch (canvasErr) {
           console.error('[FormContainer] Error capturing DOM snapshot:', canvasErr);
+          setIsExporting(false);
         }
       }
 
-      // IMPORTANTE: Isso deve ocorrer ANTES de qualquer validação técnica posterior
-      await StorageService.uploadOfficialForm(formData, generatedPdfFile);
-      console.log('[FormContainer] Official form PDF generation process completed');
+      // Passamos o PDF gerado para o onSubmit, que agora cuidará do upload sincronizado
+      onSubmit(formData, generatedPdfFile);
     } catch (err) {
       console.error('[FormContainer] Failed to generate PDF mirror during submission:', err);
-      // Prosseguir mesmo se o PDF falhar para não bloquear o envio dos dados
+      // Se falhar o PDF, enviamos apenas os dados para não bloquear
+      onSubmit(formData);
     }
 
     setTimeout(() => {
       setIsSubmitting(false);
-      onSubmit(formData);
     }, 1200);
   };
 
@@ -207,7 +244,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   const handleConfirmRejection = () => {
     if (!rejectionReason.trim()) {
-      alert('É obrigatório justificar o motivo da reprovação.');
+      showAlert('É obrigatório justificar o motivo da reprovação.', 'Campo Obrigatório', 'warning');
       return;
     }
     if (onStatusUpdate && initialData) {
@@ -260,18 +297,18 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
     // 3. Fallback: Se tivermos o studyNumber, tentar abrir a pasta
     if (initialData?.studyNumber) {
-       alert(`Não foi possível abrir o arquivo diretamente. Abrindo a pasta da solicitação: ${initialData.studyNumber}`);
+       showAlert(`Não foi possível abrir o arquivo diretamente. Abrindo a pasta da solicitação: ${initialData.studyNumber}`, 'Aviso');
        if ((window as any).api?.openFolder) {
          const folderPath = `solicitantes/${initialData.requesterName}/${initialData.studyNumber}`;
          await (window as any).api.openFolder(folderPath);
        }
     } else {
-      alert("Arquivo não disponível para pré-visualização direta.");
+      showAlert('Arquivo não disponível para pré-visualização direta.', 'Aviso');
     }
   };
 
   const renderForm = () => {
-    const commonProps = { data: formData, onChange: handleUpdateData, readOnly };
+    const commonProps = { data: formData, onChange: handleUpdateData, readOnly: readOnly || isExporting };
     switch (formType) {
       case FormType.RESIDENTIAL_COMMERCIAL: return <FormFO01 {...commonProps} />;
       case FormType.EXPANSION_AREAS: return <FormFO02 {...commonProps} />;
@@ -379,6 +416,17 @@ export const FormContainer: React.FC<FormContainerProps> = ({
           />
         )}
 
+        {browsingPrecedentStudy && (
+          <FileBrowserModal
+            request={browsingPrecedentStudy}
+            user={currentUser!}
+            allUsers={allUsers}
+            allRequests={allRequests}
+            onClose={() => setBrowsingPrecedentStudy(null)}
+          />
+        )}
+
+
         {showPrecedentWarning && precedentStudy && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 border-t-8 border-orange-500">
@@ -393,20 +441,15 @@ export const FormContainer: React.FC<FormContainerProps> = ({
               
               <div className="bg-slate-50 rounded-2xl p-4 mb-8">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Detalhes do Estudo Encontrado</p>
-                <p className="text-xs font-bold text-slate-700">{precedentStudy.studyTitle || 'Sem Título'}</p>
+                <p className="text-xs font-bold text-slate-700">{precedentStudy.clientName || precedentStudy.studyTitle || 'Nome não informado'}</p>
                 <p className="text-[10px] text-slate-500 mt-1 uppercase">{precedentStudy.address}, {precedentStudy.city}</p>
               </div>
 
               <div className="grid grid-cols-1 gap-3">
                 <button 
-                  onClick={async () => {
+                  onClick={() => {
                     setShowPrecedentWarning(false);
-                    if ((window as any).api?.openFolder) {
-                      const path = getRequestPath(precedentStudy.studyNumber);
-                      await (window as any).api.openFolder(path);
-                    } else {
-                      onViewRequest?.(precedentStudy);
-                    }
+                    setBrowsingPrecedentStudy(precedentStudy);
                   }}
                   className="w-full py-4 bg-[#004080] text-white rounded-xl font-black text-[10px] shadow-lg"
                 >
@@ -455,63 +498,6 @@ export const FormContainer: React.FC<FormContainerProps> = ({
           <div ref={formRef} className="bg-white p-4 rounded-xl">
             {renderForm()}
           </div>
-
-          {formData.selectedFiles && formData.selectedFiles.length > 0 && (
-            <section className="mt-8 p-6 bg-slate-50 rounded-2xl border border-slate-200">
-               <h4 className="text-[10px] font-black text-[#004080] uppercase tracking-widest mb-4">Arquivos Anexados</h4>
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[...supabaseFiles, ...(formData.selectedFiles || []).filter(lf => !supabaseFiles.some(sf => sf.name === lf.name))].map((file, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <i className="fa-solid fa-file-pdf text-[#004080]"></i>
-                        <span className="text-xs font-medium text-slate-700 truncate max-w-[150px]">{file.name}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button 
-                          type="button"
-                          onClick={async () => {
-                            if (file.fullPath) {
-                              const url = await StorageService.getFileUrl(file.fullPath);
-                              if (url) window.open(url, '_blank');
-                            } else if (file instanceof File || (file.size && file.type)) {
-                              const url = URL.createObjectURL(file);
-                              window.open(url, '_blank');
-                            }
-                          }} 
-                          className="px-3 py-1 bg-blue-50 text-[#004080] hover:bg-[#004080] hover:text-white rounded-lg transition-all font-black text-[9px] uppercase shadow-sm"
-                        >
-                          <i className="fa-solid fa-eye mr-1"></i> Visualizar
-                        </button>
-                        <button 
-                          type="button"
-                          onClick={async () => {
-                            if (file.fullPath) {
-                              const url = await StorageService.getFileUrl(file.fullPath);
-                              if (url) {
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = file.name;
-                                a.click();
-                              }
-                            } else if (file instanceof File || (file.size && file.type)) {
-                              const url = URL.createObjectURL(file);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = file.name;
-                              a.click();
-                              URL.revokeObjectURL(url);
-                            }
-                          }} 
-                          className="px-3 py-1 bg-[#FF8000] text-white hover:bg-orange-600 rounded-lg transition-all font-black text-[9px] uppercase shadow-sm"
-                        >
-                          <i className="fa-solid fa-download mr-1"></i> Baixar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-               </div>
-            </section>
-          )}
 
           <div className="mt-12 pt-8 border-t border-slate-100 flex items-center justify-end">
             <div className="flex gap-4">

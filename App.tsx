@@ -15,8 +15,10 @@ import { NaturgyLogo, HeaderTitle } from './constants';
 import { StorageService } from './storage';
 import { EmailService, EmailNotificationData } from './emailService';
 import { getGMT3ISOString, normalizeArea } from './utils';
+import { useDialog } from './AppDialog';
 
 const App: React.FC = () => {
+  const { showAlert, showConfirm, showToast } = useDialog();
   const [user, setUser] = useState<User | null>(null);
   const [selectedForm, setSelectedForm] = useState<FormType | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -217,17 +219,18 @@ const App: React.FC = () => {
   };
 
   const handleSyncStorage = async () => {
-    if (confirm('Deseja sincronizar todos os arquivos com o Supabase Storage? Isso garantirá que todos os estudos antigos tenham suas pastas e arquivos na nova estrutura.')) {
+    const ok = await showConfirm('Deseja sincronizar todos os arquivos com o Supabase Storage? Isso garantirá que todos os estudos antigos tenham suas pastas e arquivos na nova estrutura.', 'Sincronizar Storage');
+    if (ok) {
       setIsSyncing(true);
       setSyncStatus('Iniciando...');
       try {
         await StorageService.migrateRequestsToStorage((msg: string) => setSyncStatus(msg));
-        alert('Sincronização concluída!');
+        showToast('Sincronização concluída!', 'success');
         // Recarregar os dados para refletir as mudanças (base64 removido)
         const updatedRequests = await StorageService.getRequests();
         setAllRequests(updatedRequests);
       } catch (err) {
-        alert('Erro ao sincronizar.');
+        showToast('Erro ao sincronizar.', 'error');
       } finally {
         setIsSyncing(false);
         setSyncStatus('');
@@ -340,7 +343,7 @@ const App: React.FC = () => {
       }, 0);
 
       if (requestToCreate && (window as any).api?.createRequestFolder) {
-        const year = requestToCreate.studyNumber.match(/APR-(\d{4})/)?.[1] || new Date().getFullYear().toString();
+        const year = requestToCreate.studyNumber?.match(/APR-(\d{4})/)?.[1] || new Date().getFullYear().toString();
         const isRevision = requestToCreate.studyNumber.includes('-REV');
         const baseStudyId = isRevision ? requestToCreate.studyNumber.split('-REV')[0] : requestToCreate.studyNumber;
         const revFolder = isRevision ? `REV${requestToCreate.studyNumber.split('-REV')[1]}` : 'REV1';
@@ -486,7 +489,7 @@ const App: React.FC = () => {
           ...originalRequest,
           id: crypto.randomUUID(),
           studyNumber: '',
-          status: StudyStatus.PENDENTE,
+          status: StudyStatus.EM_ANALISE,
           studyType: 'Revisão de Estudo',
           previousStudy: originalRequest.studyNumber,
           requestDate: getGMT3ISOString().split('T')[0],
@@ -557,113 +560,124 @@ const App: React.FC = () => {
     setEditingRequest(null);
   };
 
-  const handleRequestSubmit = (newRequest: FormData) => {
+  const handleRequestSubmit = (newRequest: FormData, pdfFile?: File) => {
     let finalRequest = { ...newRequest };
     let isUpdate = false;
 
-    // Determinar status ANTES do setAllRequests para evitar race condition com closure
+    // Helper for normalization
+    const normalize = (s: string) => s?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() || "";
+
+    // 1. Verificar se é um update de estudo existente
     const existingRequest = allRequests.find(r => r.id === newRequest.id);
+    
     if (existingRequest) {
       isUpdate = true;
       const prevStatus = existingRequest.status;
-      const status = prevStatus === StudyStatus.REJEITADO ? StudyStatus.EM_ANALISE : StudyStatus.EM_ANALISE;
+      // Se estava rejeitado, volta para Em Análise ao reenviar
+      const status = prevStatus === StudyStatus.REJEITADO ? StudyStatus.EM_ANALISE : prevStatus;
       finalRequest = { ...newRequest, status, rejectionReason: undefined };
+    } else {
+      // 2. É um NOVO estudo - Gerar Metadados (StudyNumber, Status inicial, etc)
+      const newAddress = normalize(newRequest.address);
+      const newCity = normalize(newRequest.city);
+      const newTitle = normalize(newRequest.studyTitle || newRequest.clientName || '');
+
+      // Procurar por estudos com mesmo endereço, cidade E título (deduplica por local)
+      const matchingStudy = allRequests.find(r => 
+        normalize(r.address) === newAddress && 
+        normalize(r.city) === newCity &&
+        normalize(r.studyTitle || r.clientName || '') === newTitle
+      );
+
+      let studyNumber = '';
+      
+      if (matchingStudy || (newRequest.studyType === 'Revisão de Estudo' && newRequest.previousStudy)) {
+        // É uma revisão - reutilizar código base
+        const baseReference = matchingStudy ? matchingStudy.studyNumber : newRequest.previousStudy!;
+        const cleanBase = baseReference.replace('PROV-', '');
+        const revMatch = cleanBase.match(/(.+)-REV\d+$/i);
+        const baseCode = revMatch ? revMatch[1] : cleanBase;
+        
+        // Filter carefully to match ONLY this baseCode
+        const relatedVersions = allRequests.filter(r => {
+           const rClean = r.studyNumber?.replace('PROV-', '') || '';
+           const rRevMatch = rClean.match(/(.+)-REV\d+$/i);
+           const rBase = rRevMatch ? rRevMatch[1] : rClean;
+           return rBase === baseCode;
+        });
+
+        const totalVersions = relatedVersions.length;
+        studyNumber = `PROV-${baseCode}-REV${totalVersions}`;
+        
+        finalRequest = { 
+          ...newRequest, 
+          studyType: 'Revisão de Estudo', 
+          previousStudy: baseReference,
+          studyNumber,
+          status: StudyStatus.EM_ANALISE,
+          user_id: user?.id 
+        };
+      } else {
+        // Novo estudo - gerar código sequencial global
+        const currentYear = new Date().getFullYear();
+        
+        // Encontrar a última sequência numérica global para o ano corrente
+        let maxSeq = 0;
+        allRequests.forEach(r => {
+          // Match format: PROV-APR-YEAR-SEQ or APR-YEAR-SEQ
+          const match = r.studyNumber?.match(new RegExp(`APR-${currentYear}-(\\d+)`));
+          if (match) {
+            const num = parseInt(match[1]);
+            if (!isNaN(num) && num > maxSeq) maxSeq = num;
+          }
+        });
+        
+        const newSeq = String(maxSeq + 1).padStart(4, '0');
+        studyNumber = `PROV-APR-${currentYear}-${newSeq}`;
+        
+        finalRequest = { 
+           ...newRequest, 
+           studyNumber, 
+           status: StudyStatus.EM_ANALISE, 
+           user_id: user?.id 
+        };
+      }
     }
 
+    // 3. Atualizar Estado Local IMEDIATAMENTE (Sincronamente)
     setAllRequests(prev => {
-      const idx = prev.findIndex(r => r.id === newRequest.id);
-      
+      const idx = prev.findIndex(r => r.id === finalRequest.id);
       if (idx > -1) {
-        // isUpdate e finalRequest já foram calculados acima
-        return prev.map(r => r.id === newRequest.id ? finalRequest : r);
+        return prev.map(r => r.id === finalRequest.id ? finalRequest : r);
       } else {
-        const normalize = (s: string) => s?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() || "";
-        const newAddress = normalize(newRequest.address);
-        const newCity = normalize(newRequest.city);
-        const newTitle = normalize(newRequest.studyTitle || newRequest.clientName || '');
-
-        // Procurar por estudos com mesmo endereço, cidade E título (deduplica por local)
-        const matchingStudy = prev.find(r => 
-          normalize(r.address) === newAddress && 
-          normalize(r.city) === newCity &&
-          normalize(r.studyTitle || r.clientName || '') === newTitle
-        );
-
-        let studyNumber = '';
-        
-        if (matchingStudy || (newRequest.studyType === 'Revisão de Estudo' && newRequest.previousStudy)) {
-          // É uma revisão - reutilizar código base
-          const baseReference = matchingStudy ? matchingStudy.studyNumber : newRequest.previousStudy!;
-          const cleanBase = baseReference.replace('PROV-', '');
-          const revMatch = cleanBase.match(/(.+)-REV\d+$/i);
-          const baseCode = revMatch ? revMatch[1] : cleanBase;
-          
-          // Filter carefully to match ONLY this baseCode
-          const relatedVersions = prev.filter(r => {
-             const rClean = r.studyNumber.replace('PROV-', '');
-             const rRevMatch = rClean.match(/(.+)-REV\d+$/i);
-             const rBase = rRevMatch ? rRevMatch[1] : rClean;
-             return rBase === baseCode;
-          });
-
-          const totalVersions = relatedVersions.length;
-          studyNumber = `PROV-${baseCode}-REV${totalVersions}`;
-          
-          finalRequest = { 
-            ...newRequest, 
-            studyType: 'Revisão de Estudo', 
-            previousStudy: baseReference,
-            studyNumber,
-            status: StudyStatus.EM_ANALISE,
-            user_id: user?.id 
-          };
-        } else {
-          // Novo estudo - gerar código sequencial global
-          const currentYear = new Date().getFullYear();
-          
-          // Encontrar a última sequência numérica global para o ano corrente
-          let maxSeq = 0;
-          prev.forEach(r => {
-            // Match format: PROV-APR-YEAR-SEQ or APR-YEAR-SEQ
-            const match = r.studyNumber?.match(new RegExp(`APR-${currentYear}-(\\d+)`));
-            if (match) {
-              const num = parseInt(match[1]);
-              if (!isNaN(num) && num > maxSeq) maxSeq = num;
-            }
-          });
-          
-          const newSeq = String(maxSeq + 1).padStart(4, '0');
-          studyNumber = `PROV-APR-${currentYear}-${newSeq}`;
-          
-          finalRequest = { 
-             ...newRequest, 
-             studyNumber, 
-             status: StudyStatus.EM_ANALISE, 
-             user_id: user?.id 
-          };
-        }
-        
         return [finalRequest, ...prev];
       }
     });
 
+    // 4. Fluxo de Persistência no Supabase
     const submitFlow = async () => {
       try {
-        await StorageService.addRequest(finalRequest);
+        console.log('[App] Persisting request to Supabase:', finalRequest.studyNumber);
+        await StorageService.addRequest(finalRequest, pdfFile);
         
-
         // Automated email trigger on submit
         setTimeout(() => {
           handleSendEmail(generateEmailForNewRequest(finalRequest));
         }, 500);
 
         setView('my-requests');
+        setNotification({
+          message: isUpdate ? "Estudo Atualizado" : "Estudo Enviado",
+          subtext: `O estudo ${finalRequest.studyNumber} foi salvo com sucesso.`,
+          type: 'success'
+        });
         setEditingRequest(null);
       } catch (error) {
         console.error('Error saving request to Supabase:', error);
-        alert('Erro ao salvar solicitação no banco de dados. Tente novamente.');
+        showAlert('Erro ao salvar solicitação no banco de dados. Verifique sua conexão e tente novamente.', 'Erro ao Salvar', 'error');
       }
     };
+    
     submitFlow();
   };
 
@@ -691,14 +705,14 @@ const App: React.FC = () => {
       setAllUsers(prev => prev.filter(u => u.id !== userId));
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert('Erro ao excluir usuário no banco de dados.');
+      showAlert('Erro ao excluir usuário no banco de dados.', 'Erro', 'error');
     }
   };
 
   const handleResetUsers = async () => {
     // Reset para admin não é mais recomendado com DB real, 
     // mas se necessário, poderíamos limpar profiles (exceto adm)
-    alert('Função de reset desabilitada para segurança do banco de dados.');
+    showAlert('Função de reset desabilitada para segurança do banco de dados.', 'Função Desabilitada', 'warning');
   };
 
   const visibleRequests = useMemo(() => {

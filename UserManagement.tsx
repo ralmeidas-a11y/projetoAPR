@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { User, UserRole } from './types';
 import { isValidCorporateEmail, getFormattedDomains } from './constants';
+import { useDialog } from './AppDialog';
 
 interface UserManagementProps {
   users: User[];
@@ -12,6 +13,7 @@ interface UserManagementProps {
 }
 
 export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateUser, onCreateUser, onDeleteUser, onResetUsers }) => {
+  const { showAlert } = useDialog();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -23,7 +25,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidCorporateEmail(newEmail)) {
-      alert(`Apenas e-mails corporativos são permitidos: ${getFormattedDomains()}`);
+      showAlert(`Apenas e-mails corporativos são permitidos: ${getFormattedDomains()}`, 'E-mail Inválido', 'warning');
       return;
     }
 

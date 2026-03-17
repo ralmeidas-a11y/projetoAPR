@@ -4,6 +4,7 @@ import { StudyStatus, FormData, User, UserRole, FormType } from './types';
 import { formatDateTimeBR } from './utils';
 import { StorageService } from './storage';
 import { FileBrowserModal } from './FileBrowserModal';
+import { useDialog } from './AppDialog';
 
 interface TechnicalExecutionPanelProps {
   data: FormData;
@@ -16,6 +17,7 @@ interface TechnicalExecutionPanelProps {
 }
 
 export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = ({ data, allRequests = [], allUsers = [], onBack, onStatusUpdate, onUpdateData, readOnly = false }) => {
+  const { showToast } = useDialog();
   const [activeTab, setActiveTab] = useState(0); // 0: Dados do Estudo, 1: Análise Técnica, 2: Resposta
   const [activeTechSubTab, setActiveTechSubTab] = useState(0); // 0: Dados de Estudo, 1: Realizando Análise, 2: Passos Resposta
   const [activeFolder, setActiveFolder] = useState('Solicitacao');
@@ -59,7 +61,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       try {
         const files = await StorageService.getRequestFiles(data.studyNumber, activeFolder);
         if (isMounted) {
-          setSupabaseFiles(files);
+          const filtered = files.filter(f => f.name !== '.keep');
+          setSupabaseFiles(filtered);
         }
       } catch (err) {
         console.error('Error fetching study files:', err);
@@ -175,7 +178,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         if (url) {
           window.open(url, '_blank');
         } else {
-          alert('Erro ao gerar link de visualização.');
+          showToast('Erro ao gerar link de visualização.', 'error');
         }
         return;
       }
@@ -187,11 +190,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           base64: file.base64
         });
       } else {
-        alert('Este arquivo não possui conteúdo para visualização. Verifique a pasta local.');
+        showToast('Este arquivo não possui conteúdo para visualização. Verifique a pasta local.', 'warning');
       }
     } catch (err) {
       console.warn('Erro ao visualizar arquivo:', err);
-      alert('Erro ao visualizar arquivo');
+      showToast('Erro ao visualizar arquivo', 'error');
     }
   };
 
@@ -205,7 +208,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           link.download = file.name || 'documento';
           link.click();
         } else {
-          alert('Erro ao gerar link de download.');
+          showToast('Erro ao gerar link de download.', 'error');
         }
         return;
       }
@@ -216,11 +219,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         link.download = file.name || 'documento';
         link.click();
       } else {
-        alert("Arquivo não disponível para download.");
+        showToast('Arquivo não disponível para download.', 'warning');
       }
     } catch (err) {
       console.error('Download error:', err);
-      alert('Erro ao baixar arquivo');
+      showToast('Erro ao baixar arquivo', 'error');
     }
   };
 
@@ -267,36 +270,23 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   );
 
   const getFilesForActiveFolder = () => {
-    // Mesclar arquivos locais (acabaram de ser anexados mas ainda não salvos)
-    // com arquivos que já estão no Supabase
-    let localFiles = activeFolder === 'Solicitacao' 
-      ? (data.selectedFiles || []) 
-      : (data.categorizedFiles?.[activeFolder] || []);
+    // Sempre usar os arquivos do Supabase Storage como fonte de verdade.
+    // Os dados locais (data.selectedFiles / categorizedFiles) podem estar desatualizados.
+    const storageFiles = supabaseFiles.filter(f => f.name !== '.keep');
 
-    if (activeFolder === 'Solicitacao' && data.studyNumber) {
-      const fileName = `Formulário - ${data.studyNumber}.pdf`;
-      const fullPath = `Solicitacoes_APR/${new Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
-      // Note: The above logic is a simplified version of getRequestPath for the frontend here.
-      
-      localFiles = [
-        { 
-          name: fileName, 
-          type: 'application/pdf', 
-          size: 0, 
-          isVirtual: true,
-          virtualType: 'official-form',
-          fullPath: `DUMMY_FORM` // We will handle this specially in the handlers
-        },
-        ...localFiles
-      ];
+    // Se o Storage ainda está sendo carregado, não mostrar nada (evita dados fantasmas)
+    if (isLoadingFiles) return [];
+
+    // Adicionar entrada virtual do formulário oficial se ele existir no storage
+    const hasOfficialForm = storageFiles.some(f => f.name.startsWith('Formulario'));
+    if (activeFolder === 'Solicitacao' && data.studyNumber && !hasOfficialForm) {
+      // Não adicionar virtual se o storage já tem o formulário real
+      // Se não tiver nenhum formulário, não inventar um virtual
     }
-    
-    // Filtrar duplicatas (por nome) para não exibir o mesmo arquivo duas vezes
-    const supabaseNames = new Set(supabaseFiles.map(f => f.name));
-    const uniqueLocalFiles = localFiles.filter(f => !supabaseNames.has(f.name));
 
-    return [...supabaseFiles, ...uniqueLocalFiles];
+    return storageFiles;
   };
+
 
   const renderCargaTable = (studyData: FormData = data) => {
     switch (studyData.formType) {
@@ -1012,7 +1002,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Anexos desta Versão</h4>
                     {previewStudy.selectedFiles && previewStudy.selectedFiles.length > 0 ? (
                        <div className="grid grid-cols-3 gap-4">
-                          {previewStudy.selectedFiles.map((f, idx) => (
+                          {previewStudy.selectedFiles.filter(f => f.name !== '.keep').map((f, idx) => (
                              <div key={idx} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between gap-3 group">
                                 <div className="flex items-center gap-3 min-w-0">
                                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-red-500 shadow-sm border border-slate-50">
@@ -1239,7 +1229,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                                link.download = fileName;
                                link.click();
                              } else {
-                               alert('Erro ao buscar o arquivo do formulário para download.');
+                               showToast('Erro ao buscar o arquivo do formulário para download.', 'error');
                              }
                            } else {
                              handleDownloadFile(f);
@@ -1260,7 +1250,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                              if (url) {
                                window.open(url, '_blank');
                              } else {
-                               alert('Erro ao buscar o arquivo do formulário para visualização.');
+                               showToast('Erro ao buscar o arquivo do formulário para visualização.', 'error');
                              }
                           } else {
                              handleViewFile(f);

@@ -4,6 +4,7 @@ import { StudyStatus, FormData, User, UserRole } from './types';
 import { formatToLocalTime, formatDate } from './utils';
 import { FileBrowserModal } from './FileBrowserModal';
 import { ValidationModal } from './ValidationModal';
+import { useDialog } from './AppDialog';
 
 interface DashboardProps {
   user: User;
@@ -15,6 +16,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ user, requests, allUsers = [], onAnalyze, onExecute, onStatusUpdate }) => {
+  const { showAlert, showToast } = useDialog();
   const [filter, setFilter] = useState<string>('Todas');
   const [assigningRequest, setAssigningRequest] = useState<FormData | null>(null);
   const [selectedAnalyst, setSelectedAnalyst] = useState('');
@@ -69,12 +71,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, requests, allUsers =
     switch (status) {
       case StudyStatus.EM_ANALISE: return 'bg-blue-50 text-blue-600 border-blue-200';
       case StudyStatus.PENDENTE: return 'bg-amber-50 text-amber-600 border-amber-200 font-bold';
-      case StudyStatus.REJEITADO: return 'bg-red-50 text-red-600 border-red-200';
+      case StudyStatus.REJEITADO: return 'bg-amber-50 text-amber-600 border-amber-200';
       case StudyStatus.AGUARDANDO_EXECUCAO: return 'bg-orange-50 text-orange-600 border-orange-200';
-      case StudyStatus.EM_EXECUCAO: return 'bg-indigo-50 text-indigo-600 border-indigo-200';
+      case StudyStatus.EM_EXECUCAO: return 'bg-purple-50 text-purple-600 border-purple-200';
       case StudyStatus.CONTROLE_QUALIDADE: return 'bg-purple-50 text-purple-600 border-purple-200 font-black';
       case StudyStatus.CONCLUIDO: return 'bg-green-50 text-green-600 border-green-200';
-      case StudyStatus.CANCELADO: return 'bg-slate-200 text-slate-500 border-slate-300 opacity-60';
+      case StudyStatus.CANCELADO: return 'bg-red-50 text-red-600 border-red-200';
       default: return 'bg-slate-50 text-slate-400';
     }
   };
@@ -98,7 +100,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, requests, allUsers =
     }
   };
 
-  const handleConfirmAction = (action: 'validate' | 'reject' | 'assign', data?: Partial<FormData>, assignedTo?: string) => {
+  const handleConfirmAction = (action: 'validate' | 'reject' | 'assign', data?: Partial<FormData>, assignedTo?: string, passedReason?: string) => {
     try {
       const targetRequest = validatingRequest || assigningRequest;
       if (!targetRequest || !onStatusUpdate) return;
@@ -108,19 +110,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, requests, allUsers =
         setValidatingRequest(null);
         setAssigningRequest(null);
       } else if (action === 'reject') {
-        if (!rejectionReason.trim()) {
-          alert('Por favor, informe o motivo da rejeição.');
+        const finalReason = passedReason || rejectionReason;
+        if (!finalReason.trim()) {
+          showAlert('Por favor, informe o motivo da rejeição.', 'Campo Obrigatório', 'warning');
           return;
         }
-        onStatusUpdate(targetRequest.id, StudyStatus.REJEITADO, rejectionReason);
+        onStatusUpdate(targetRequest.id, StudyStatus.REJEITADO, finalReason);
         setAssigningRequest(null);
+        setValidatingRequest(null);
       } else if (action === 'assign') {
         onStatusUpdate(targetRequest.id, targetRequest.status, undefined, selectedAnalyst);
         setAssigningRequest(null);
       }
     } catch (error) {
       console.error('Erro ao processar ação:', error);
-      alert('Erro ao processar ação. Por favor, tente novamente.');
+      showAlert('Erro ao processar ação. Por favor, tente novamente.', 'Erro', 'error');
     }
   };
 
@@ -379,7 +383,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, requests, allUsers =
                         )}
 
                         {/* Botão de Atribuição Direta para ADM / Validador */}
-                        {isValidator && req.status !== StudyStatus.CONCLUIDO && (
+                        {isValidator && [StudyStatus.PENDENTE, StudyStatus.EM_ANALISE, StudyStatus.AGUARDANDO_EXECUCAO, StudyStatus.EM_EXECUCAO].includes(req.status) && (
                           <button 
                             onClick={() => handleOpenAssign(req)}
                             className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center text-xs shadow-sm active:scale-95 ${
@@ -399,11 +403,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, requests, allUsers =
                           <button 
                              onClick={() => {
                                try {
-                                 onStatusUpdate?.(req.id, StudyStatus.CONCLUIDO);
-                               } catch (error) {
-                                 console.error('Erro ao concluir estudo:', error);
-                                 alert('Erro ao concluir estudo. Por favor, tente novamente.');
-                               }
+                                  onStatusUpdate?.(req.id, StudyStatus.CONCLUIDO);
+                                } catch (error) {
+                                  console.error('Erro ao concluir estudo:', error);
+                                  showToast('Erro ao concluir estudo. Por favor, tente novamente.', 'error');
+                                }
                              }}
                              className="w-10 h-10 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
                              title="Aprovar e Concluir"
@@ -420,6 +424,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, requests, allUsers =
           </table>
         </div>
       </div>
+      {validatingRequest && (
+        <ValidationModal 
+          initialData={validatingRequest}
+          executors={executors.map(u => ({ id: u.id, name: u.name }))}
+          onConfirm={(assignedTo, data) => handleConfirmAction('validate', data, assignedTo)}
+          onReject={(reason) => {
+            handleConfirmAction('reject', undefined, undefined, reason);
+          }}
+          onCancel={() => setValidatingRequest(null)}
+          onOpenFiles={() => handleOpenFolder(validatingRequest)}
+        />
+      )}
+
       {browsingRequest && (
         <FileBrowserModal 
           request={browsingRequest} 
@@ -429,20 +446,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, requests, allUsers =
           onClose={() => setBrowsingRequest(null)} 
           onStatusUpdate={onStatusUpdate as any}
           onStartExecution={onExecute}
-        />
-      )}
-
-      {validatingRequest && (
-        <ValidationModal 
-          initialData={validatingRequest}
-          executors={executors.map(u => ({ id: u.id, name: u.name }))}
-          onConfirm={(assignedTo, data) => handleConfirmAction('validate', data, assignedTo)}
-          onReject={(reason) => {
-            setRejectionReason(reason);
-            handleConfirmAction('reject');
-            setValidatingRequest(null);
-          }}
-          onCancel={() => setValidatingRequest(null)}
+          restrictToCategory={validatingRequest ? 'Solicitacao' : undefined}
         />
       )}
     </div>
