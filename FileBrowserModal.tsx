@@ -65,6 +65,47 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
     return base;
   }, [isStaff, restrictToCategory, selectedRevisionData.status]);
 
+  const canModify = useMemo(() => {
+    // Solicitação concluída não pode deletar/adicionar nenhum arquivo
+    if (selectedRevisionData.status === StudyStatus.CONCLUIDO) return false;
+
+    // Proprietário (Solicitante)
+    if (user.role === UserRole.SOLICITANTE && user.id === selectedRevisionData.user_id) {
+      const allowedOwnerStatuses = [StudyStatus.REJEITADO, StudyStatus.EM_ANALISE, StudyStatus.AGUARDANDO_EXECUCAO];
+      return activeCategory === 'Solicitacao' && allowedOwnerStatuses.includes(selectedRevisionData.status);
+    }
+
+    // Analista/ADM
+    if (isStaff) {
+      const allowedStaffCategories = ['Resposta', 'Calculos', 'Outros'];
+      return selectedRevisionData.status === StudyStatus.EM_EXECUCAO && allowedStaffCategories.includes(activeCategory);
+    }
+
+    return false;
+  }, [selectedRevisionData.status, selectedRevisionData.user_id, user.role, user.id, activeCategory, isStaff]);
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFiles = Array.from(e.target.files || []);
+    if (uploadedFiles.length === 0) return;
+
+    setLoading(true);
+    try {
+      for (const file of uploadedFiles) {
+        await StorageService.uploadFile(activeRevision, activeCategory, file as File);
+      }
+      await StorageService.syncFilesFromStorage(activeRevision);
+      await loadFiles();
+      showToast(`${uploadedFiles.length} arquivo(s) adicionados.`, 'success');
+    } catch (err) {
+      showToast('Erro ao realizar upload.', 'error');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setLoading(false);
+    }
+  };
+
   const loadFiles = useCallback(async () => {
     if (!activeRevision) return;
     setLoading(true);
@@ -211,6 +252,26 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
           </div>
         )}
 
+        {/* Action Header - Upload */}
+        {canModify && (
+          <div className="px-6 pt-4">
+             <input
+               type="file"
+               ref={fileInputRef}
+               onChange={handleFileUpload}
+               className="hidden"
+               multiple
+             />
+             <button
+               onClick={() => fileInputRef.current?.click()}
+               className="w-full py-3 bg-indigo-50 border-2 border-dashed border-indigo-200 rounded-2xl flex items-center justify-center gap-3 text-indigo-500 hover:bg-indigo-100/50 hover:border-indigo-400 transition-all font-black uppercase text-[10px] tracking-widest"
+             >
+               <i className="fa-solid fa-cloud-arrow-up text-lg"></i>
+               Adicionar Arquivo em {activeCategory}
+             </button>
+          </div>
+        )}
+
         {/* File List */}
         <div className="flex-grow overflow-y-auto p-6 bg-slate-50/30 custom-scrollbar">
           {loading && files.length === 0 ? (
@@ -272,28 +333,31 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                           {file.name.startsWith('Formulario') ? 'Ver' : null}
                         </button>
 
-                        <button 
-                          onClick={async () => {
-                            const ok = await showConfirm(`Deseja realmente excluir o arquivo "${file.name}"? Esta ação removerá o arquivo permanentemente do Storage e do Banco de Dados.`, 'Excluir Arquivo');
-                            if (ok) {
-                              setLoading(true);
-                              try {
-                                await StorageService.deleteFile(file.fullPath);
-                                // Após deletar fisicamente, disparar um sync para limpar o banco também
-                                await StorageService.syncFilesFromStorage(activeRevision);
-                                await loadFiles();
-                              } catch (err) {
-                                showToast('Erro ao excluir arquivo', 'error');
-                              } finally {
-                                setLoading(false);
+                        {canModify && (
+                          <button 
+                            onClick={async () => {
+                              const ok = await showConfirm(`Deseja realmente excluir o arquivo "${file.name}"? Esta ação removerá o arquivo permanentemente do Storage e do Banco de Dados.`, 'Excluir Arquivo');
+                              if (ok) {
+                                setLoading(true);
+                                try {
+                                  await StorageService.deleteFile(file.fullPath);
+                                  // Após deletar fisicamente, disparar um sync para limpar o banco também
+                                  await StorageService.syncFilesFromStorage(activeRevision);
+                                  await loadFiles();
+                                  showToast('Arquivo excluído.', 'success');
+                                } catch (err) {
+                                  showToast('Erro ao excluir arquivo', 'error');
+                                } finally {
+                                  setLoading(false);
+                                }
                               }
-                            }
-                          }}
-                          className="h-9 w-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center active:scale-90"
-                          title="Excluir Arquivo"
-                        >
-                          <i className="fa-solid fa-trash-can text-xs"></i>
-                        </button>
+                            }}
+                            className="h-9 w-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center active:scale-90"
+                            title="Excluir Arquivo"
+                          >
+                            <i className="fa-solid fa-trash-can text-xs"></i>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

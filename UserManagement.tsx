@@ -21,6 +21,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
   const [newPerms, setNewPerms] = useState<('validar' | 'executar' | 'controle_qualidade')[]>([]);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [newCompany, setNewCompany] = useState('');
+  const [newRoleDescription, setNewRoleDescription] = useState('');
+  const [newGB, setNewGB] = useState('');
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +38,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
         name: newName,
         email: newEmail.toLowerCase(),
         role: newRole,
-        permissions: newPerms
+        permissions: newPerms,
+        company: newCompany,
+        roleDescription: newRoleDescription,
+        gb: newGB
       });
     } else {
       const newUser: User = {
@@ -46,7 +52,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
         password: '123456', // Definir senha padrão inicial
         permissions: newPerms,
         profileComplete: false, // Forçar preenchimento de perfil no primeiro acesso
-        requiresPasswordChange: true
+        requiresPasswordChange: true,
+        company: newCompany,
+        roleDescription: newRoleDescription,
+        gb: newGB
       };
       onCreateUser(newUser);
     }
@@ -59,6 +68,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
     setNewEmail('');
     setNewRole(UserRole.ANALISTA);
     setNewPerms([]);
+    setNewCompany('');
+    setNewRoleDescription('');
+    setNewGB('');
     setEditingUser(null);
     setShowCreateForm(false);
   };
@@ -69,6 +81,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
     setNewEmail(user.email);
     setNewRole(user.role);
     setNewPerms(user.permissions || []);
+    setNewCompany(user.company || '');
+    setNewRoleDescription(user.roleDescription || '');
+    setNewGB(user.gb || '');
     setShowCreateForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -134,6 +149,36 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                   <option value={UserRole.ADM}>Administrador</option>
                 </select>
               </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Empresa</label>
+                <input 
+                  type="text" 
+                  value={newCompany} 
+                  onChange={e => setNewCompany(e.target.value)}
+                  placeholder="E.g. NIP do Brasil"
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:border-[#004080] focus:ring-2 focus:ring-blue-100 text-sm font-medium transition-colors cursor-text"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Cargo / Descrição</label>
+                <input 
+                  type="text" 
+                  value={newRoleDescription} 
+                  onChange={e => setNewRoleDescription(e.target.value)}
+                  placeholder="E.g. Assistente Técnico"
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:border-[#004080] focus:ring-2 focus:ring-blue-100 text-sm font-medium transition-colors cursor-text"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">GB</label>
+                <input 
+                  type="text" 
+                  value={newGB} 
+                  onChange={e => setNewGB(e.target.value)}
+                  placeholder="E.g. GBXXXX"
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:border-[#004080] focus:ring-2 focus:ring-blue-100 text-sm font-medium transition-colors cursor-text"
+                />
+              </div>
               <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-4 pt-6 col-span-1 md:col-span-3 border-t border-slate-200 mt-2">
                 <div className="flex flex-wrap items-center gap-6">
                   <label className="flex items-center gap-3 cursor-pointer group">
@@ -193,6 +238,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                   <td className="px-8 py-5">
                     <p className="text-sm font-black text-[#004080] uppercase tracking-tight">{u.name}</p>
                     <p className="text-[10px] text-slate-400 font-bold mt-0.5">{u.email}</p>
+                    {(u.company || u.roleDescription || u.gb) && (
+                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tight mt-1 items-center gap-2 flex">
+                        <i className="fa-solid fa-briefcase opacity-40 text-[8px]"></i>
+                        {u.company || '-'} • {u.roleDescription || '-'} {u.gb ? `(GB: ${u.gb})` : ''}
+                      </p>
+                    )}
                   </td>
                   <td className="px-8 py-5">
                     <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${u.role === UserRole.ADM ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>

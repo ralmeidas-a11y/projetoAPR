@@ -50,7 +50,7 @@ export const StorageService = {
     console.log('Fetching users from Supabase...');
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, name, email, role, area, naturgy_unit, password, requires_password_change, permissions, created_at, company, role_description, gb')
       .order('name');
     
     if (error) {
@@ -70,7 +70,10 @@ export const StorageService = {
       profileComplete: true,
       requiresPasswordChange: u.requires_password_change,
       permissions: u.permissions || [],
-      createdAt: u.created_at
+      createdAt: u.created_at,
+      company: u.company,
+      roleDescription: u.role_description,
+      gb: u.gb
     }));
   },
 
@@ -85,6 +88,9 @@ export const StorageService = {
       password: user.password,
       permissions: user.permissions || [],
       requires_password_change: user.requiresPasswordChange ?? false,
+      company: user.company,
+      role_description: user.roleDescription,
+      gb: user.gb,
       updated_at: getGMT3ISOString()
     };
 
@@ -106,6 +112,9 @@ export const StorageService = {
       naturgyUnit: data.naturgy_unit,
       permissions: data.permissions || [],
       requiresPasswordChange: data.requires_password_change,
+      company: data.company,
+      roleDescription: data.role_description,
+      gb: data.gb,
       profileComplete: true
     };
   },
@@ -274,6 +283,7 @@ export const StorageService = {
 
         const filesToDelete = currentStorageFiles
           .filter(f => f.name !== '.keep' && !f.name.startsWith('Formulario')) // Não deletar o keep nem o formulário oficial aqui
+          .filter(f => cat !== 'Resposta' || !f.name.startsWith('CARTA_')) // Não deletar a carta resposta recém gerada
           .filter(f => !appFileNames.includes(f.name));
 
         if (filesToDelete.length > 0) {
@@ -878,6 +888,54 @@ export const StorageService = {
     }
 
     return data.signedUrl;
+  },
+
+  uploadFile: async (studyNumber: string, category: string, file: File) => {
+    const folderPath = getRequestPath(studyNumber, category);
+    const filePath = `${folderPath}/${file.name}`;
+    const { error } = await supabase.storage
+      .from('request-files')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) throw error;
+  },
+
+  uploadCartaResposta: async (request: FormData, pdfBlob: Blob) => {
+    try {
+      const folderPath = getRequestPath(request.studyNumber, 'Resposta');
+      const fileName = `CARTA_${request.studyNumber.replace('PROV-', '')}.pdf`;
+      const fullPath = `${folderPath}/${fileName}`;
+      
+      const { error } = await supabase.storage
+        .from('request-files')
+        .upload(fullPath, pdfBlob, { upsert: true });
+
+      if (error) throw error;
+      console.log('[StorageService] Carta Resposta uploaded successfully to', fullPath);
+      return true;
+    } catch (err) {
+      console.error('[StorageService] Error uploading Carta Resposta:', err);
+      throw err;
+    }
+  },
+
+  deleteCartaResposta: async (studyNumber: string) => {
+    try {
+      const folderPath = getRequestPath(studyNumber, 'Resposta');
+      const fileName = `CARTA_${studyNumber.replace('PROV-', '')}.pdf`;
+      const fullPath = `${folderPath}/${fileName}`;
+      
+      const { error } = await supabase.storage
+        .from('request-files')
+        .remove([fullPath]);
+
+      if (error) throw error;
+      console.log('[StorageService] Carta Resposta deleted successfully:', fullPath);
+      return true;
+    } catch (err) {
+      console.error('[StorageService] Error deleting Carta Resposta:', err);
+      return false;
+    }
   },
 
   deleteFile: async (fullPath: string) => {

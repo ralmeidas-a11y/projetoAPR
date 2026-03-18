@@ -112,7 +112,7 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 {dialog.title && (
                   <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-1">{dialog.title}</h3>
                 )}
-                <p className="text-sm text-slate-700 leading-relaxed font-medium">{dialog.message}</p>
+                <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{dialog.message}</p>
               </div>
             </div>
 

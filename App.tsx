@@ -267,7 +267,8 @@ const App: React.FC = () => {
             ...(additionalData || {}),
             status, 
             studyNumber,
-            rejectionReason: status === StudyStatus.REJEITADO ? (reason || req.rejectionReason) : undefined,
+            rejectionReason: status === StudyStatus.REJEITADO ? (reason || req.rejectionReason) : req.rejectionReason,
+            cartaGeneratedAt: status === StudyStatus.REJEITADO ? undefined : req.cartaGeneratedAt,
             assignedTo: assignedTo !== undefined ? assignedTo : req.assignedTo,
             startedAt: status === StudyStatus.EM_EXECUCAO ? (req.startedAt || new Date().toISOString()) : req.startedAt,
             completedAt: status === StudyStatus.CONCLUIDO ? (req.completedAt || new Date().toISOString()) : req.completedAt
@@ -280,6 +281,9 @@ const App: React.FC = () => {
             updatedRequestForEmail.type = 'rejection';
             updatedRequestForEmail.request = updated;
             updatedRequestForEmail.reason = reason || req.rejectionReason || 'Não se adequa aos critérios técnicos';
+            
+            // Delete previously generated Carta PDF when study is rejected
+            StorageService.deleteCartaResposta(req.studyNumber);
           } else if (status === StudyStatus.CONCLUIDO && req.status !== StudyStatus.CONCLUIDO) {
             updatedRequestForEmail.type = 'completion';
             updatedRequestForEmail.request = updated;
@@ -432,15 +436,22 @@ const App: React.FC = () => {
     setView('execution');
   };
 
-  const handleUpdateRequestData = async (updatedData: FormData) => {
-    try {
-      await StorageService.addRequest(updatedData);
-      setAllRequests(prev => prev.map(r => r.id === updatedData.id ? updatedData : r));
-      setEditingRequest(updatedData);
-    } catch (error) {
-      console.error('Error updating request:', error);
-      // Optionally, show a notification to the user
-    }
+  // Ref for debounced storage update to avoid lag on rapid keystrokes/timer updates
+  const storageUpdateRef = React.useRef<any>(null);
+
+  const handleUpdateRequestData = (updatedData: FormData) => {
+    // 1. Update UI state IMMEDIATELY (snappy)
+    setAllRequests(prev => prev.map(r => r.id === updatedData.id ? updatedData : r));
+    setEditingRequest(updatedData);
+
+    // 2. Debounce the PERSISTENCE (expensive)
+    if (storageUpdateRef.current) clearTimeout(storageUpdateRef.current);
+    
+    storageUpdateRef.current = setTimeout(() => {
+      StorageService.addRequest(updatedData).catch(error => {
+        console.error('Error persisting request update:', error);
+      });
+    }, 1000); // Wait 1 second of inactivity to save
   };
 
   const handleCancelRequest = (id: string) => {
@@ -683,10 +694,16 @@ const App: React.FC = () => {
 
   const handleUpdateUser = async (updatedUser: User) => {
     try {
-      await StorageService.saveUser(updatedUser);
-      setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+      const savedUser = await StorageService.saveUser(updatedUser);
+      setAllUsers(prev => prev.map(u => u.id === savedUser.id ? savedUser : u));
+      
+      // Update logged in user if they changed their own profile
+      if (user?.id === savedUser.id || user?.email.toLowerCase() === savedUser.email.toLowerCase()) {
+        setUser(savedUser);
+      }
     } catch (error) {
       console.error('Error updating user:', error);
+      showToast('Erro ao salvar no banco de dados. Verifique sua conexão.', 'error');
     }
   };
 
@@ -783,7 +800,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 px-6 py-4 shadow-sm">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 px-6 py-2 shadow-sm">
         <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
           <div className="flex items-center gap-8">
             <div onClick={handleBackToMenu} className="cursor-pointer transition-transform active:scale-95">
@@ -801,20 +818,20 @@ const App: React.FC = () => {
                <button 
                  onClick={handleSyncStorage} 
                  disabled={isSyncing}
-                 className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider text-indigo-500 hover:bg-slate-100 flex items-center gap-2"
+                 className="px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider text-indigo-500 hover:bg-slate-100 flex items-center gap-2"
                  title="Sincronizar arquivos e pastas com o banco"
                >
                  <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'fa-spin' : ''}`}></i>
                  Sincronizar
                </button>
                {user?.role === UserRole.SOLICITANTE && (
-                 <button onClick={() => setView('my-requests')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'my-requests' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Minhas Solicitações</button>
+                 <button onClick={() => setView('my-requests')} className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'my-requests' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Minhas Solicitações</button>
                )}
                {(user?.role === UserRole.ADM || user?.role === UserRole.ANALISTA) && (
-                 <button onClick={() => setView('dashboard')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'dashboard' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Estudos</button>
+                 <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'dashboard' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Estudos</button>
                )}
                {user?.role === UserRole.ADM && (
-                 <button onClick={() => setView('users')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'users' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Usuários</button>
+                 <button onClick={() => setView('users')} className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'users' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Usuários</button>
                )}
             </nav>
             <div className="flex items-center gap-3">
@@ -822,7 +839,7 @@ const App: React.FC = () => {
                 <p className="text-xs font-black text-[#004080] leading-none uppercase">{user?.name}</p>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{user?.role}</p>
               </div>
-              <button onClick={handleLogout} className="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center" title="Logout">
+              <button onClick={handleLogout} className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center" title="Logout">
                 <i className="fa-solid fa-power-off"></i>
               </button>
             </div>
@@ -857,6 +874,7 @@ const App: React.FC = () => {
               onStatusUpdate={updateRequestStatus} 
               onUpdateData={handleUpdateRequestData}
               allUsers={allUsers}
+              currentUser={user || undefined}
               readOnly={editingRequest.status === StudyStatus.CONCLUIDO || editingRequest.status === StudyStatus.CONTROLE_QUALIDADE}
             />
           )}

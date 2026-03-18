@@ -192,7 +192,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                   {isAutoEmail && !isDetecting && <span className="text-[8px] text-green-500 font-black tracking-widest uppercase">DETECTADO</span>}
                 </label>
                 <div className="relative group">
-                  <i className={`fa-solid ${isDetecting ? 'fa-circle-notch fa-spin' : 'fa-user-check'} absolute left-4 top-1/2 -translate-y-1/2 text-white/50 transition-colors`}></i>
+                  <i className={`fa-solid ${isDetecting ? 'fa-circle-notch fa-spin' : 'fa-user-check'} absolute left-4 top-1/2 -translate-y-1/2 text-[#004080] transition-colors`}></i>
                   <input
                     type="email"
                     required
@@ -210,7 +210,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                   Senha
                 </label>
                 <div className="relative group">
-                  <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-white/50 transition-colors"></i>
+                  <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-[#004080] transition-colors"></i>
                   <input
                     type="password"
                     required

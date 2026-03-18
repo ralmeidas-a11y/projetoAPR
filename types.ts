@@ -12,6 +12,27 @@ export enum UserRole {
   ADM = 'Administrador'
 }
 
+export interface InterconnectionPoint {
+  id: string;
+  pressure: string;
+  material: string;
+  diameter: string;
+  location: string;
+  comment: string;
+}
+
+export interface PlannedExtension {
+  id: string;
+  material: string;
+  diameter: string;
+  extension: number | '';
+  networkType: string;
+  valves: number;
+  pressure: string;
+  gasType: string;
+  status: string;
+}
+
 export enum StudyStatus {
   PENDENTE = 'Pendente',
   EM_ANALISE = 'Em Análise',
@@ -39,6 +60,9 @@ export interface User {
   lastAccess?: string;
   requiresPasswordChange?: boolean;
   password?: string;
+  company?: string;
+  roleDescription?: string;
+  gb?: string;
 }
 
 export interface ElectronAPI {
@@ -176,4 +200,28 @@ export interface FormData {
   studySubType?: string;
   difficulty?: string;
   validatorObservations?: string;
+  networkGroup?: number;
+  networkDescription?: string;
+  responsePressureBase?: string;
+  responseMaxPo?: number;
+  responseMin?: number;
+  responseGarantia?: number;
+  responseUnit?: string;
+  responseCalculatedPressure?: number | string;
+  responseObservations?: string;
+  
+  interconnectionPoints?: InterconnectionPoint[];
+  plannedExtensions?: PlannedExtension[];
+
+  // Regulator Sizing
+  regSizingActive?: boolean;
+  regSizingFlow?: string;
+  regSizingCost?: string;
+  regSizingInPress?: string;
+  regSizingOutPress?: string;
+  regSizingFutureFlow?: string;
+  analystCompany?: string;
+  analystRole?: string;
+  analystGB?: string;
+  cartaGeneratedAt?: string;
 }
