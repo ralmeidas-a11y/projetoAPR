@@ -4,6 +4,7 @@ import { StudyStatus, FormData, User, UserRole, FormType, InterconnectionPoint, 
 import { formatDateTimeBR } from './utils';
 import { StorageService } from './storage';
 import { FileBrowserModal } from './FileBrowserModal';
+import { QCControlModal } from './QCControlModal';
 import { useDialog } from './AppDialog';
 import { NETWORK_GROUPS, PRESSURE_BASES, STANDARDIZED_CONDITIONS_BLOCKS } from './constants';
 import html2canvas from 'html2canvas';
@@ -62,6 +63,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   });
 
   const [isExportingCarta, setIsExportingCarta] = useState(false);
+  const [showQCModal, setShowQCModal] = useState(false);
+  const [showHoldModal, setShowHoldModal] = useState(false);
+  const [holdInfo, setHoldInfo] = useState('');
   const cartaRef = useRef<HTMLDivElement>(null);
   const hiddenCartaRef = useRef<HTMLDivElement>(null);
 
@@ -213,6 +217,21 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     setEditingObsIdx(null);
   };
 
+  const handleJustifyPreQC = async () => {
+    if (readOnly || !onStatusUpdate) return;
+
+    const confirm = await showConfirm(
+      'Confirmar Envio Antecipado?',
+      'Esta ação enviará a resposta ao solicitante e uma justificativa ao sistema PRGC informando que o envio foi feito antes do Controle de Qualidade devido ao prazo. O estudo ainda passará pelo processo de CQ posteriormente.'
+    );
+
+    if (confirm) {
+      onStatusUpdate(data.id, StudyStatus.ENVIADO_SEM_CQ);
+      showToast('Envio antecipado processado com sucesso!', 'success');
+      onBack();
+    }
+  };
+
   const handleStartEditing = (idx: number, value: string) => {
     if (readOnly) return;
     setEditingObsIdx(idx);
@@ -235,7 +254,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
   const handleExportCartaPDF = async (fromPreview: boolean = false) => {
     setIsExportingCarta(true);
-    
+
     // Pequeno delay para garantir que o estado reativo assentou
     await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -245,10 +264,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         const now = new Date().toISOString();
         activeRequest = { ...data, cartaGeneratedAt: now };
         onUpdateData(activeRequest);
-        
+
         // Ensure immediate database persistence for metadata
         await StorageService.addRequest(activeRequest);
-        
+
         // Tempo para o estado persistir antes da captura
         await new Promise(resolve => setTimeout(resolve, 800));
       }
@@ -450,7 +469,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 <tbody>
                   <tr className="border-b border-black bg-blue-50/30">
                     <td colSpan={6} style={{ textAlign: 'center', verticalAlign: 'middle', padding: '4px 0' }} className="text-center font-black uppercase text-[7px] text-blue-700 tracking-tighter">
-                        {data.plannedExtensions?.[0]?.networkType || data.networkDescription || 'Rede Externa'}
+                      {data.plannedExtensions?.[0]?.networkType || data.networkDescription || 'Rede Externa'}
                     </td>
                   </tr>
                   {(data.plannedExtensions && data.plannedExtensions.length > 0) ? data.plannedExtensions.map((ext, idx) => (
@@ -804,7 +823,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
     if (!data.networkGroup) missingFields.push('Grupo Rede');
     if (!data.responsePressureBase) missingFields.push('Pressão Resposta');
-    if (!data.responseCalculatedPressure) missingFields.push('Pressão Calculada');
 
     if (!data.interconnectionPoints || data.interconnectionPoints.length === 0) {
       missingFields.push('Pelo menos um Ponto de Interligação');
@@ -826,6 +844,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       if (!data.regSizingFutureFlow) missingFields.push('Vazão Futura do Regulador');
     }
 
+    if (!data.responseObservations || data.responseObservations.trim() === '') {
+      missingFields.push('Observações Resposta');
+    }
+
     return missingFields;
   };
 
@@ -845,14 +867,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   };
 
   const validateAllTechnicalFields = () => {
-    const missing = validateAnalysisFields();
-
-    // Add check for response observations (tab 3)
-    if (!data.responseObservations || data.responseObservations.trim() === '') {
-      missing.push('Observações Resposta (Passos Resposta)');
-    }
-
-    return missing;
+    return validateAnalysisFields();
   };
 
   const handleInitiateFinish = async () => {
@@ -1001,8 +1016,34 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     onBack();
   };
 
+  const handleFinalizeApproved = async () => {
+    const confirmed = await showConfirm(
+      'O estudo foi aprovado pelo Controle de Qualidade.\n\nDeseja concluir o estudo e enviar notificação ao solicitante?',
+      'Concluir Estudo Aprovado'
+    );
+    if (!confirmed) return;
+    handleUpdateStatus(StudyStatus.CONCLUIDO, { totalExecutionTime: elapsedTime });
+    onBack();
+  };
+
 
   const handlePauseToggle = () => setIsPaused(prev => !prev);
+
+  const handleOpenHoldModal = () => {
+    setHoldInfo('');
+    setShowHoldModal(true);
+  };
+
+  const handleConfirmHold = () => {
+    if (!holdInfo.trim()) return;
+    onStatusUpdate(data.id || '', StudyStatus.AGUARDANDO_INFORMACAO, holdInfo, undefined, { 
+      totalExecutionTime: elapsedTime,
+      holdRequestSeen: false 
+    });
+    setShowHoldModal(false);
+    onBack();
+  };
+
 
   const revisionHistory = useMemo(() => {
     if (!data.studyNumber) return [];
@@ -2206,9 +2247,20 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 >
                   <i className="fa-solid fa-envelope-open-text"></i> {isExportingCarta ? 'Exportando...' : 'Exportar Carta Resposta'}
                 </li>
-                <li className={`flex items-center gap-2 text-red-500 ${readOnly ? '' : 'cursor-pointer hover:text-red-700'}`}><i className="fa-solid fa-paper-plane"></i> Justificar Envio Antes do Controle</li>
-                <li className={`flex items-center gap-2 font-black text-green-600 ${readOnly ? '' : 'cursor-pointer hover:text-green-700'}`}><i className="fa-solid fa-check-double"></i> Enviar Estudo</li>
-                <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'}`}><i className="fa-solid fa-plus text-[#004080]"></i> Abrir Controle de Qualidade</li>
+                <li
+                  onClick={handleJustifyPreQC}
+                  className={`flex items-center gap-2 text-red-500 ${readOnly ? '' : 'cursor-pointer hover:text-red-700'}`}
+                >
+                  <i className="fa-solid fa-paper-plane"></i> Justificar Envio Antes do Controle
+                </li>
+
+                <li
+                  onClick={() => setShowQCModal(true)}
+                  className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${data.qcData ? 'text-purple-600 font-black' : ''}`}
+                >
+                  <i className={`fa-solid ${data.qcData?.qcStatusCQ === 'Reprovado' ? 'fa-triangle-exclamation text-red-500' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'fa-check-circle text-green-500' : 'fa-plus text-[#004080]'}`}></i>
+                  {data.qcData?.qcStatusCQ === 'Reprovado' ? 'Ver Motivo da Reprovação CQ' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'Ver Aprovação CQ' : 'Abrir Controle de Qualidade'}
+                </li>
               </ul>
             </div>
           </div>
@@ -2530,7 +2582,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               <h2 className="text-xl font-black text-[#004080] uppercase tracking-tight">{data.studyNumber || 'PROV-APR'}</h2>
               <span className="px-3 py-1 rounded-lg bg-indigo-50 text-indigo-600 text-[9px] font-black uppercase tracking-widest border border-indigo-100">{getFO(data.formType)}</span>
             </div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Centro de Engenharia e Planejamento • Naturgy SPS</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Centro de Engenharia e Planejamento de Rede</p>
           </div>
         </div>
 
@@ -2683,14 +2735,22 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       {/* RODAPÉ DE CONTROLE PRINCIPAL */}
       <div className="bg-white border-t border-slate-200 px-10 py-5 flex items-center justify-between shadow-2xl z-20">
         {!readOnly ? (
-          <>
+          <div className="flex w-full justify-between items-center">
             <div className="flex gap-4">
-              <button
+               <button
                 onClick={handlePauseToggle}
                 className={`px-8 py-4 rounded-[1.5rem] font-black uppercase text-[11px] tracking-widest flex items-center gap-3 transition-all active:scale-95 shadow-lg ${isPaused ? 'bg-orange-500 text-white border-orange-400 shadow-orange-100' : 'bg-white text-orange-600 border border-orange-100 hover:bg-orange-50'}`}
               >
                 <i className={`fa-solid ${isPaused ? 'fa-play' : 'fa-pause'} text-sm`}></i>
-                {isPaused ? 'Retomar' : 'Pausar'}
+                {isPaused ? 'Retomar Cronômetro' : 'Pausar Cronômetro'}
+              </button>
+
+              <button
+                onClick={handleOpenHoldModal}
+                className="px-8 py-4 bg-orange-50 text-orange-600 border border-orange-100 rounded-[1.5rem] font-black uppercase text-[11px] tracking-widest hover:bg-orange-500 hover:text-white transition-all active:scale-95 shadow-lg flex items-center gap-3"
+              >
+                <i className="fa-solid fa-circle-question text-sm"></i>
+                Pedir Informação
               </button>
 
               <button
@@ -2709,13 +2769,15 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               <i className="fa-solid fa-check-double text-green-400 text-lg"></i>
               Concluir Estudo Técnico
             </button>
-          </>
+          </div>
         ) : (
           <div className="flex items-center gap-4">
-            <div className="px-6 py-3 bg-indigo-50 text-indigo-600 rounded-[1.2rem] font-black uppercase text-[10px] tracking-widest border border-indigo-100 flex items-center gap-3">
-              <i className="fa-solid fa-eye text-sm"></i>
-              Modo de Visualização Técnica
-            </div>
+            {data.status === StudyStatus.APROVADO_CQ && (
+              <div className="px-6 py-3 bg-green-50 text-green-600 rounded-[1.2rem] font-black uppercase text-[10px] tracking-widest border border-green-100 flex items-center gap-3">
+                <i className="fa-solid fa-clipboard-check text-sm"></i>
+                Aprovado pelo CQ
+              </div>
+            )}
             {data.completedAt && (
               <div className="px-6 py-3 bg-green-50 text-green-600 rounded-[1.2rem] font-black uppercase text-[10px] tracking-widest border border-green-100">
                 Concluído em: {formatDateTimeBR(data.completedAt)}
@@ -2725,8 +2787,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         )}
 
         <div className="hidden lg:block text-right">
-          <p className="text-[9px] text-slate-300 font-black uppercase tracking-[0.1em] leading-none mb-1.5">Technical Workflow Manager</p>
-          <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest opacity-50">SPS Region • Live Monitor 2.5</p>
+          <p className="text-[9px] text-slate-300 font-black uppercase tracking-[0.1em] leading-none mb-1.5"></p>
+          <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest opacity-50"></p>
         </div>
       </div>
       {browsingRevision && (
@@ -2804,6 +2866,68 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         </div>
       )}
       {renderCartaPreviewModal()}
+      {showHoldModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[999] p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+            <div className="p-8 border-b border-slate-50 flex items-center justify-between text-[#004080]">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-500 shadow-inner border border-orange-100">
+                  <i className="fa-solid fa-pause text-xl"></i>
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-tight">Pausar e Pedir Info</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{data.studyNumber}</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowHoldModal(false); setHoldInfo(''); setIsPaused(false); }} className="p-2 hover:bg-slate-50 rounded-xl transition-colors text-slate-300">
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Informação Necessária:</label>
+                <textarea
+                  autoFocus
+                  value={holdInfo}
+                  onChange={(e) => setHoldInfo(e.target.value)}
+                  className="w-full h-40 p-5 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-[#004080]/5 focus:bg-white focus:border-[#004080] transition-all text-sm text-slate-700 placeholder:text-slate-300"
+                  placeholder="Descreva detalhadamente qual informação adicional é necessária para prosseguir..."
+                ></textarea>
+              </div>
+              <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100/50 flex items-start gap-4">
+                <i className="fa-solid fa-circle-info text-orange-400 mt-1"></i>
+                <p className="text-[10px] text-orange-800/80 font-bold leading-relaxed uppercase">
+                  O estudo ficará bloqueado e o solicitante receberá um banner de notificação.
+                </p>
+              </div>
+            </div>
+            <div className="p-8 bg-slate-50 flex gap-4">
+              <button 
+                onClick={() => { setShowHoldModal(false); setHoldInfo(''); setIsPaused(false); }} 
+                className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors bg-white rounded-2xl border border-slate-100"
+              >
+                Continuar Executando
+              </button>
+              <button
+                disabled={!holdInfo.trim()}
+                onClick={handleConfirmHold}
+                className={`flex-[2] py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg transition-all ${holdInfo.trim() ? 'bg-orange-500 text-white shadow-orange-200 hover:scale-[1.02] active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+              >
+                Confirmar Pausa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showQCModal && (
+        <QCControlModal
+          data={data}
+          allUsers={allUsers}
+          currentUser={currentUser}
+          readOnly={true}
+          onClose={() => setShowQCModal(false)}
+        />
+      )}
       {/* Off-screen hidden carta for background SVG/PNG export */}
       <div style={{ position: 'fixed', top: 0, left: '-9999px', width: '1200px', pointerEvents: 'none', background: 'white', zIndex: -1 }}>
         {renderCartaPaper(hiddenCartaRef)}

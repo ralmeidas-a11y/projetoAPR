@@ -91,44 +91,42 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
   const standardLabelClass = "text-[9px] text-[#004080] shrink-0 uppercase tracking-tight font-bold pb-0.5";
   const inputBaseClass = "flex-grow p-1 rounded outline-none font-normal h-8 text-[10pt] border transition-all mb-0.5";
 
-  const renderField = (label: string, value: any, isRequired = false) => {
-    if (readOnly) {
-      return (
-        <div className="flex flex-col border-b border-slate-100 py-1">
-          <span className={isRequired ? requiredLabelClass : standardLabelClass}>{label}</span>
-          <span className="text-[10pt] font-semibold text-slate-800">{value || '-'}</span>
-        </div>
-      );
-    }
-    return null;
-  };
+  // Table styles for readOnly mode
+  const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: '10pt', fontFamily: 'Arial, sans-serif' };
+  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '4px 8px', fontSize: '9px', color: '#004080', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.025em', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top', whiteSpace: 'nowrap' };
+  const tdStyle: React.CSSProperties = { padding: '4px 8px', fontSize: '10pt', fontWeight: 600, color: '#1e293b', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' };
+
+  const ReadOnlyField = ({ label, value, colSpan = 12 }: { label: string; value: any; colSpan?: number }) => (
+    <div className={`col-span-${colSpan} flex flex-col border border-slate-200 rounded-lg p-2.5 bg-white shadow-sm`}>
+      <label className="text-[8px] text-[#004080] font-extrabold uppercase tracking-widest mb-1.5 opacity-70">{label}</label>
+      <div className="text-[10.5pt] font-bold text-slate-800 break-words leading-tight">{value || '-'}</div>
+    </div>
+  );
 
   return (
-    <div className={`space-y-8 ${readOnly ? 'pointer-events-none opacity-90' : ''}`} style={{ fontSize: '10pt', fontFamily: 'Arial, sans-serif' }}>
+    <div className={`space-y-8 ${readOnly ? 'pointer-events-none' : ''}`} style={{ fontSize: '10pt', fontFamily: 'Arial, sans-serif' }}>
       <datalist id="municipalities">
         {municipalities.map(city => <option key={city} value={city} />)}
       </datalist>
 
       {/* Header Title Section */}
-      <div className="bg-[#004080] text-white text-center py-2 px-4 rounded font-bold uppercase tracking-wide text-xs">
+      <div className="bg-[#004080] text-white text-center py-2.5 px-4 rounded-lg font-black uppercase tracking-widest text-[11px] shadow-md mb-6">
         ESTUDO ADR PARA VIABILIDADE TÉCNICA DE CLIENTES RESIDENCIAIS / COMERCIAIS
       </div>
 
       {/* DADOS DO SOLICITANTE */}
-      <section className="bg-white border border-slate-200">
-        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">DADOS DO SOLICITANTE</div>
+      <section className="bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+        <div className="bg-[#004080] text-white px-5 py-2.5 font-black text-[10px] uppercase tracking-wider">DADOS DO SOLICITANTE</div>
         {readOnly ? (
-          <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-2 bg-white">
-            <div className="col-span-12">{renderField("Naturgy", data.naturgyUnit)}</div>
-            <div className="col-span-12">{renderField("Tipo de Estudo", data.studyType, true)}</div>
-            {data.studyType === 'Revisão de Estudo' && (
-              <div className="col-span-12">{renderField("Estudo Anterior", data.previousStudy, true)}</div>
-            )}
-            <div className="col-span-12 md:col-span-8">{renderField("Resp. Solicitação", data.requesterName, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Data Solicitação", formatDate(data.requestDate), true)}</div>
-            <div className="col-span-12 md:col-span-8">{renderField("Área Solicitante", data.requesterArea, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Telefone", data.phone)}</div>
-            <div className="col-span-12">{renderField("e-mail", data.email, true)}</div>
+          <div className="p-5 grid grid-cols-12 gap-4 bg-[#f8fbff]/50">
+            <ReadOnlyField label="Naturgy" value={data.naturgyUnit} colSpan={4} />
+            <ReadOnlyField label="Tipo de Estudo" value={data.studyType} colSpan={4} />
+            <ReadOnlyField label="Estudo Anterior" value={data.studyType === 'Revisão de Estudo' ? data.previousStudy : 'N/A'} colSpan={4} />
+            <ReadOnlyField label="Responsável pela Solicitação" value={data.requesterName} colSpan={8} />
+            <ReadOnlyField label="Data Solicitação" value={formatDate(data.requestDate)} colSpan={4} />
+            <ReadOnlyField label="Área Solicitante" value={data.requesterArea} colSpan={12} />
+            <ReadOnlyField label="E-mail" value={data.email} colSpan={8} />
+            <ReadOnlyField label="Telefone" value={data.phone} colSpan={4} />
           </div>
         ) : (
           <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
@@ -190,19 +188,19 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
       </section>
 
       {/* DADOS BASE DO ESTUDO */}
-      <section className="bg-white border border-slate-200">
-        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">DADOS BASE DO ESTUDO</div>
+      <section className="bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+        <div className="bg-[#004080] text-white px-5 py-2.5 font-black text-[10px] uppercase tracking-wider">DADOS BASE DO ESTUDO</div>
         {readOnly ? (
-          <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-2 bg-white">
-            <div className="col-span-12">{renderField("Título/Cliente", data.studyTitle, true)}</div>
-            <div className="col-span-12 md:col-span-6">{renderField("Mercado", data.marketCategory)}</div>
-            <div className="col-span-12">{renderField("Endereço", data.address, true)}</div>
-            <div className="col-span-12 md:col-span-6">{renderField("Cidade", data.city)}</div>
-            <div className="col-span-12 md:col-span-6">{renderField("Bairro", data.neighborhood, true)}</div>
-            <div className="col-span-12 md:col-span-6">{renderField("Tipo de Rede", data.networkType)}</div>
-            <div className="col-span-12 md:col-span-6">{renderField("Pressão", data.pressure)}</div>
-            <div className="col-span-12 md:col-span-6">{renderField("Mapa Localização", data.mapLocation)}</div>
-            <div className="col-span-12 md:col-span-6">{renderField("Tipo Arquivo", data.fileType)}</div>
+          <div className="p-5 grid grid-cols-12 gap-4 bg-[#f8fbff]/50">
+            <ReadOnlyField label="Título/Cliente" value={data.studyTitle} colSpan={12} />
+            <ReadOnlyField label="Mercado" value={data.marketCategory} colSpan={6} />
+            <ReadOnlyField label="Endereço" value={data.address} colSpan={12} />
+            <ReadOnlyField label="Cidade" value={data.city} colSpan={6} />
+            <ReadOnlyField label="Bairro" value={data.neighborhood} colSpan={6} />
+            <ReadOnlyField label="Tipo de Rede" value={data.networkType} colSpan={6} />
+            <ReadOnlyField label="Pressão" value={data.pressure} colSpan={6} />
+            <ReadOnlyField label="Mapa Localização" value={data.mapLocation} colSpan={12} />
+            <ReadOnlyField label="Tipo Arquivo" value={data.fileType} colSpan={12} />
           </div>
         ) : (
           <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
@@ -285,61 +283,74 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
       {/* GRADE DE CONSUMO */}
       <section className="overflow-x-auto border border-slate-200">
         <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">CARGAS / VAZÃO PREVISTA</div>
-        <div className="grid grid-cols-4 min-w-[500px] w-full bg-white text-[10px]">
-          <div className="border-b border-r bg-white font-bold p-2.5 text-[#004080] uppercase tracking-tighter">Mercado</div>
-          <div className="border-b border-r bg-white font-bold p-2.5 text-center text-[#004080] uppercase tracking-tighter">Nº Clientes</div>
-          <div className="border-b border-r bg-white font-bold p-2.5 text-center text-[#004080] uppercase tracking-tighter">Vazão / Unidade (m³/h)</div>
-          <div className="border-b bg-white font-bold p-2.5 text-center text-[#004080] uppercase tracking-tighter">Q total previsto (m³/h)</div>
+        <table style={{ ...tableStyle, minWidth: '500px', textAlign: 'center' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#fff' }}>
+              <th style={{ ...thStyle, borderRight: '1px solid #e2e8f0', padding: '10px', textAlign: 'left' }}>Mercado</th>
+              <th style={{ ...thStyle, borderRight: '1px solid #e2e8f0', padding: '10px', textAlign: 'center' }}>Nº Clientes</th>
+              <th style={{ ...thStyle, borderRight: '1px solid #e2e8f0', padding: '10px', textAlign: 'center' }}>Vazão / Unidade (m³/h)</th>
+              <th style={{ ...thStyle, padding: '10px', textAlign: 'center' }}>Q total previsto (m³/h)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+              <td style={{ padding: '10px', borderRight: '1px solid #e2e8f0', fontWeight: 500, textAlign: 'left' }}>Residencial:</td>
+              <td style={{ borderRight: '1px solid #e2e8f0', padding: 0 }}>
+                {readOnly ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontWeight: 'bold' }}>{data.numClientsRes || '-'}</div>
+                ) : (
+                  <input type="number" name="numClientsRes" disabled={!isResActive} value={isResActive ? (data.numClientsRes ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+                )}
+              </td>
+              <td style={{ borderRight: '1px solid #e2e8f0', padding: 0 }}>
+                {readOnly ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontWeight: 'bold' }}>{data.flowUnitRes || '-'}</div>
+                ) : (
+                  <input type="number" step="0.01" name="flowUnitRes" disabled={!isResActive} value={isResActive ? (data.flowUnitRes ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+                )}
+              </td>
+              <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold' }}>{formatBR(isResActive ? data.totalFlowRes : 0)}</td>
+            </tr>
 
-          <div className="border-b border-r p-2.5 font-medium">Residencial:</div>
-          <div className="border-b border-r">
-            {readOnly ? (
-              <div className="flex items-center justify-center h-full font-bold">{data.numClientsRes || '-'}</div>
-            ) : (
-              <input type="number" name="numClientsRes" disabled={!isResActive} value={isResActive ? (data.numClientsRes ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
-            )}
-          </div>
-          <div className="border-b border-r">
-            {readOnly ? (
-              <div className="flex items-center justify-center h-full font-bold">{data.flowUnitRes || '-'}</div>
-            ) : (
-              <input type="number" step="0.01" name="flowUnitRes" disabled={!isResActive} value={isResActive ? (data.flowUnitRes ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
-            )}
-          </div>
-          <div className="border-b p-2.5 text-center font-bold">{formatBR(isResActive ? data.totalFlowRes : 0)}</div>
+            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+              <td style={{ padding: '10px', borderRight: '1px solid #e2e8f0', fontWeight: 500, textAlign: 'left' }}>Comercial:</td>
+              <td style={{ borderRight: '1px solid #e2e8f0', padding: 0 }}>
+                {readOnly ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontWeight: 'bold' }}>{data.numClientsCom || '-'}</div>
+                ) : (
+                  <input type="number" name="numClientsCom" disabled={!isComActive} value={isComActive ? (data.numClientsCom ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+                )}
+              </td>
+              <td style={{ borderRight: '1px solid #e2e8f0', padding: 0 }}>
+                {readOnly ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontWeight: 'bold' }}>{data.flowUnitCom || '-'}</div>
+                ) : (
+                  <input type="number" step="0.01" name="flowUnitCom" disabled={!isComActive} value={isComActive ? (data.flowUnitCom ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
+                )}
+              </td>
+              <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold' }}>{formatBR(isComActive ? data.totalFlowCom : 0)}</td>
+            </tr>
 
-          <div className="border-b border-r p-2.5 font-medium">Comercial:</div>
-          <div className="border-b border-r">
-            {readOnly ? (
-              <div className="flex items-center justify-center h-full font-bold">{data.numClientsCom || '-'}</div>
-            ) : (
-              <input type="number" name="numClientsCom" disabled={!isComActive} value={isComActive ? (data.numClientsCom ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
-            )}
-          </div>
-          <div className="border-b border-r">
-            {readOnly ? (
-              <div className="flex items-center justify-center h-full font-bold">{data.flowUnitCom || '-'}</div>
-            ) : (
-              <input type="number" step="0.01" name="flowUnitCom" disabled={!isComActive} value={isComActive ? (data.flowUnitCom ?? '') : ''} onChange={handleInputChange} className={inputGridClass} />
-            )}
-          </div>
-          <div className="border-b p-2.5 text-center font-bold">{formatBR(isComActive ? data.totalFlowCom : 0)}</div>
-
-          <div className="border-r font-bold p-2.5 bg-white uppercase text-[#004080]">Totais:</div>
-          <div className="border-r font-bold text-center p-2.5 bg-white">{totalClients}</div>
-          <div className="border-r font-bold text-center p-2.5 bg-white">{formatBR(totalFlowUnit)}</div>
-          <div className="font-bold text-center p-2.5 bg-[#004080] text-white">{formatBR(grandTotalFlow)}</div>
-        </div>
+            <tr>
+              <td style={{ padding: '10px', borderRight: '1px solid #e2e8f0', fontWeight: 'bold', color: '#004080', textTransform: 'uppercase', textAlign: 'left' }}>Totais:</td>
+              <td style={{ padding: '10px', borderRight: '1px solid #e2e8f0', fontWeight: 'bold', textAlign: 'center' }}>{totalClients}</td>
+              <td style={{ padding: '10px', borderRight: '1px solid #e2e8f0', fontWeight: 'bold', textAlign: 'center' }}>{formatBR(totalFlowUnit)}</td>
+              <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', backgroundColor: '#004080', color: '#fff' }}>{formatBR(grandTotalFlow)}</td>
+            </tr>
+          </tbody>
+        </table>
       </section>
 
       {/* CONSIDERAÇÕES E PRAZOS */}
       <section className="bg-white border border-slate-200 p-5">
          <h4 className="font-bold text-[#004080] mb-4 uppercase text-[10px] border-b border-slate-100 pb-2">Considerações sobre a solicitação</h4>
          {readOnly ? (
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-             {renderField("Prazo dias", "até 5 dias úteis")}
-             {renderField("Previsão de Entrega", formatDate(data.estimatedDeliveryDate))}
-           </div>
+           <table style={tableStyle}>
+             <tbody>
+               <tr><th style={thStyle}>Prazo dias</th><td style={tdStyle}>até 5 dias úteis</td></tr>
+               <tr><th style={thStyle}>Previsão de Entrega</th><td style={tdStyle}>{formatDate(data.estimatedDeliveryDate) || '-'}</td></tr>
+             </tbody>
+           </table>
          ) : (
            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
               <div className="flex items-center gap-4">
@@ -355,7 +366,7 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
       </section>
 
       {/* DOCUMENTAÇÃO E ANEXOS */}
-      <section>
+      <section className="hide-export">
         <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">DOCUMENTAÇÃO E ANEXOS</div>
         <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
           {!readOnly && (
@@ -413,7 +424,7 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
         <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">COMENTÁRIOS:</div>
         <div className={`p-4 border border-slate-200 ${readOnly ? '' : 'shadow-sm'} rounded-b bg-white`}>
           {readOnly ? (
-            <div className="min-h-[100px] text-[10pt] text-slate-700 whitespace-pre-wrap leading-relaxed">
+            <div className="h-auto text-[10pt] text-slate-700 whitespace-pre-wrap leading-relaxed overflow-visible">
               {data.comments || 'Nenhum comentário registrado.'}
             </div>
           ) : (

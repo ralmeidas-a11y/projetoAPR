@@ -52,19 +52,19 @@ const buildStepperMjml = (status?: StudyStatus) => {
     <mj-section background-color="#ffffff" padding="0 32px 32px 32px">
       <mj-group width="100%">
         ${steps
-          .map((step, idx) => {
-            const isCompleted =
-              idx < currentStepIdx || status === StudyStatus.CONCLUIDO;
-            const isActive =
-              idx === currentStepIdx && status !== StudyStatus.CONCLUIDO;
-            const color = isCompleted
-              ? "#10b981"
-              : isActive
-                ? "#f97316"
-                : "#cbd5e1";
-            const circleIcon = isCompleted ? "●" : isActive ? "○" : "○";
+      .map((step, idx) => {
+        const isCompleted =
+          idx < currentStepIdx || status === StudyStatus.CONCLUIDO;
+        const isActive =
+          idx === currentStepIdx && status !== StudyStatus.CONCLUIDO;
+        const color = isCompleted
+          ? "#10b981"
+          : isActive
+            ? "#f97316"
+            : "#cbd5e1";
+        const circleIcon = isCompleted ? "●" : isActive ? "○" : "○";
 
-            return `
+        return `
             <mj-column width="25%">
               <mj-text align="center" padding="0">
                 <div style="font-size: 14px; color: ${color}; font-weight: 900; margin-bottom: 4px;">${circleIcon}</div>
@@ -73,8 +73,8 @@ const buildStepperMjml = (status?: StudyStatus) => {
               <mj-divider border-width="3px" border-color="${color}" padding="10px 0" />
             </mj-column>
           `;
-          })
-          .join("")}
+      })
+      .join("")}
       </mj-group>
     </mj-section>
   `;
@@ -100,15 +100,15 @@ const buildRefinedHtmlTemplate = (
         <mj-divider border-width="2px" border-color="#f8fafc" padding="0" />
         <mj-table font-size="14px" padding="top: 10px;">
           ${sec.items
-            .map(
-              (item) => `
+          .map(
+            (item) => `
             <tr>
               <td style="padding: 10px 0; color: #94a3b8; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px;">${item.label}</td>
               <td style="padding: 10px 0; color: #1e293b; font-weight: 700; text-align: right;">${item.value}</td>
             </tr>
           `,
-            )
-            .join("")}
+          )
+          .join("")}
         </mj-table>
       </mj-column>
     </mj-section>
@@ -127,14 +127,14 @@ const buildRefinedHtmlTemplate = (
         </mj-text>
         <mj-text align="center">
           ${attachments
-            .map(
-              (att) => `
+        .map(
+          (att) => `
             <span style="background-color: #ffffff; color: #9a3412; padding: 8px 16px; border-radius: 12px; font-size: 12px; font-weight: 800; display: inline-block; margin: 4px; border: 1px solid #ffedd5;">
               📎 ${att}
             </span>
           `,
-            )
-            .join("")}
+        )
+        .join("")}
         </mj-text>
       </mj-column>
     </mj-section>
@@ -250,6 +250,17 @@ const buildRefinedHtmlTemplate = (
   return result.html;
 };
 
+const safeFormatDate = (dateStr?: string | null) => {
+  if (!dateStr) return "N/A";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "N/A";
+    return d.toLocaleDateString("pt-BR", { hour: '2-digit', minute: '2-digit' }).replace(',', ' -');
+  } catch (e) {
+    return "N/A";
+  }
+};
+
 /**
  * Serviço para envio de notificações por email
  */
@@ -266,8 +277,8 @@ export const EmailService = {
     const attachmentList =
       attachmentNames.length > 0
         ? attachmentNames
-            .map((name, idx) => `${idx + 1}. ${name}`)
-            .join("\n         ")
+          .map((name, idx) => `${idx + 1}. ${name}`)
+          .join("\n         ")
         : "Nenhum arquivo anexado";
 
     const studyRef = request.studyNumber?.trim();
@@ -284,7 +295,7 @@ Uma nova solicitação de Análise de Planificação de Rede foi gerada no siste
 ───────────────────────────────────────────────────────────
 Código: ${request.studyNumber || "PROV-APR"}
 Título: ${request.studyTitle || request.clientName || "Sem título"}
-Data:   ${new Date(request.requestDate).toLocaleDateString("pt-BR")}
+Data:   ${safeFormatDate(request.requestDate)}
 
 👤 INFORMAÇÕES DO SOLICITANTE
 ───────────────────────────────────────────────────────────
@@ -650,6 +661,338 @@ Naturgy - Portal Técnico APR`,
   },
 
   /**
+   * Email enviado quando o analista conclui a execução e envia para Controle de Qualidade
+   * (analista → prgc sistema)
+   */
+  generateQCRequestEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    return {
+      recipientEmail: SYSTEM_EMAIL,
+      recipientName: 'Controle de Qualidade APR',
+      senderEmail: analystEmail,
+      senderName: analystName,
+      subject: `📋 Solicitação de Controle de Qualidade: Estudo Nº ${studyRef || request.id}`,
+      body: `📋 SOLICITAÇÃO DE CONTROLE DE QUALIDADE
+───────────────────────────────────────────────────────────
+Prezada Equipe de Controle de Qualidade,
+
+Informo que o estudo ${request.studyNumber} foi concluído e está sendo encaminhado para revisão no Controle de Qualidade.
+
+📋 DADOS DO ESTUDO
+───────────────────────────────────────────────────────────
+Código: ${request.studyNumber || 'N/A'}
+Título: ${request.studyTitle || request.clientName || 'N/A'}
+Analista Responsável: ${analystName}
+Data de Envio: ${new Date().toLocaleDateString('pt-BR')}
+
+Solicito a análise e validação conforme os critérios do Controle de Qualidade.
+
+Atenciosamente,
+${analystName}
+Naturgy - Portal Técnico APR`,
+      htmlBody: buildRefinedHtmlTemplate(
+        '📋 Solicitação de Controle de Qualidade',
+        `Prezada Equipe de Controle de Qualidade,<br/><br/>Informo que o estudo <strong>${request.studyNumber}</strong> foi concluído e está sendo encaminhado para revisão no <strong>Controle de Qualidade</strong>.`,
+        [
+          {
+            title: '📋 DADOS DO ESTUDO',
+            items: [
+              { label: 'Código', value: request.studyNumber || 'N/A' },
+              { label: 'Título', value: request.studyTitle || request.clientName || 'N/A' },
+              { label: 'Local', value: `${request.address || ''}, ${request.city || ''}` },
+              { label: 'Analista Responsável', value: analystName },
+              { label: 'Data de Envio', value: new Date().toLocaleDateString('pt-BR') },
+            ]
+          },
+          {
+            title: '📝 AÇÃO NECESSÁRIA',
+            items: [
+              { label: 'Status', value: 'CONTROLE DE QUALIDADE' },
+              { label: 'Ação', value: 'Realizar análise e validação conforme critérios CQ.' },
+            ]
+          }
+        ],
+        [
+          'Atenciosamente,',
+          '<strong>' + analystName + '</strong>',
+          '<strong>Naturgy - Portal Técnico APR</strong>'
+        ],
+        [],
+        StudyStatus.CONTROLE_QUALIDADE
+      )
+    };
+  },
+
+  /**
+   * Email enviado pelo analista ao solicitante quando o estudo é enviado ANTES do CQ
+   * (analista → solicitante) — resposta antecipada por prazo
+   */
+  generatePreQCResponseEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    return {
+      recipientEmail: request.email,
+      recipientName: request.requesterName,
+      senderEmail: analystEmail,
+      senderName: analystName,
+      subject: `Resposta Antecipada do Estudo Nº ${studyRef || request.id}`,
+      body: `📋 RESPOSTA ANTECIPADA DO ESTUDO
+───────────────────────────────────────────────────────────
+Prezado(a) ${request.requesterName},
+
+Informamos que o estudo ${request.studyNumber} está sendo encaminhado em caráter antecipado, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.
+
+O estudo passará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, uma versão revisada será emitida e encaminhada.
+
+📋 DADOS DO ESTUDO
+───────────────────────────────────────────────────────────
+Código: ${request.studyNumber || 'N/A'}
+Título: ${request.studyTitle || request.clientName || 'N/A'}
+Local:  ${request.address || ''}, ${request.city || ''}
+Data:   ${new Date().toLocaleDateString('pt-BR')}
+
+📂 ACESSO AOS RESULTADOS
+───────────────────────────────────────────────────────────
+Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo.
+
+Atenciosamente,
+${analystName}
+Naturgy - Portal Técnico APR`,
+      htmlBody: buildRefinedHtmlTemplate(
+        '📋 Resposta Antecipada do Estudo',
+        `Prezado(a) <strong>${request.requesterName}</strong>,<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> está sendo encaminhado em caráter <strong>antecipado</strong>, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.<br/><br/>O estudo passará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, <strong>uma versão revisada será emitida e encaminhada</strong>.`,
+        [
+          {
+            title: '📋 DADOS DO ESTUDO',
+            items: [
+              { label: 'Código', value: request.studyNumber || 'N/A' },
+              { label: 'Título', value: request.studyTitle || request.clientName || 'N/A' },
+              { label: 'Local', value: `${request.address || ''}, ${request.city || ''}` },
+              { label: 'Analista Responsável', value: analystName },
+              { label: 'Data de Envio', value: new Date().toLocaleDateString('pt-BR') },
+            ]
+          },
+          {
+            title: '⚠️ OBSERVAÇÃO IMPORTANTE',
+            items: [
+              { label: 'Situação', value: 'Enviado antes do Controle de Qualidade' },
+              { label: 'Motivo', value: 'Prazo de entrega' },
+              { label: 'Ação Pendente', value: 'O estudo ainda passará pelo CQ. Se necessário, nova versão será emitida.' },
+            ]
+          }
+        ],
+        [
+          'Atenciosamente,',
+          '<strong>' + analystName + '</strong>',
+          '<strong>Naturgy - Portal Técnico APR</strong>'
+        ],
+        [],
+        StudyStatus.ENVIADO_SEM_CQ
+      )
+    };
+  },
+
+  /**
+   * Email enviado pelo analista ao sistema (prgc) informando envio antes do CQ
+   * (analista → prgc)
+   */
+  generatePreQCSysEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    return {
+      recipientEmail: SYSTEM_EMAIL,
+      recipientName: 'Controle de Qualidade APR',
+      senderEmail: analystEmail,
+      senderName: analystName,
+      subject: `⚠️ Envio Antecipado Antes do CQ: Estudo Nº ${studyRef || request.id}`,
+      body: `⚠️ ENVIO ANTECIPADO ANTES DO CONTROLE DE QUALIDADE
+───────────────────────────────────────────────────────────
+Prezada Equipe de Controle de Qualidade,
+
+Informo que o estudo ${request.studyNumber} foi enviado ao solicitante ANTES da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.
+
+O estudo está sendo encaminhado para análise no CQ normalmente. Caso sejam identificadas correções necessárias, será emitida nova versão ao solicitante com as devidas ressalvas corrigidas.
+
+📋 DADOS DO ESTUDO
+───────────────────────────────────────────────────────────
+Código: ${request.studyNumber || 'N/A'}
+Título: ${request.studyTitle || request.clientName || 'N/A'}
+Analista Responsável: ${analystName}
+Data de Envio ao Solicitante: ${new Date().toLocaleDateString('pt-BR')}
+Motivo: Prazo de entrega
+
+Solicito a análise e validação conforme os critérios do Controle de Qualidade.
+
+Atenciosamente,
+${analystName}
+Naturgy - Portal Técnico APR`,
+      htmlBody: buildRefinedHtmlTemplate(
+        '⚠️ Envio Antecipado Antes do CQ',
+        `Prezada Equipe de Controle de Qualidade,<br/><br/>Informo que o estudo <strong>${request.studyNumber}</strong> foi enviado ao solicitante <strong>ANTES</strong> da conclusão do processo de Controle de Qualidade, em função do <strong>prazo de entrega</strong>.<br/><br/>O estudo está sendo encaminhado para análise no CQ normalmente. Caso sejam identificadas correções necessárias, será emitida <strong>nova versão ao solicitante</strong> com as devidas ressalvas corrigidas.`,
+        [
+          {
+            title: '📋 DADOS DO ESTUDO',
+            items: [
+              { label: 'Código', value: request.studyNumber || 'N/A' },
+              { label: 'Título', value: request.studyTitle || request.clientName || 'N/A' },
+              { label: 'Local', value: `${request.address || ''}, ${request.city || ''}` },
+              { label: 'Analista Responsável', value: analystName },
+              { label: 'Enviado ao Solicitante em', value: new Date().toLocaleDateString('pt-BR') },
+              { label: 'Motivo', value: 'Prazo de entrega' },
+            ]
+          },
+          {
+            title: '📝 AÇÃO NECESSÁRIA',
+            items: [
+              { label: 'Status', value: 'ENVIADO SEM CQ → CONTROLE DE QUALIDADE' },
+              { label: 'Ação', value: 'Realizar análise e validação. Se reprovado, analista deve gerar nova documentação corrigida.' },
+            ]
+          }
+        ],
+        [
+          'Atenciosamente,',
+          '<strong>' + analystName + '</strong>',
+          '<strong>Naturgy - Portal Técnico APR</strong>'
+        ],
+        [],
+        StudyStatus.CONTROLE_QUALIDADE
+      )
+    };
+  },
+
+  /**
+   * Email enviado pelo ADM/QC para o Analista quando o estudo é APROVADO no CQ
+   */
+  generateQCApprovalAnalystEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+    qcName: string,
+    observations?: string,
+  ): EmailNotificationData => {
+    return {
+      recipientEmail: analystEmail,
+      recipientName: analystName,
+      subject: `✅ Estudo APROVADO no CQ: ${request.studyNumber}`,
+      body: `Prezado(a) ${analystName},
+
+Informamos que o estudo ${request.studyNumber} foi APROVADO no Controle de Qualidade por ${qcName}.
+
+O estudo retornou para sua fila com o status "Aprovado pelo CQ".
+Por favor, realize o envio formal do e-mail de conclusão para o solicitante através do painel técnico para encerrar o processo.
+
+Observações do QC:
+${observations || "Nenhuma observação adicional."}
+
+Atenciosamente,
+Controle de Qualidade APR
+Naturgy`,
+      htmlBody: buildRefinedHtmlTemplate(
+        "✅ Estudo APROVADO no Controle de Qualidade",
+        `Prezado(a) <strong>${analystName}</strong>,<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> foi <span style="color: #10b981; font-weight: bold;">APROVADO</span> no Controle de Qualidade por <strong>${qcName}</strong>.<br/><br/>O estudo retornou para sua fila com o status <strong>"Aprovado pelo CQ"</strong>.`,
+        [
+          {
+            title: "📋 DADOS DO ESTUDO",
+            items: [
+              { label: "Código", value: request.studyNumber || "N/A" },
+              { label: "Cliente", value: request.studyTitle || request.clientName || "N/A" },
+              { label: "Aprovado por", value: qcName },
+            ]
+          },
+          {
+            title: "📝 PRÓXIMAS AÇÕES",
+            items: [
+              { label: "Status Atual", value: "APROVADO PELO CQ" },
+              { label: "Ação Necessária", value: "Enviar e-mail final ao solicitante e concluir estudo." },
+              { label: "Observações", value: observations || "Nenhuma observação." },
+            ]
+          }
+        ],
+        [
+          "Por favor, finalize o processo no portal o quanto antes.",
+          "Atenciosamente,",
+          "<strong>Controle de Qualidade APR</strong>",
+          "<strong>Naturgy</strong>"
+        ],
+        [],
+        StudyStatus.APROVADO_CQ
+      ),
+      senderEmail: undefined, // Will be filled by the caller with supervisor email
+      senderName: qcName,
+    };
+  },
+
+  /**
+   * Email enviado pelo ADM/QC para o Analista quando o estudo é REPROVADO no CQ
+   */
+  generateQCRejectionAnalystEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+    qcName: string,
+    reason: string,
+  ): EmailNotificationData => {
+    return {
+      recipientEmail: analystEmail,
+      recipientName: analystName,
+      subject: `❌ Estudo REPROVADO no CQ: ${request.studyNumber}`,
+      body: `Prezado(a) ${analystName},
+
+Informamos que o estudo ${request.studyNumber} foi REPROVADO no Controle de Qualidade por ${qcName}.
+
+O estudo retornou para sua fila com o status "Reprovado pelo CQ".
+Você deve realizar as correções indicadas abaixo e reenviar para o Controle de Qualidade.
+
+Motivo da Reprovação:
+${reason}
+
+Atenciosamente,
+Controle de Qualidade APR
+Naturgy`,
+      htmlBody: buildRefinedHtmlTemplate(
+        "❌ Estudo REPROVADO no Controle de Qualidade",
+        `Prezado(a) <strong>${analystName}</strong>,<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> foi <span style="color: #ef4444; font-weight: bold;">REPROVADO</span> no Controle de Qualidade por <strong>${qcName}</strong>.<br/><br/>O estudo retornou para sua fila com o status <strong>"Reprovado pelo CQ"</strong> para correções.`,
+        [
+          {
+            title: "📋 DADOS DO ESTUDO",
+            items: [
+              { label: "Código", value: request.studyNumber || "N/A" },
+              { label: "Cliente", value: request.studyTitle || request.clientName || "N/A" },
+              { label: "Reprovado por", value: qcName },
+            ]
+          },
+          {
+            title: "📝 MOTIVO DA REPROVAÇÃO",
+            items: [
+              { label: "Motivo/Ajustes", value: reason },
+            ]
+          }
+        ],
+        [
+          "Após as correções, reenvie o estudo para nova análise do CQ.",
+          "Atenciosamente,",
+          "<strong>Controle de Qualidade APR</strong>",
+          "<strong>Naturgy</strong>"
+        ],
+        [],
+        StudyStatus.REPROVADO_CQ
+      ),
+      senderEmail: undefined, // Will be filled by the caller with supervisor email
+      senderName: qcName,
+    };
+  },
+
+  /**
    * Email enviado para recuperação de senha
    */
   generatePasswordResetEmail: (
@@ -740,18 +1083,18 @@ ${emailData.body}
   buildEmlContent: (emailData: EmailNotificationData): string => {
     const boundary = "----=_Part_0_" + Date.now().toString(16);
     const date = new Date().toUTCString();
-    
+
     // Header do EML
     let eml = `From: ${emailData.senderName ? `"${emailData.senderName}" <${emailData.senderEmail || SYSTEM_EMAIL}>` : emailData.senderEmail || SYSTEM_EMAIL}\r\n`;
     eml += `To: ${emailData.recipientName ? `"${emailData.recipientName}" <${emailData.recipientEmail}>` : emailData.recipientEmail}\r\n`;
     eml += `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(emailData.subject)))}?=\r\n`;
     eml += `Date: ${date}\r\n`;
     eml += `MIME-Version: 1.0\r\n`;
-    
+
     if (emailData.htmlBody) {
       // Multipart (Texto + HTML)
       eml += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n\r\n`;
-      
+
       // Parte Texto
       eml += `--${boundary}\r\n`;
       eml += `Content-Type: text/plain; charset=UTF-8\r\n`;
@@ -759,7 +1102,7 @@ ${emailData.body}
       // Conversão simples para quoted-printable
       const plainText = emailData.body.replace(/=/g, '=3D').replace(/\r?\n/g, '\r\n');
       eml += `${plainText}\r\n\r\n`;
-      
+
       // Parte HTML
       eml += `--${boundary}\r\n`;
       eml += `Content-Type: text/html; charset=UTF-8\r\n`;
@@ -768,7 +1111,7 @@ ${emailData.body}
       const b64Html = btoa(unescape(encodeURIComponent(emailData.htmlBody)));
       const chunks = b64Html.match(/.{1,76}/g) || [];
       eml += chunks.join('\r\n') + '\r\n\r\n';
-      
+
       eml += `--${boundary}--\r\n`;
     } else {
       // ApenasTexto
@@ -777,7 +1120,7 @@ ${emailData.body}
       const plainText = emailData.body.replace(/=/g, '=3D').replace(/\r?\n/g, '\r\n');
       eml += `${plainText}\r\n`;
     }
-    
+
     return eml;
   },
 
@@ -826,26 +1169,34 @@ ${emailData.body}
       // Abre a janela de "Novo Email" do sistema instantaneamente.
       // E-mail gerado sem arquivos HTML/EML extras, conforme solicitado.
       // ═══════════════════════════════════════════════════════════
-      
+
       const to = encodeURIComponent(emailData.recipientEmail);
       const subject = encodeURIComponent(emailData.subject);
-      
+
       // Sanitiza o texto (remove quebras muito complexas ou tags html)
       const plainBody = emailData.body
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<\/p>/gi, '\n\n')
-        .replace(/<[^>]+>/g, '') 
+        .replace(/<[^>]+>/g, '')
         .replace(/&nbsp;/g, ' ');
-        
+
       const body = encodeURIComponent(plainBody);
       const mailtoLink = `mailto:${to}?subject=${subject}&body=${body}`;
+
+      // Melhoria para acionar o mailto: de forma mais robusta no navegador
+      console.log("[EmailService] Triggering mailto...");
       
-      const mailtoA = document.createElement('a');
-      mailtoA.href = mailtoLink;
-      mailtoA.target = '_blank';
-      document.body.appendChild(mailtoA);
-      mailtoA.click();
-      document.body.removeChild(mailtoA);
+      const link = document.createElement("a");
+      link.href = mailtoLink;
+      link.id = "mailto-temp-link";
+      document.body.appendChild(link);
+      
+      setTimeout(() => {
+        link.click();
+        setTimeout(() => {
+          document.body.removeChild(link);
+        }, 100);
+      }, 50);
 
       console.log(
         "%c📧 MAILTO LINK ACIONADO NO NAVEGADOR",

@@ -28,8 +28,8 @@ interface FormContainerProps {
   onViewRequest?: (request: FormData) => void;
 }
 
-export const FormContainer: React.FC<FormContainerProps> = ({ 
-  formType, initialData, onBack, onSubmit, userId, currentUser, allUsers = [], allRequests = [], readOnly = false, onStatusUpdate, onStartExecution, onViewRequest 
+export const FormContainer: React.FC<FormContainerProps> = ({
+  formType, initialData, onBack, onSubmit, userId, currentUser, allUsers = [], allRequests = [], readOnly = false, onStatusUpdate, onStartExecution, onViewRequest
 }) => {
   const { showAlert } = useDialog();
   const [browsingPrecedentStudy, setBrowsingPrecedentStudy] = useState<FormData | null>(null);
@@ -55,7 +55,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       outros: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' }
     }
   });
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -95,7 +95,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     fetchFiles();
     return () => { isMounted = false; };
   }, [initialData?.studyNumber]);
-  
+
 
 
   const precedentStudy = useMemo(() => {
@@ -104,11 +104,11 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     const addr = normalize(formData.address);
     const city = normalize(formData.city);
     if (addr.length < 5 || city.length < 2) return null;
-    
+
     // Check if the current form itself is matching (e.g., during edit)
-    return allRequests.find(r => 
-      r.id !== formData.id && 
-      normalize(r.address) === addr && 
+    return allRequests.find(r =>
+      r.id !== formData.id &&
+      normalize(r.address) === addr &&
       normalize(r.city) === city
     );
   }, [allRequests, formData.address, formData.city, initialData, formData.id]);
@@ -130,13 +130,13 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   React.useEffect(() => {
     if (precedentStudy && !hasShownWarning && !initialData) {
       const activeStatus = [
-        StudyStatus.PENDENTE, 
-        StudyStatus.EM_ANALISE, 
-        StudyStatus.AGUARDANDO_EXECUCAO, 
-        StudyStatus.EM_EXECUCAO, 
+        StudyStatus.PENDENTE,
+        StudyStatus.EM_ANALISE,
+        StudyStatus.AGUARDANDO_EXECUCAO,
+        StudyStatus.EM_EXECUCAO,
         StudyStatus.CONTROLE_QUALIDADE
       ].includes(precedentStudy.status);
-      
+
       const recentlyCompleted = precedentStudy.status === StudyStatus.CONCLUIDO && isWithinLast12Months(precedentStudy.createdAt);
 
       if (activeStatus || recentlyCompleted) {
@@ -154,80 +154,116 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     e.preventDefault();
     if (readOnly) return;
     setIsSubmitting(true);
-    
+
     try {
-      // 1. Snapshot do formulário via html2canvas para criar um PDF espelho 100% fiel
       let generatedPdfFile: File | undefined;
-      
+
       if (formRef.current) {
+        setIsExporting(true);
+        
+        // Espera o React aplicar o modo de exportação no DOM
+        await new Promise(resolve => setTimeout(resolve, 800));
+
         try {
-          // Ativa modo de exportação para ocultar elementos administrativos e inputs
-          setIsExporting(true);
-          
-          // Pequena pausa para garantir que o React renderizou o estado isExporting
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-          // Garante que o scroll esteja no topo para captura completa sem cortes do viewport
-          window.scrollTo(0, 0);
-          
           const element = formRef.current;
-          
-          // Temporary style to ensure correct capture
-          const originalStyle = element.style.cssText;
-          element.style.width = '1200px'; 
-          element.style.height = 'auto';
-          element.style.overflow = 'visible';
-          
-          const canvas = await html2canvas(element, { 
-            scale: 2, 
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            windowWidth: 1200,
-            width: 1200,
-            onclone: (clonedDoc) => {
-              const clonedElement = clonedDoc.body.querySelector('.bg-white.p-4.rounded-xl');
-              if (clonedElement instanceof HTMLElement) {
-                clonedElement.style.width = '1200px';
-                clonedElement.style.height = 'auto';
-                clonedElement.style.overflow = 'visible';
+          if (element) {
+            window.scrollTo(0, 0);
+            
+            // Salvamos o estilo original para restaurar depois
+            const originalStyle = element.style.cssText;
+            
+            // Forçamos uma largura padrão para que a proporção no PDF A4 seja harmoniosa (aprox 900px)
+            element.style.width = '1000px'; 
+            element.style.height = 'auto';
+            element.style.overflow = 'visible';
+
+            const canvas = await html2canvas(element, {
+              scale: 2, // Aumenta resolução
+              useCORS: true,
+              backgroundColor: '#ffffff',
+              windowWidth: 1010,
+              width: 1000,
+              logging: false,
+              onclone: (clonedDoc) => {
+                const clonedRoot = clonedDoc.body.querySelector('.bg-white.p-4.rounded-xl');
+                if (clonedRoot instanceof HTMLElement) {
+                  clonedRoot.style.width = '1000px';
+                  clonedRoot.style.height = 'auto';
+                  clonedRoot.style.overflow = 'visible';
+                  
+                  // Ocultar elementos marcados com 'hide-export' (ex: anexos)
+                  clonedRoot.querySelectorAll('.hide-export').forEach(node => {
+                    (node as HTMLElement).style.display = 'none';
+                  });
+
+                  // Limpar restrições de altura e overflow que causam cortes
+                  clonedRoot.querySelectorAll('section, div, p').forEach(node => {
+                    const el = node as HTMLElement;
+                    if (el.style.maxHeight || el.style.overflow === 'hidden' || el.style.overflowY === 'hidden') {
+                      el.style.maxHeight = 'none';
+                      el.style.overflow = 'visible';
+                    }
+                  });
+                }
               }
+            });
+
+            // Gerar PDF em formato A4 real
+            const pdf = new jsPDF({
+              orientation: 'portrait',
+              unit: 'mm',
+              format: 'a4'
+            });
+
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            
+            // Calculamos as dimensões para caber em UMA ÚNICA PÁGINA A4 (Compressão total)
+            const contentWidth = canvas.width;
+            const contentHeight = canvas.height;
+            const ratio = contentWidth / contentHeight;
+            
+            let finalWidth = pdfWidth;
+            let finalHeight = pdfWidth / ratio;
+            
+            // Se a altura calculada ainda for maior que a página A4, escalonamos pela altura
+            if (finalHeight > pdfHeight) {
+                finalHeight = pdfHeight;
+                finalWidth = finalHeight * ratio;
             }
-          });
-          
-          element.style.cssText = originalStyle;
-          setIsExporting(false); // Volta ao normal
-          
-          const imgData = canvas.toDataURL('image/jpeg', 1.0);
-          const pdf = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4'
-          });
-          
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-          
-          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-          const pdfBlob = pdf.output('blob');
-          const fileName = `Formulario_Oficial_${formData.studyNumber || formData.id}.pdf`;
-          generatedPdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-        } catch (canvasErr) {
-          console.error('[FormContainer] Error capturing DOM snapshot:', canvasErr);
+            
+            // Centraliza se for menor que a largura total
+            const xOffset = (pdfWidth - finalWidth) / 2;
+            const yOffset = 0; // Topo
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            
+            // Adiciona em uma única página
+            pdf.addImage(imgData, 'JPEG', xOffset, yOffset, finalWidth, finalHeight, undefined, 'FAST');
+
+            const pdfBlob = pdf.output('blob');
+            const fileName = `Formulario_Oficial_${formData.studyNumber || formData.id}.pdf`;
+            generatedPdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+            // Restaura o estilo original
+            element.style.cssText = originalStyle;
+          }
+        } catch (captureErr) {
+          console.error('[FormContainer] Falha na captura do snapshot:', captureErr);
+        } finally {
           setIsExporting(false);
         }
       }
 
-      // Passamos o PDF gerado para o onSubmit, que agora cuidará do upload sincronizado
+      // Envia os dados e o arquivo PDF gerado
       onSubmit(formData, generatedPdfFile);
-    } catch (err) {
-      console.error('[FormContainer] Failed to generate PDF mirror during submission:', err);
-      // Se falhar o PDF, enviamos apenas os dados para não bloquear
-      onSubmit(formData);
-    }
 
-    setTimeout(() => {
-      setIsSubmitting(false);
-    }, 1200);
+    } catch (err) {
+      console.error('[FormContainer] Erro global ao processar submissão:', err);
+      onSubmit(formData);
+    } finally {
+      setTimeout(() => setIsSubmitting(false), 2000);
+    }
   };
 
   const handleConfirmValidation = (assignedAnalyst: string, validationData: Partial<FormData>) => {
@@ -297,11 +333,11 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
     // 3. Fallback: Se tivermos o studyNumber, tentar abrir a pasta
     if (initialData?.studyNumber) {
-       showAlert(`Não foi possível abrir o arquivo diretamente. Abrindo a pasta da solicitação: ${initialData.studyNumber}`, 'Aviso');
-       if ((window as any).api?.openFolder) {
-         const folderPath = `solicitantes/${initialData.requesterName}/${initialData.studyNumber}`;
-         await (window as any).api.openFolder(folderPath);
-       }
+      showAlert(`Não foi possível abrir o arquivo diretamente. Abrindo a pasta da solicitação: ${initialData.studyNumber}`, 'Aviso');
+      if ((window as any).api?.openFolder) {
+        const folderPath = `solicitantes/${initialData.requesterName}/${initialData.studyNumber}`;
+        await (window as any).api.openFolder(folderPath);
+      }
     } else {
       showAlert('Arquivo não disponível para pré-visualização direta.', 'Aviso');
     }
@@ -317,13 +353,13 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       default: return null;
     }
   };
-   // Regra de segurança para vísibilidade técnica (Estudo sendo feito)
+  // Regra de segurança para vísibilidade técnica (Estudo sendo feito)
   const isPendingExecution = initialData?.status === StudyStatus.AGUARDANDO_EXECUCAO || initialData?.status === StudyStatus.EM_EXECUCAO;
   const isRequesterView = currentUser?.role === UserRole.SOLICITANTE;
-  
+
   // Analistas vêem o que é deles ou o que está na fila (exceto se atribuído a outro)
   const isRestricted = readOnly && initialData?.assignedTo && !isOwner && !isAdmin;
-  
+
   // Solicitante não vê detalhes técnicos enquanto está em execução
   const showInProgressMessage = isRequesterView && isPendingExecution && readOnly;
 
@@ -370,21 +406,21 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   return (
     <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto items-start">
       <div className="bg-white rounded-3xl shadow-2xl p-4 md:p-10 border border-slate-100 animate-in fade-in slide-in-from-right-8 duration-500 flex-grow w-full lg:max-w-5xl">
-        
+
         {precedentStudy && (
           <div className="mb-8 p-6 bg-orange-50 border border-orange-200 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4 duration-300">
-             <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-orange-500 shadow-sm">
-                   <i className="fa-solid fa-triangle-exclamation text-xl"></i>
-                </div>
-                <div>
-                   <h4 className="text-xs font-black text-orange-800 uppercase tracking-widest">Estudo Anterior Identificado</h4>
-                   <p className="text-[11px] text-orange-700/80 font-bold uppercase mt-1">
-                     Já existe um estudo para este local (<span className="underline">{precedentStudy.studyNumber}</span>). 
-                     Esta nova solicitação será vinculada como uma **Revisão Técnica**.
-                   </p>
-                </div>
-             </div>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-orange-500 shadow-sm">
+                <i className="fa-solid fa-triangle-exclamation text-xl"></i>
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-orange-800 uppercase tracking-widest">Estudo Anterior Identificado</h4>
+                <p className="text-[11px] text-orange-700/80 font-bold uppercase mt-1">
+                  Já existe um estudo para este local (<span className="underline">{precedentStudy.studyNumber}</span>).
+                  Esta nova solicitação será vinculada como uma **Revisão Técnica**.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -392,7 +428,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
               <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight mb-4">Justificar Reprovação</h3>
-              <textarea 
+              <textarea
                 autoFocus
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
@@ -408,7 +444,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         )}
 
         {showValidationModal && initialData && (
-          <ValidationModal 
+          <ValidationModal
             initialData={initialData}
             executors={executors}
             onConfirm={handleConfirmValidation}
@@ -434,11 +470,11 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                 <i className="fa-solid fa-triangle-exclamation"></i>
               </div>
               <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight mb-2">ESTUDO JÁ CONCLUÍDO OU ESTUDO VIGENTE</h3>
-              <p className="text-xs text-slate-500 font-bold mb-6 leading-relaxed">
-                Identificamos que já existe uma solicitação (<span className="text-[#004080]">{precedentStudy.studyNumber}</span>) para este endereço com status "<span className="text-orange-600">{precedentStudy.status}</span>". 
+              <p className="text-xs text-slate-500 font-bold mb-6 leading-relaxed text-justify">
+                Identificamos que já existe uma solicitação (<span className="text-[#004080]">{precedentStudy.studyNumber}</span>) para este endereço com status "<span className="text-orange-600">{precedentStudy.status}</span>".
                 {precedentStudy.status === StudyStatus.CONCLUIDO ? ' Estudos concluídos permanecem vigentes por 12 meses.' : ' Este estudo ainda está em processamento técnico.'}
               </p>
-              
+
               <div className="bg-slate-50 rounded-2xl p-4 mb-8">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Detalhes do Estudo Encontrado</p>
                 <p className="text-xs font-bold text-slate-700">{precedentStudy.clientName || precedentStudy.studyTitle || 'Nome não informado'}</p>
@@ -446,27 +482,41 @@ export const FormContainer: React.FC<FormContainerProps> = ({
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                <button 
+                <button
                   onClick={() => {
                     setShowPrecedentWarning(false);
                     setBrowsingPrecedentStudy(precedentStudy);
                   }}
-                  className="w-full py-4 bg-[#004080] text-white rounded-xl font-black text-[10px] shadow-lg"
+                  className="w-full py-4 bg-[#004080] text-white rounded-xl font-black text-[11px] uppercase tracking-wider shadow-lg"
                 >
                   Visualizar Estudo Existente
                 </button>
-                <button 
+                <button
+                  onClick={() => {
+                    setShowPrecedentWarning(false);
+                    setHasShownWarning(true);
+                    setFormData(prev => ({
+                      ...prev,
+                      studyType: 'Revisão Técnica',
+                      precedentStudyId: precedentStudy.id
+                    }));
+                  }}
+                  className="w-full py-4 bg-orange-500 text-white rounded-xl font-black text-[11px] uppercase tracking-wider shadow-lg hover:bg-orange-600 transition-colors"
+                >
+                  SOLICITAR REVISÃO DO ESTUDO
+                </button>
+                <button
                   onClick={() => {
                     setShowPrecedentWarning(false);
                     setHasShownWarning(true);
                   }}
-                  className="w-full py-4 border border-slate-200 text-slate-500 rounded-xl font-black text-[10px] hover:bg-slate-50"
+                  className="w-full py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-[11px] uppercase tracking-wider hover:bg-slate-200 transition-all"
                 >
                   Ignorar e Continuar Novo Estudo
                 </button>
-                <button 
+                <button
                   onClick={onBack}
-                  className="w-full py-2 text-slate-400 font-bold text-[9px]"
+                  className="w-full py-4 bg-slate-50 text-slate-400 rounded-xl font-black text-[11px] uppercase tracking-wider hover:bg-red-50 hover:text-red-400 transition-all"
                 >
                   Cancelar e Voltar
                 </button>
@@ -482,13 +532,13 @@ export const FormContainer: React.FC<FormContainerProps> = ({
               Voltar
             </button>
             <div className="flex items-center gap-3">
-               <div className="w-12 h-12 bg-[#004080] rounded-xl flex items-center justify-center text-white text-xl">
-                  <i className={`fa-solid ${currentOption?.icon}`}></i>
-               </div>
-               <div>
-                  <h2 className="text-xl font-black text-[#004080] leading-none uppercase tracking-tight">{formData.studyNumber || 'Nova Solicitação'}</h2>
-                  <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mt-2">{currentOption?.label}</p>
-               </div>
+              <div className="w-12 h-12 bg-[#004080] rounded-xl flex items-center justify-center text-white text-xl">
+                <i className={`fa-solid ${currentOption?.icon}`}></i>
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-[#004080] leading-none uppercase tracking-tight">{formData.studyNumber || 'Nova Solicitação'}</h2>
+                <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mt-2">{currentOption?.label}</p>
+              </div>
             </div>
           </div>
 
@@ -522,7 +572,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                   )}
                 </>
               ) : (
-                <button 
+                <button
                   type="submit"
                   disabled={isSubmitting}
                   className={`px-12 py-5 rounded-2xl font-black text-white transition-all shadow-2xl text-lg flex items-center uppercase tracking-tighter ${isSubmitting ? 'bg-slate-400' : 'bg-[#004080] hover:bg-[#FF8000] active:scale-95 shadow-[#004080]/30'}`}
@@ -549,18 +599,18 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                 className={`w-full p-4 rounded-2xl border transition-all text-left group flex flex-col gap-1.5 ${item.id === formData.id ? 'bg-slate-50 border-[#004080] shadow-sm ring-1 ring-[#004080]' : 'bg-white border-slate-100 hover:border-[#004080]'}`}
               >
                 <div className="flex items-center justify-between">
-                   <span className={`text-[10px] font-black uppercase tracking-tighter ${item.id === formData.id ? 'text-[#004080]' : 'text-slate-400'}`}>
-                     {item.studyNumber.includes('-REV') ? `Revisão ${item.studyNumber.split('-REV')[1]}` : 'Versão Original'}
-                   </span>
-                   {item.id === formData.id && <span className="w-1.5 h-1.5 bg-[#004080] rounded-full animate-pulse"></span>}
+                  <span className={`text-[10px] font-black uppercase tracking-tighter ${item.id === formData.id ? 'text-[#004080]' : 'text-slate-400'}`}>
+                    {item.studyNumber.includes('-REV') ? `Revisão ${item.studyNumber.split('-REV')[1]}` : 'Versão Original'}
+                  </span>
+                  {item.id === formData.id && <span className="w-1.5 h-1.5 bg-[#004080] rounded-full animate-pulse"></span>}
                 </div>
                 <p className={`text-[9px] font-bold ${item.id === formData.id ? 'text-slate-600' : 'text-slate-400'}`}>
                   Solicitado em: {item.requestDate}
                 </p>
                 <div className="flex items-center gap-1 mt-1">
-                   <span className="text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
-                     {item.status}
-                   </span>
+                  <span className="text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                    {item.status}
+                  </span>
                 </div>
               </button>
             ))}

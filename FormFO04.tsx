@@ -20,7 +20,7 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
     if (type === 'number') {
       processedValue = value === '' ? '' : parseFloat(value);
     }
-    
+
     if (name === 'uteName') {
       onChange({ [name]: processedValue, studyTitle: value });
     } else {
@@ -46,49 +46,51 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
 
   const municipalities = [...MUNICIPALITIES_RJ, ...MUNICIPALITIES_SP];
 
-  const renderField = (label: string, value: any, isRequired = false) => {
-    return (
-      <div className="flex flex-col border-b border-slate-100 py-1">
-        <span className="text-[9px] text-[#004080] font-bold uppercase tracking-tight pb-0.5">{label}</span>
-        <span className="text-[10pt] font-semibold text-slate-800 pb-0.5">{value || '-'}</span>
-      </div>
-    );
-  };
-
-  // Helper label width to keep consistency
   const labelClass = "text-[9px] font-bold text-[#004080] shrink-0 pb-0.5 uppercase tracking-tight";
   const requiredLabelClass = "text-[9px] font-bold text-[#004080] shrink-0 pb-0.5 uppercase tracking-tight";
   const inputBaseClass = "flex-grow p-1 rounded outline-none font-normal h-8 text-[10pt] mb-0.5";
 
+  // Table styles for readOnly mode
+  const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: '10pt', fontFamily: 'Arial, sans-serif' };
+  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '4px 8px', fontSize: '9px', color: '#004080', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.025em', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top', whiteSpace: 'nowrap' };
+  const tdStyle: React.CSSProperties = { padding: '4px 8px', fontSize: '10pt', fontWeight: 600, color: '#1e293b', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' };
+
+  const ReadOnlyField = ({ label, value, colSpan = 12, suffix = '' }: { label: string; value: any; colSpan?: number; suffix?: string }) => (
+    <div className={`col-span-${colSpan} flex flex-col border border-slate-200 rounded-lg p-2.5 bg-white shadow-sm`}>
+      <label className="text-[8px] text-[#004080] font-extrabold uppercase tracking-widest mb-1.5 opacity-70">{label}</label>
+      <div className="text-[10pt] font-bold text-slate-800 break-words leading-tight">
+        {value !== undefined && value !== null && value !== '' ? `${value}${suffix}` : '-'}
+      </div>
+    </div>
+  );
+
   return (
-    <div className={`${readOnly ? 'w-full' : 'max-w-4xl mx-auto'} space-y-6 ${readOnly ? 'pb-4' : 'pb-20'}`}>
+    <div className={`${readOnly ? 'w-full' : 'max-w-4xl mx-auto'} space-y-6 ${readOnly ? 'pb-4' : 'pb-20'}`} style={{ fontFamily: 'Arial, sans-serif' }}>
       <datalist id="municipalities">
         {municipalities.map(city => <option key={city} value={city} />)}
       </datalist>
 
       {/* Header Title Section from PDF */}
-      <div className="bg-[#004080] text-white text-center py-2 px-4 rounded font-bold uppercase tracking-wide text-xs">
+      <div className="bg-[#004080] text-white text-center py-2.5 px-4 rounded-lg font-black uppercase tracking-widest text-[11px] shadow-md mb-6">
         ESTUDO ADR PARA VIABILIDADE TÉCNICA DE EMPREENDIMENTO TERMELETRICO
       </div>
 
       {/* Dados do Solicitante */}
-      <section className="bg-white border border-slate-200">
-         <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">Dados do Solicitante</div>
-         {readOnly ? (
-           <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-2 bg-white">
-             <div className="col-span-12 md:col-span-4">{renderField("Naturgy", data.naturgyUnit)}</div>
-             <div className="col-span-12 md:col-span-4">{renderField("Tipo de Estudo", data.studyType, true)}</div>
-             <div className="col-span-12 md:col-span-4">{renderField("Data Solicitação", formatDate(data.requestDate), true)}</div>
-             {data.studyType === 'Revisão de Estudo' && (
-               <div className="col-span-12">{renderField("Estudo Anterior", data.previousStudy, true)}</div>
-             )}
-             <div className="col-span-12 md:col-span-8">{renderField("Resp. Solicitação", data.requesterName, true)}</div>
-             <div className="col-span-12 md:col-span-4">{renderField("Telefone", data.phone)}</div>
-             <div className="col-span-12 md:col-span-8">{renderField("Área Solicitante", data.requesterArea)}</div>
-             <div className="col-span-12 md:col-span-4">{renderField("E-mail", data.email)}</div>
-           </div>
-         ) : (
-           <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
+      <section className="bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+        <div className="bg-[#004080] text-white px-5 py-2.5 font-black text-[10px] uppercase tracking-wider">Dados do Solicitante</div>
+        {readOnly ? (
+          <div className="p-5 grid grid-cols-12 gap-4 bg-[#f8fbff]/50">
+            <ReadOnlyField label="Naturgy" value={data.naturgyUnit} colSpan={4} />
+            <ReadOnlyField label="Tipo de Estudo" value={data.studyType} colSpan={4} />
+            <ReadOnlyField label="Data Solicitação" value={formatDate(data.requestDate)} colSpan={4} />
+            <ReadOnlyField label="Estudo Anterior" value={data.studyType === 'Revisão de Estudo' ? data.previousStudy : 'N/A'} colSpan={12} />
+            <ReadOnlyField label="Responsável pela Solicitação" value={data.requesterName} colSpan={8} />
+            <ReadOnlyField label="Telefone" value={data.phone} colSpan={4} />
+            <ReadOnlyField label="Área Solicitante" value={data.requesterArea} colSpan={12} />
+            <ReadOnlyField label="E-mail" value={data.email} colSpan={12} />
+          </div>
+        ) : (
+          <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
             <div className="col-span-12 flex items-center gap-2">
               <label className={`${labelClass} w-32`}>Naturgy :</label>
               <select name="naturgyUnit" value={data.naturgyUnit || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`}>
@@ -136,29 +138,33 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
               <input type="email" name="email" value={data.email || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`} />
             </div>
           </div>
-         )}
+        )}
       </section>
 
       {/* DADOS BASE DO ESTUDO */}
-      <section className="bg-white border border-slate-200">
-        <div className="bg-[#004080] text-white px-4 py-1.5 font-bold text-[10px] uppercase">DADOS BASE DO ESTUDO</div>
+      <section className="bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+        <div className="bg-[#004080] text-white px-5 py-2.5 font-black text-[10px] uppercase tracking-wider">DADOS BASE DO ESTUDO</div>
         {readOnly ? (
-          <div className="p-4 grid grid-cols-12 gap-x-4 gap-y-2 bg-white">
-            <div className="col-span-12 md:col-span-8">{renderField("Nome da UTE", data.uteName, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Mercado", "Termogeração")}</div>
-            <div className="col-span-12">{renderField("Endereço", data.address, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Cidade", data.city, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Bairro", data.neighborhood, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Estado", data.state, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Nível Pressão", data.gasPressureLevel, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Vazão Média", `${data.averageFlow || '0'} Nm³/h`, true)}</div>
-            <div className="col-span-12 md:col-span-4">{renderField("Vazão Pico", `${data.peakFlow || '0'} Nm³/h`, true)}</div>
+          <div className="p-5 flex flex-col gap-6 bg-[#f8fbff]/50">
+            <div className="grid grid-cols-12 gap-4">
+              <ReadOnlyField label="Nome da UTE" value={data.uteName} colSpan={8} />
+              <ReadOnlyField label="Mercado" value="Termogeração" colSpan={4} />
+              <ReadOnlyField label="Endereço" value={data.address} colSpan={12} />
+              <ReadOnlyField label="Cidade" value={data.city} colSpan={4} />
+              <ReadOnlyField label="Bairro" value={data.neighborhood} colSpan={4} />
+              <ReadOnlyField label="Estado" value={data.state} colSpan={4} />
+            </div>
 
-            {/* Documentação Específica do Estudo */}
-             <div className="col-span-12 grid grid-cols-2 md:grid-cols-4 gap-4 mt-2 border-t border-slate-100 pt-3">
-                {renderField("Prazo dias", "até 5 dias úteis")}
-                {renderField("Data Inicial Opera.", formatDate(data.operationStartDate))}
-             </div>
+            <div className="border-t border-slate-100 pt-4">
+              <h5 className="text-[9px] font-black text-[#004080] uppercase tracking-widest mb-4">DADOS TÉCNICOS</h5>
+              <div className="grid grid-cols-12 gap-4">
+                <ReadOnlyField label="Nível Pressão" value={(data as any).gasPressureLevel} colSpan={4} suffix=" bar" />
+                <ReadOnlyField label="Vazão Média" value={(data as any).averageFlow} colSpan={4} suffix=" Nm³/h" />
+                <ReadOnlyField label="Vazão Pico" value={(data as any).peakFlow} colSpan={4} suffix=" Nm³/h" />
+                <ReadOnlyField label="Prazo dias" value="até 5 dias úteis" colSpan={6} />
+                <ReadOnlyField label="Data Inicial Operação" value={formatDate((data as any).operationStartDate)} colSpan={6} />
+              </div>
+            </div>
           </div>
         ) : (
           <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
@@ -195,34 +201,34 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
 
             {/* Grid Consumos */}
             <div className="col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6 mt-2 pt-3 border-t border-slate-100">
-               <div className="flex flex-col gap-1">
-                  <label className={requiredLabelClass}>Nível de Pressão Solicitado:</label>
-                  <div className="flex items-center gap-2">
-                     <input type="number" name="gasPressureLevel" value={data.gasPressureLevel ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
-                     <span className="text-[8px] font-bold text-slate-400">bar</span>
-                  </div>
-               </div>
-               <div className="flex flex-col gap-1">
-                  <label className={requiredLabelClass}>Vazão Média (24h) :</label>
-                  <div className="flex items-center gap-2">
-                     <input type="number" name="averageFlow" value={data.averageFlow ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
-                     <span className="text-[8px] font-bold text-slate-400">Nm³/h</span>
-                  </div>
-               </div>
-               <div className="flex flex-col gap-1">
-                  <label className={requiredLabelClass}>Vazão de Pico :</label>
-                  <div className="flex items-center gap-2">
-                     <input type="number" name="peakFlow" value={data.peakFlow ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
-                     <span className="text-[8px] font-bold text-slate-400">Nm³/h</span>
-                  </div>
-               </div>
+              <div className="flex flex-col gap-1">
+                <label className={requiredLabelClass}>Nível de Pressão Solicitado:</label>
+                <div className="flex items-center gap-2">
+                  <input type="number" name="gasPressureLevel" value={(data as any).gasPressureLevel ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
+                  <span className="text-[8px] font-bold text-slate-400">bar</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className={requiredLabelClass}>Vazão Média (24h) :</label>
+                <div className="flex items-center gap-2">
+                  <input type="number" name="averageFlow" value={(data as any).averageFlow ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
+                  <span className="text-[8px] font-bold text-slate-400">Nm³/h</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className={requiredLabelClass}>Vazão de Pico :</label>
+                <div className="flex items-center gap-2">
+                  <input type="number" name="peakFlow" value={(data as any).peakFlow ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
+                  <span className="text-[8px] font-bold text-slate-400">Nm³/h</span>
+                </div>
+              </div>
             </div>
           </div>
         )}
       </section>
 
       {/* Documentação e Anexos */}
-      <section>
+      <section className="hide-export">
         <div className="bg-[#004080] text-white px-4 py-1.5 font-bold rounded-t text-[10px] uppercase">Documentação e Anexos</div>
         <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
           {!readOnly && (
@@ -264,24 +270,26 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
 
       {/* CONSIDERAÇÕES E PRAZOS */}
       <section className="bg-white border border-slate-200 rounded-lg p-4">
-         <h4 className="font-bold text-[#004080] mb-4 uppercase text-[9px]">Considerações sobre a solicitação</h4>
-         {readOnly ? (
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-             {renderField("Prazo dias", "até 5 dias úteis")}
-             {renderField("Data Inicial de Operação Estimada", formatDate(data.operationStartDate))}
-           </div>
-         ) : (
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="flex items-center gap-4">
-                 <label className="text-[9px] text-slate-500 uppercase font-normal">Prazo dias:</label>
-                 <input type="text" readOnly value="até 5 dias úteis" className="flex-grow p-2 border border-slate-200 rounded bg-white text-slate-600 text-center font-normal" />
-              </div>
-              <div className="flex items-center gap-4">
-                 <label className="text-[9px] text-slate-500 uppercase tracking-tight font-normal">Data Inicial de Operação Estimada:</label>
-                 <input type="date" name="operationStartDate" value={data.operationStartDate || ''} onChange={handleInputChange} className="flex-grow p-2 border border-slate-200 rounded bg-white text-[#004080] font-bold text-center" />
-              </div>
-           </div>
-         )}
+        <h4 className="font-bold text-[#004080] mb-4 uppercase text-[9px]">Considerações sobre a solicitação</h4>
+        {readOnly ? (
+          <table style={tableStyle}>
+            <tbody>
+              <tr><th style={thStyle}>Prazo dias</th><td style={tdStyle}>até 5 dias úteis</td></tr>
+              <tr><th style={thStyle}>Data Inicial de Operação Estimada</th><td style={tdStyle}>{formatDate((data as any).operationStartDate) || '-'}</td></tr>
+            </tbody>
+          </table>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="flex items-center gap-4">
+              <label className="text-[9px] text-slate-500 uppercase font-normal">Prazo dias:</label>
+              <input type="text" readOnly value="até 5 dias úteis" className="flex-grow p-2 border border-slate-200 rounded bg-white text-slate-600 text-center font-normal" />
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="text-[9px] text-slate-500 uppercase tracking-tight font-normal">Data Inicial de Operação Estimada:</label>
+              <input type="date" name="operationStartDate" value={(data as any).operationStartDate || ''} onChange={handleInputChange} className="flex-grow p-2 border border-slate-200 rounded bg-white text-[#004080] font-bold text-center" />
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Comentários */}
@@ -289,7 +297,7 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
         <div className="bg-[#004080] text-white px-4 py-1.5 font-bold rounded-t text-[10px] uppercase">Comentários</div>
         <div className={`p-4 border border-slate-200 bg-white ${readOnly ? '' : 'rounded-b-lg'}`}>
           {readOnly ? (
-            <div className="min-h-[80px] text-[10pt] text-slate-700 whitespace-pre-wrap">
+            <div className="h-auto text-[10pt] text-slate-700 whitespace-pre-wrap overflow-visible">
               {data.comments || 'Nenhum comentário registrado.'}
             </div>
           ) : (

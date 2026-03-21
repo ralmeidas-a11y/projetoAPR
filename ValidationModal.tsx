@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FormData, StudyStatus, FormType } from './types';
+import { PRESSURE_BASES } from './constants';
 import { useDialog } from './AppDialog';
 
 interface ValidationModalProps {
@@ -29,9 +30,8 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
   const [suggestedPressureRange, setSuggestedPressureRange] = useState(initialData?.suggestedPressureRange || '');
   
   const defaultMinPressure = (range: string) => {
-    if (range === 'BP-N') return 19;
-    if (range.includes('MP-N')) return 1;
-    return '';
+    const found = PRESSURE_BASES.find(p => p.base === range);
+    return found ? found.pmin : '';
   };
   
   const [minPressure, setMinPressure] = useState<number | ''>(initialData?.minPressure !== undefined ? initialData.minPressure! : defaultMinPressure(initialData?.suggestedPressureRange || ''));
@@ -124,10 +124,9 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                     className="w-full p-2 border border-slate-200 rounded-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]"
                   >
                     <option value="">Selecione</option>
-                    {/* FO01 opções baseadas no pedido anterior */}
-                    <option value="BP-N">BP-N</option>
-                    <option value="MP-N até 2 bar">MP-N até 2 bar</option>
-                    <option value="MP-N até 4 bar">MP-N até 4 bar</option>
+                    {PRESSURE_BASES.map(p => (
+                      <option key={p.base} value={p.base}>{p.base}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -143,7 +142,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                       className="w-full p-2 border border-slate-200 rounded-l-xl outline-none focus:border-[#004080] bg-white text-xs font-bold text-[#004080]"
                     />
                     <span className="bg-slate-100 border border-l-0 border-slate-200 px-3 py-2 rounded-r-xl text-xs font-bold text-[#004080]">
-                      {suggestedPressureRange === 'BP-N' ? 'mbar' : 'bar'}
+                      {PRESSURE_BASES.find(p => p.base === suggestedPressureRange)?.unidade || 'bar'}
                     </span>
                   </div>
                 </div>

@@ -39,7 +39,11 @@ export enum StudyStatus {
   VALIDADO = 'Validado',
   AGUARDANDO_EXECUCAO = 'Aguardando Execução',
   EM_EXECUCAO = 'Em Execução',
+  AGUARDANDO_INFORMACAO = 'Aguardando Informações',
   CONTROLE_QUALIDADE = 'Controle de Qualidade',
+  APROVADO_CQ = 'Aprovado pelo CQ',
+  REPROVADO_CQ = 'Reprovado pelo CQ',
+  ENVIADO_SEM_CQ = 'Enviado sem CQ',
   CONCLUIDO = 'Concluído',
   REJEITADO = 'Rejeitado',
   CANCELADO = 'Cancelado'
@@ -99,6 +103,23 @@ export interface FormOption {
   label: string;
   description: string;
   icon: string;
+}
+
+export interface QCIteration {
+  status: string;
+  date: string;
+  reviewer?: string;
+}
+
+export interface QCControlData {
+  qcRequestDate?: string;
+  qcValidationDate?: string;
+  qcStatusCQ?: 'Definir' | 'Aprovado' | 'Reprovado';
+  qcSupervisor?: string;
+  qcCriticalFailures?: Record<string, number>;
+  qcSecondaryFailures?: Record<string, number>;
+  qcIterations?: QCIteration[];
+  qcComments?: string;
 }
 
 export interface FormData {
@@ -224,4 +245,13 @@ export interface FormData {
   analystRole?: string;
   analystGB?: string;
   cartaGeneratedAt?: string;
+
+  // Quality Control
+  qcData?: QCControlData;
+  analystName?: string;
+  holdReason?: string;
+  holdResponse?: string;
+  holdResponseSeen?: boolean;
+  holdRequestSeen?: boolean;
+  qcRequestDate?: string;
 }

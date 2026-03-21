@@ -214,7 +214,10 @@ export const StorageService = {
       formType: r.form_type,
       year: r.year,
       createdAt: r.created_at,
-      updatedAt: r.updated_at
+      updatedAt: r.updated_at,
+      holdReason: r.hold_reason || r.data?.holdReason,
+      holdResponse: r.hold_response || r.data?.holdResponse,
+      holdResponseSeen: r.hold_response_seen ?? r.data?.holdResponseSeen
     }));
   },
 
@@ -249,6 +252,9 @@ export const StorageService = {
       form_type: request.formType,
       year: request.studyNumber.match(/APR-(\d{4})/)?.[1] || new Date().getFullYear().toString(),
       data: cleanRequest,
+      hold_reason: request.holdReason,
+      hold_response: request.holdResponse,
+      hold_response_seen: request.holdResponseSeen ?? false,
       updated_at: getGMT3ISOString()
     };
 
