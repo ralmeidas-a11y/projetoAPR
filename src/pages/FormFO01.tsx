@@ -1,8 +1,8 @@
 
 import React, { useEffect, useRef } from 'react';
-import { FormData } from './types';
-import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from './constants';
-import { formatDate } from './utils';
+import { FormData } from '../types/types';
+import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from '../constants/constants';
+import { formatDate } from '../utils/utils';
 
 interface FormFO01Props {
   data: FormData;

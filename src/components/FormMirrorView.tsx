@@ -1,11 +1,11 @@
 
 import React, { useState } from 'react';
-import { FormData, FormType, StudyStatus, User, UserRole } from './types';
-import { FormFO01 } from './FormFO01';
-import { FormFO02 } from './FormFO02';
-import { FormFO03 } from './FormFO03';
-import { FormFO04 } from './FormFO04';
-import { formatDate } from './utils';
+import { FormData, FormType, StudyStatus, User, UserRole } from '../types/types';
+import { FormFO01 } from '../pages/FormFO01';
+import { FormFO02 } from '../pages/FormFO02';
+import { FormFO03 } from '../pages/FormFO03';
+import { FormFO04 } from '../pages/FormFO04';
+import { formatDate } from '../utils/utils';
 import { ValidationModal } from './ValidationModal';
 import { useDialog } from './AppDialog';
 

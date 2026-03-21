@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
-import { StudyStatus, FormData, User, UserRole } from './types';
-import { formatToLocalTime, normalizeArea } from './utils';
-import { FileBrowserModal } from './FileBrowserModal';
-import { useDialog } from './AppDialog';
+import { StudyStatus, FormData, User, UserRole } from '../types/types';
+import { formatToLocalTime, normalizeArea } from '../utils/utils';
+import { FileBrowserModal } from '../components/FileBrowserModal';
+import { useDialog } from '../components/AppDialog';
 
 interface MyRequestsProps {
   requests: FormData[];

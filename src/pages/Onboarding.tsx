@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { User } from './types';
-import { NaturgyLogo, REQUESTER_AREAS } from './constants';
-import { StorageService } from './storage';
+import { User } from '../types/types';
+import { NaturgyLogo, REQUESTER_AREAS } from '../constants/constants';
+import { StorageService } from '../services/storage';
 import bcrypt from 'bcryptjs';
-import { useDialog } from './AppDialog';
+import { useDialog } from '../components/AppDialog';
 
 
 interface OnboardingProps {

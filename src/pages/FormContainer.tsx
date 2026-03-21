@@ -1,17 +1,17 @@
 import React, { useState, useMemo, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { FormType, FormData, StudyStatus, User, UserRole } from './types';
-import { FORM_OPTIONS } from './constants';
-import { formatToLocalTime, getGMT3ISOString, isWithinLast12Months } from './utils';
+import { FormType, FormData, StudyStatus, User, UserRole } from '../types/types';
+import { FORM_OPTIONS } from '../constants/constants';
+import { formatToLocalTime, getGMT3ISOString, isWithinLast12Months } from '../utils/utils';
 import { FormFO01 } from './FormFO01';
 import { FormFO02 } from './FormFO02';
 import { FormFO03 } from './FormFO03';
 import { FormFO04 } from './FormFO04';
-import { StorageService, getRequestPath } from './storage';
-import { ValidationModal } from './ValidationModal';
-import { FileBrowserModal } from './FileBrowserModal';
-import { useDialog } from './AppDialog';
+import { StorageService, getRequestPath } from '../services/storage';
+import { ValidationModal } from '../components/ValidationModal';
+import { FileBrowserModal } from '../components/FileBrowserModal';
+import { useDialog } from '../components/AppDialog';
 
 interface FormContainerProps {
   formType: FormType;

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { User } from './types';
-import { NaturgyBranding } from './NaturgyBranding';
-import { StorageService } from './storage';
+import { User } from '../types/types';
+import { NaturgyBranding } from '../components/NaturgyBranding';
+import { StorageService } from '../services/storage';
 import bcrypt from 'bcryptjs';
 
 

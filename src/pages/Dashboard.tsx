@@ -1,11 +1,11 @@
 
 import React, { useState } from 'react';
-import { StudyStatus, FormData, User, UserRole, QCControlData } from './types';
-import { formatToLocalTime, formatDate } from './utils';
-import { FileBrowserModal } from './FileBrowserModal';
-import { ValidationModal } from './ValidationModal';
-import { QCControlModal } from './QCControlModal';
-import { useDialog } from './AppDialog';
+import { StudyStatus, FormData, User, UserRole, QCControlData } from '../types/types';
+import { formatToLocalTime, formatDate } from '../utils/utils';
+import { FileBrowserModal } from '../components/FileBrowserModal';
+import { ValidationModal } from '../components/ValidationModal';
+import { QCControlModal } from '../components/QCControlModal';
+import { useDialog } from '../components/AppDialog';
 
 interface DashboardProps {
   user: User;
@@ -82,7 +82,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
 
     if (filter === 'Todas') return true;
-    if (filter === 'Pendentes/Novas') return r.status === StudyStatus.PENDENTE || r.status === StudyStatus.REJEITADO || r.status === StudyStatus.EM_ANALISE;
+    if (filter === 'Pendentes/Novas') return r.status === StudyStatus.PENDENTE || r.status === StudyStatus.REJEITADO || r.status === StudyStatus.EM_ANALISE || r.status === StudyStatus.AGUARDANDO_INFORMACAO;
     if (filter === 'Cadastradas') return r.status === StudyStatus.AGUARDANDO_EXECUCAO;
     if (filter === 'Em Execução') return r.status === StudyStatus.EM_EXECUCAO;
     if (filter === 'Controle de Qualidade') {

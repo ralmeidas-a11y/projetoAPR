@@ -1,12 +1,12 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { StudyStatus, FormData, User, UserRole, FormType, InterconnectionPoint, PlannedExtension } from './types';
-import { formatDateTimeBR } from './utils';
-import { StorageService } from './storage';
-import { FileBrowserModal } from './FileBrowserModal';
-import { QCControlModal } from './QCControlModal';
-import { useDialog } from './AppDialog';
-import { NETWORK_GROUPS, PRESSURE_BASES, STANDARDIZED_CONDITIONS_BLOCKS } from './constants';
+import { StudyStatus, FormData, User, UserRole, FormType, InterconnectionPoint, PlannedExtension } from '../types/types';
+import { formatDateTimeBR } from '../utils/utils';
+import { StorageService } from '../services/storage';
+import { FileBrowserModal } from '../components/FileBrowserModal';
+import { QCControlModal } from '../components/QCControlModal';
+import { useDialog } from '../components/AppDialog';
+import { NETWORK_GROUPS, PRESSURE_BASES, STANDARDIZED_CONDITIONS_BLOCKS } from '../constants/constants';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { FormData, User, UserRole, StudyStatus } from './types';
-import { StorageService, getRequestPath } from './storage';
+import { FormData, User, UserRole, StudyStatus } from '../types/types';
+import { StorageService, getRequestPath } from '../services/storage';
 import { FormMirrorView } from './FormMirrorView';
 import { useDialog } from './AppDialog';
 

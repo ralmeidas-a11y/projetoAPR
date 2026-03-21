@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { FormData, QCControlData, QCIteration, StudyStatus, User, UserRole } from './types';
-import { formatDateTimeBR } from './utils';
+import { FormData, QCControlData, QCIteration, StudyStatus, User, UserRole } from '../types/types';
+import { formatDateTimeBR } from '../utils/utils';
 
 interface QCControlModalProps {
   data: FormData;

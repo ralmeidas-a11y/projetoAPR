@@ -1,21 +1,21 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { SelectionMenu } from './SelectionMenu';
-import { FormContainer } from './FormContainer';
-import { Login } from './Login';
-import { Onboarding } from './Onboarding';
-import { Dashboard } from './Dashboard';
-import { MyRequests } from './MyRequests';
-import { UserManagement } from './UserManagement';
-import { TechnicalExecutionPanel } from './TechnicalExecutionPanel';
-import { PasswordChange } from './PasswordChange';
+import { SelectionMenu } from './components/SelectionMenu';
+import { FormContainer } from './pages/FormContainer';
+import { Login } from './pages/Login';
+import { Onboarding } from './pages/Onboarding';
+import { Dashboard } from './pages/Dashboard';
+import { MyRequests } from './pages/MyRequests';
+import { UserManagement } from './pages/UserManagement';
+import { TechnicalExecutionPanel } from './pages/TechnicalExecutionPanel';
+import { PasswordChange } from './pages/PasswordChange';
 // EmailPreviewModal removed <!-- id: 11 -->
-import { FormType, User, UserRole, FormData, StudyStatus } from './types';
-import { NaturgyLogo, HeaderTitle } from './constants';
-import { StorageService } from './storage';
-import { EmailService, EmailNotificationData } from './emailService';
-import { getGMT3ISOString, normalizeArea } from './utils';
-import { useDialog } from './AppDialog';
+import { FormType, User, UserRole, FormData, StudyStatus } from './types/types';
+import { NaturgyLogo, HeaderTitle } from './constants/constants';
+import { StorageService } from './services/storage';
+import { EmailService, EmailNotificationData } from './services/emailService';
+import { getGMT3ISOString, normalizeArea } from './utils/utils';
+import { useDialog } from './components/AppDialog';
 
 const App: React.FC = () => {
   const { showAlert, showConfirm, showToast, showBanner } = useDialog();

@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
-import { User, UserRole } from './types';
-import { isValidCorporateEmail, getFormattedDomains } from './constants';
-import { useDialog } from './AppDialog';
+import { User, UserRole } from '../types/types';
+import { isValidCorporateEmail, getFormattedDomains } from '../constants/constants';
+import { useDialog } from '../components/AppDialog';
 
 interface UserManagementProps {
   users: User[];

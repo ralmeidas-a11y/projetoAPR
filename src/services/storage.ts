@@ -1,8 +1,8 @@
 import { supabase } from './supabaseClient';
 import { jsPDF } from 'jspdf';
-import { User, UserRole, FormData, StudyStatus } from './types';
-import { getGMT3ISOString } from './utils';
-import logoImg from './logo.png';
+import { User, UserRole, FormData, StudyStatus } from '../types/types';
+import { getGMT3ISOString } from '../utils/utils';
+import logoImg from '../assets/logo.png';
 
 // ADM inicial - o Supabase lidará com a persistência real
 const DEFAULT_ADM_EMAIL = 'prgc@naturgy.com';

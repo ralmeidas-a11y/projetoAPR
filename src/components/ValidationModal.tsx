@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { FormData, StudyStatus, FormType } from './types';
-import { PRESSURE_BASES } from './constants';
+import { FormData, StudyStatus, FormType } from '../types/types';
+import { PRESSURE_BASES } from '../constants/constants';
 import { useDialog } from './AppDialog';
 
 interface ValidationModalProps {

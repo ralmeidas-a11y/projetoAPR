@@ -44,7 +44,7 @@ export const formatDate = (dateStr: string | undefined | null) => {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 };
 
-import { REQUESTER_AREAS } from './constants';
+import { REQUESTER_AREAS } from '../constants/constants';
 
 export const normalizeArea = (area: string | undefined | null) => {
   if (!area) return '';

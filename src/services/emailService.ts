@@ -1,4 +1,4 @@
-import { FormData, User, UserRole, StudyStatus } from "./types";
+import { FormData, User, UserRole, StudyStatus } from "../types/types";
 import mjml2html from "mjml-browser";
 
 export interface EmailNotificationData {

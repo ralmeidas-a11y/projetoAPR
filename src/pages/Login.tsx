@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, UserRole } from './types';
-import { NaturgyBranding } from './NaturgyBranding';
-import { StorageService } from './storage';
+import { User, UserRole } from '../types/types';
+import { NaturgyBranding } from '../components/NaturgyBranding';
+import { StorageService } from '../services/storage';
 import bcrypt from 'bcryptjs';
-import { EmailService } from './emailService';
-import { useDialog } from './AppDialog';
+import { EmailService } from '../services/emailService';
+import { useDialog } from '../components/AppDialog';
 
 interface LoginProps {
   onLogin: (user: User) => void;

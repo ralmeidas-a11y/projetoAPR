@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { FormType, FormOption } from './types';
+import { FormType, FormOption } from '../types/types';
 
 export const FORM_OPTIONS: FormOption[] = [
   {
@@ -86,7 +86,7 @@ export const getFormattedDomains = (): string => {
   return CORPORATE_EMAIL_DOMAINS.map(d => `${d}`).join(' ou ');
 };
 export const APP_NAME = 'Análise de Planificação de Rede';
-import logoImg from './logo.png';
+import logoImg from '../assets/logo.png';
 
 export const NaturgyLogo = () => {
   return (
