@@ -197,7 +197,12 @@ export const StorageService = {
   getRequests: async (): Promise<FormData[]> => {
     const { data, error } = await supabase
       .from('requests')
-      .select('*')
+      .select(`
+        *,
+        interconnection_points(*),
+        planned_extensions(*),
+        fo02_grid_data(*)
+      `)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -205,20 +210,153 @@ export const StorageService = {
       return [];
     }
 
-    return (data || []).map(r => ({
-      ...r.data,
-      id: r.id,
-      studyNumber: r.study_number,
-      status: r.status as StudyStatus,
-      user_id: r.user_id,
-      formType: r.form_type,
-      year: r.year,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      holdReason: r.hold_reason || r.data?.holdReason,
-      holdResponse: r.hold_response || r.data?.holdResponse,
-      holdResponseSeen: r.hold_response_seen ?? r.data?.holdResponseSeen
-    }));
+    return (data || []).map(r => {
+      const formData: FormData = {
+        ...r.data, // Fallback e metadados de arquivos
+        id: r.id,
+        studyNumber: r.study_number,
+        status: r.status as StudyStatus,
+        user_id: r.user_id,
+        formType: r.form_type,
+        year: r.year,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        holdReason: r.hold_reason || r.data?.holdReason,
+        holdResponse: r.hold_response || r.data?.holdResponse,
+        holdResponseSeen: r.hold_response_seen ?? r.data?.holdResponseSeen,
+        
+        // Mapeamento de colunas para Camel Case
+        naturgyUnit: r.naturgy_unit || r.data?.naturgyUnit,
+        studyType: r.study_type || r.data?.studyType,
+        previousStudy: r.previous_study || r.data?.previousStudy,
+        requesterName: r.requester_name || r.data?.requesterName,
+        requestDate: r.request_date || r.data?.requestDate,
+        requesterArea: r.requester_area || r.data?.requesterArea,
+        phone: r.phone || r.data?.phone,
+        email: r.email || r.data?.email,
+        studyTitle: r.study_title || r.data?.studyTitle,
+        marketCategory: r.market_category || r.data?.marketCategory,
+        address: r.address || r.data?.address,
+        number: r.number || r.data?.number,
+        city: r.city || r.data?.city,
+        neighborhood: r.neighborhood || r.data?.neighborhood,
+        networkType: r.network_type || r.data?.networkType,
+        mapLocation: r.map_location || r.data?.mapLocation,
+        pressure: r.pressure || r.data?.pressure,
+        fileType: r.file_type || r.data?.fileType,
+        state: r.state || r.data?.state,
+        gasificationType: r.gasification_type || r.data?.gasificationType,
+        clientName: r.client_name || r.data?.clientName,
+        deliveryPoint: r.delivery_point || r.data?.deliveryPoint,
+        instantConsumption: r.instant_consumption || r.data?.instantConsumption,
+        workHours: r.work_hours || r.data?.workHours,
+        monthlyConsumption: r.monthly_consumption || r.data?.monthlyConsumption,
+        consumptionIncrement: r.consumption_increment || r.data?.consumptionIncrement,
+        workDaysPerWeek: r.work_days_per_week || r.data?.workDaysPerWeek,
+        totalPredictedFlow: r.total_predicted_flow || r.data?.totalPredictedFlow,
+        minPressure: r.min_pressure || r.data?.minPressure,
+        suggestedPressureRange: r.suggested_pressure_range || r.data?.suggestedPressureRange,
+        sapIsuCode: r.sap_isu_code || r.data?.sapIsuCode,
+        industryName: r.industry_name || r.data?.industryName,
+        currentConsumption: r.current_consumption || r.data?.currentConsumption,
+        contractualPressure: r.contractual_pressure || r.data?.contractualPressure,
+        currentPressureRange: r.current_pressure_range || r.data?.currentPressureRange,
+        uteName: r.ute_name || r.data?.uteName,
+        pressMaxUTE: r.press_max_ute || r.data?.pressMaxUTE,
+        pressMinUTE: r.press_min_ute || r.data?.pressMinUTE,
+        instantFlow: r.instant_flow || r.data?.instantFlow,
+        qdc: r.qdc || r.data?.qdc,
+        pressMaxUPGN: r.press_max_upgn || r.data?.pressMaxUPGN,
+        pressMinUPGN: r.press_min_upgn || r.data?.pressMinUPGN,
+        numClientsRes: r.num_clients_res || r.data?.numClientsRes,
+        flowUnitRes: r.flow_unit_res || r.data?.flowUnitRes,
+        totalFlowRes: r.total_flow_res || r.data?.totalFlowRes,
+        numClientsCom: r.num_clients_com || r.data?.numClientsCom,
+        flowUnitCom: r.flow_unit_com || r.data?.flowUnitCom,
+        totalFlowCom: r.total_flow_com || r.data?.totalFlowCom,
+        deadlineDays: r.deadline_days || r.data?.deadlineDays,
+        estimatedDeliveryDate: r.estimated_delivery_date || r.data?.estimatedDeliveryDate,
+        comments: r.comments || r.data?.comments,
+        executionStartTime: r.execution_start_time || r.data?.executionStartTime,
+        totalExecutionTime: r.total_execution_time || r.data?.totalExecutionTime,
+        startedAt: r.started_at || r.data?.startedAt,
+        completedAt: r.completed_at || r.data?.completedAt,
+        hasExpansion: r.has_expansion ?? r.data?.hasExpansion,
+        gasType: r.gas_type || r.data?.gasType,
+        mapReceived: r.map_received ?? r.data?.mapReceived,
+        relevantStudy: r.relevant_study ?? r.data?.relevantStudy,
+        gniName: r.gni_name || r.data?.gniName,
+        studySubType: r.study_sub_type || r.data?.studySubType,
+        difficulty: r.difficulty || r.data?.difficulty,
+        validatorObservations: r.validator_observations || r.data?.validatorObservations,
+        networkGroup: r.network_group || r.data?.networkGroup,
+        networkDescription: r.network_description || r.data?.networkDescription,
+        responsePressureBase: r.response_pressure_base || r.data?.responsePressureBase,
+        responseMaxPo: r.response_max_po || r.data?.responseMaxPo,
+        responseMin: r.response_min || r.data?.responseMin,
+        responseGarantia: r.response_garantia || r.data?.responseGarantia,
+        responseUnit: r.response_unit || r.data?.responseUnit,
+        responseCalculatedPressure: r.response_calculated_pressure || r.data?.responseCalculatedPressure,
+        responseObservations: r.response_observations || r.data?.responseObservations,
+        regSizingActive: r.reg_sizing_active ?? r.data?.regSizingActive,
+        regSizingFlow: r.reg_sizing_flow || r.data?.regSizingFlow,
+        regSizingCost: r.reg_sizing_cost || r.data?.regSizingCost,
+        regSizingInPress: r.reg_sizing_in_press || r.data?.regSizingInPress,
+        regSizingOutPress: r.reg_sizing_out_press || r.data?.regSizingOutPress,
+        regSizingFutureFlow: r.reg_sizing_future_flow || r.data?.regSizingFutureFlow,
+        analystCompany: r.analyst_company || r.data?.analystCompany,
+        analystRole: r.analyst_role || r.data?.analystRole,
+        analystGB: r.analyst_gb || r.data?.analystGB,
+        cartaGeneratedAt: r.carta_generated_at || r.data?.cartaGeneratedAt,
+        qcData: r.qc_data || r.data?.qcData,
+        analystName: r.analyst_name || r.data?.analystName,
+        qcRequestDate: r.qc_request_date || r.data?.qcRequestDate
+      };
+
+      // Interconnection Points
+      if (r.interconnection_points && r.interconnection_points.length > 0) {
+        formData.interconnectionPoints = r.interconnection_points.map((ip: any) => ({
+          id: ip.id,
+          pressure: ip.pressure,
+          material: ip.material,
+          diameter: ip.diameter,
+          location: ip.location,
+          comment: ip.comment
+        }));
+      }
+
+      // Planned Extensions
+      if (r.planned_extensions && r.planned_extensions.length > 0) {
+        formData.plannedExtensions = r.planned_extensions.map((pe: any) => ({
+          id: pe.id,
+          material: pe.material,
+          diameter: pe.diameter,
+          extension: pe.extension,
+          networkType: pe.network_type,
+          valves: pe.valves,
+          pressure: pe.pressure,
+          gasType: pe.gas_type,
+          status: pe.status
+        }));
+      }
+
+      // FO02 Grid Data
+      if (r.fo02_grid_data && r.fo02_grid_data.length > 0) {
+        const gridData: any = {};
+        r.fo02_grid_data.forEach((gd: any) => {
+          gridData[gd.category] = {
+            atuais: gd.atuais,
+            y2: gd.y2,
+            y5: gd.y5,
+            y20: gd.y20,
+            totalQ: gd.total_q
+          };
+        });
+        formData.gridDataFO02 = gridData;
+      }
+
+      return formData;
+    });
   },
 
   addRequest: async (request: FormData, providedPdf?: File | Blob) => {
@@ -255,7 +393,94 @@ export const StorageService = {
       hold_reason: request.holdReason,
       hold_response: request.holdResponse,
       hold_response_seen: request.holdResponseSeen ?? false,
-      updated_at: getGMT3ISOString()
+      updated_at: getGMT3ISOString(),
+      
+      // Novas Colunas
+      naturgy_unit: request.naturgyUnit,
+      study_type: request.studyType,
+      previous_study: request.previousStudy,
+      requester_name: request.requesterName,
+      request_date: request.requestDate || null,
+      requester_area: request.requesterArea,
+      phone: request.phone,
+      email: request.email,
+      study_title: request.studyTitle,
+      market_category: request.marketCategory,
+      address: request.address,
+      number: request.number,
+      city: request.city,
+      neighborhood: request.neighborhood,
+      network_type: request.networkType,
+      map_location: request.mapLocation,
+      pressure: request.pressure,
+      file_type: request.fileType,
+      state: request.state,
+      gasification_type: request.gasificationType,
+      client_name: request.clientName,
+      delivery_point: request.deliveryPoint,
+      instant_consumption: request.instantConsumption || null,
+      work_hours: request.workHours || null,
+      monthly_consumption: request.monthlyConsumption || null,
+      consumption_increment: request.consumptionIncrement || null,
+      work_days_per_week: request.workDaysPerWeek || null,
+      total_predicted_flow: request.totalPredictedFlow || null,
+      min_pressure: request.minPressure || null,
+      suggested_pressure_range: request.suggestedPressureRange,
+      sap_isu_code: request.sapIsuCode,
+      industry_name: request.industryName,
+      current_consumption: request.currentConsumption || null,
+      contractual_pressure: request.contractualPressure || null,
+      current_pressure_range: request.currentPressureRange,
+      ute_name: request.uteName,
+      press_max_ute: request.pressMaxUTE || null,
+      press_min_ute: request.pressMinUTE || null,
+      instant_flow: request.instantFlow || null,
+      qdc: request.qdc || null,
+      press_max_upgn: request.pressMaxUPGN || null,
+      press_min_upgn: request.pressMinUPGN || null,
+      num_clients_res: request.numClientsRes || null,
+      flow_unit_res: request.flowUnitRes || null,
+      total_flow_res: request.totalFlowRes || null,
+      num_clients_com: request.numClientsCom || null,
+      flow_unit_com: request.flowUnitCom || null,
+      total_flow_com: request.totalFlowCom || null,
+      deadline_days: request.deadlineDays || null,
+      estimated_delivery_date: request.estimatedDeliveryDate || null,
+      comments: request.comments,
+      execution_start_time: request.executionStartTime || null,
+      total_execution_time: request.totalExecutionTime || null,
+      started_at: request.startedAt || null,
+      completed_at: request.completedAt || null,
+      has_expansion: request.hasExpansion ?? null,
+      gas_type: request.gasType,
+      map_received: request.mapReceived ?? null,
+      relevant_study: request.relevantStudy ?? null,
+      gni_name: request.gniName,
+      study_sub_type: request.studySubType,
+      difficulty: request.difficulty,
+      validator_observations: request.validatorObservations,
+      network_group: request.networkGroup || null,
+      network_description: request.networkDescription,
+      response_pressure_base: request.responsePressureBase,
+      response_max_po: request.responseMaxPo || null,
+      response_min: request.responseMin || null,
+      response_garantia: request.responseGarantia || null,
+      response_unit: request.responseUnit,
+      response_calculated_pressure: typeof request.responseCalculatedPressure === 'number' ? request.responseCalculatedPressure : null,
+      response_observations: request.responseObservations,
+      reg_sizing_active: request.regSizingActive ?? null,
+      reg_sizing_flow: request.regSizingFlow,
+      reg_sizing_cost: request.regSizingCost,
+      reg_sizing_in_press: request.regSizingInPress,
+      reg_sizing_out_press: request.regSizingOutPress,
+      reg_sizing_future_flow: request.regSizingFutureFlow,
+      analyst_company: request.analystCompany,
+      analyst_role: request.analystRole,
+      analyst_gb: request.analystGB,
+      carta_generated_at: request.cartaGeneratedAt || null,
+      qc_data: request.qcData || null,
+      analyst_name: request.analystName,
+      qc_request_date: request.qcRequestDate || null
     };
 
     const baseFolder = getRequestPath(request.studyNumber);
@@ -359,6 +584,57 @@ export const StorageService = {
       .upsert(requestRow);
 
     if (error) throw error;
+
+    // Sincronizar Tabelas Secundárias
+    try {
+      // 1. Interconnection Points
+      await supabase.from('interconnection_points').delete().eq('request_id', request.id);
+      if (request.interconnectionPoints && request.interconnectionPoints.length > 0) {
+        const ipRows = request.interconnectionPoints.map(ip => ({
+          request_id: request.id,
+          pressure: ip.pressure,
+          material: ip.material,
+          diameter: ip.diameter,
+          location: ip.location,
+          comment: ip.comment
+        }));
+        await supabase.from('interconnection_points').insert(ipRows);
+      }
+
+      // 2. Planned Extensions
+      await supabase.from('planned_extensions').delete().eq('request_id', request.id);
+      if (request.plannedExtensions && request.plannedExtensions.length > 0) {
+        const peRows = request.plannedExtensions.map(pe => ({
+          request_id: request.id,
+          material: pe.material,
+          diameter: pe.diameter,
+          extension: pe.extension || null,
+          network_type: pe.networkType,
+          valves: pe.valves || 0,
+          pressure: pe.pressure,
+          gas_type: pe.gasType,
+          status: pe.status
+        }));
+        await supabase.from('planned_extensions').insert(peRows);
+      }
+
+      // 3. Grid Data (FO.02)
+      await supabase.from('fo02_grid_data').delete().eq('request_id', request.id);
+      if (request.gridDataFO02) {
+        const gdRows = Object.entries(request.gridDataFO02).map(([cat, val]) => ({
+          request_id: request.id,
+          category: cat,
+          atuais: val.atuais || null,
+          y2: val.y2 || null,
+          y5: val.y5 || null,
+          y20: val.y20 || null,
+          total_q: val.totalQ || null
+        }));
+        await supabase.from('fo02_grid_data').insert(gdRows);
+      }
+    } catch (syncErr) {
+      console.warn('[StorageService] Erro ao sincronizar tabelas secundárias:', syncErr);
+    }
     
     // 3. Sincronização Automática: Garantir que a lista de arquivos no Banco reflita o Storage REAL
     // Buscamos o que está no storage agora (após os uploads acima) para as 4 categorias
