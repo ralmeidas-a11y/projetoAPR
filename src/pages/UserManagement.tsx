@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { User, UserRole } from '../types/types';
 import { isValidCorporateEmail, getFormattedDomains } from '../constants/constants';
+import bcrypt from 'bcryptjs';
 import { useDialog } from '../components/AppDialog';
 
 interface UserManagementProps {
@@ -44,12 +45,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
         gb: newGB
       });
     } else {
+      // Criptografar a senha padrão '123456'
+      const salt = bcrypt.genSaltSync(10);
+      const hashedPassword = bcrypt.hashSync('123456', salt);
+
       const newUser: User = {
         id: crypto.randomUUID(),
         name: newName,
         email: newEmail.toLowerCase(),
         role: newRole,
-        password: '123456', // Definir senha padrão inicial
+        password: hashedPassword, // Definir senha padrão inicial criptografada
         permissions: newPerms,
         profileComplete: false, // Forçar preenchimento de perfil no primeiro acesso
         requiresPasswordChange: true,
