@@ -1,8 +1,9 @@
+import { getGMT3ISOString } from '../utils/utils';
+import { PRESSURE_BASES } from '../constants/constants';
+import logoImg from '../assets/logo.png';
 import { supabase } from './supabaseClient';
 import { jsPDF } from 'jspdf';
 import { User, UserRole, FormData, StudyStatus } from '../types/types';
-import { getGMT3ISOString } from '../utils/utils';
-import logoImg from '../assets/logo.png';
 
 // ADM inicial - o Supabase lidará com a persistência real
 const DEFAULT_ADM_EMAIL = 'prgc@naturgy.com';
@@ -160,6 +161,190 @@ export const StorageService = {
 
     if (updateError) throw updateError;
     return code;
+  },
+
+  // === Helper for Integrated Table Mapping ===
+  mapToIntegratedRequest: (request: FormData): any => {
+    // Helper to get pressure base details
+    const pBase = PRESSURE_BASES.find(b => b.base === request.responsePressureBase || b.base === request.pressure);
+    
+    // Helper for Area/Organ mapping
+    const areaMapping: Record<string, number> = {
+      "Operacional - SPS": 931,
+      "ST Zona Metropolitana RJ": 915,
+      "GESET-LE - Gerência de Serviços Técnicos LESTE": 914,
+      "GESET - Gerência de Novas Edificações Rio": 913,
+      "Gerência Comercial - GNSPS": 912,
+      "GERAT-Regulação e Aprovisionamento de Tarifas": 911,
+      "GENE - Gerência de Novas Edificações": 910
+    };
+
+    // Helper for Study Type mapping (TIPO_EST)
+    const typeMapping: Record<string, number> = {
+      "Residencial": 310,
+      "Comercial": 320,
+      "Industrial": 330,
+      "GNV": 340,
+      "Termogeração": 350
+    };
+
+    // Status mapping
+    const statusMapping: Record<string, number> = {
+      [StudyStatus.PENDENTE]: 100,
+      [StudyStatus.EM_ANALISE]: 150,
+      [StudyStatus.AGUARDANDO_EXECUCAO]: 200,
+      [StudyStatus.EM_EXECUCAO]: 300,
+      [StudyStatus.AGUARDANDO_INFORMACAO]: 400,
+      [StudyStatus.CONCLUIDO]: 500,
+      [StudyStatus.REJEITADO]: 600,
+      [StudyStatus.CANCELADO]: 700
+    };
+
+    // Calculation for DiaOpeMes (Work days per week * 4 weeks approx)
+    const workDays = typeof request.workDaysPerWeek === 'number' ? request.workDaysPerWeek : 0;
+    const diaOpeMes = workDays * 4;
+
+    // Sum economic data
+    const numRes = (typeof request.numClientsRes === 'number' ? request.numClientsRes : 0);
+    const numComInd = (typeof request.numClientsCom === 'number' ? request.numClientsCom : 0);
+    const vazaoComInd = (typeof request.totalFlowCom === 'number' ? request.totalFlowCom : 0) + 
+                        (typeof request.instantConsumption === 'number' ? request.instantConsumption : 0);
+
+    const getDiversificationFactor = (total: number) => {
+      if (total <= 0) return 0;
+      if (total < 100) return 1.00;
+      if (total < 250) return 0.88;
+      if (total < 500) return 0.82;
+      if (total < 750) return 0.75;
+      if (total < 1000) return 0.63;
+      if (total < 2000) return 0.56;
+      if (total < 3000) return 0.50;
+      return 0.47;
+    };
+
+    // Difficulty mapping
+    const difficultyMapping: Record<string, number> = {
+      "Fácil": 1,
+      "Médio": 2,
+      "Difícil": 3
+    };
+
+    // Generate a numeric ID from UUID if it's not already numeric
+    // Using a simple hash if request.id is UUID
+    let numericId = 0;
+    if (request.id) {
+       if (/^\d+$/.test(request.id)) {
+         numericId = parseInt(request.id);
+       } else {
+         // Hash UUID to numeric
+         let hash = 0;
+         for (let i = 0; i < request.id.length; i++) {
+           hash = ((hash << 5) - hash) + request.id.charCodeAt(i);
+           hash |= 0;
+         }
+         numericId = Math.abs(hash);
+       }
+    }
+
+    return {
+      "id": numericId,
+      "NRO_ESTUDO": request.studyNumber,
+      "FK_MODELO": "",
+      "EMPRESA": request.naturgyUnit === 'SPS' ? 'SPS' : (request.city === 'Rio de Janeiro' ? 'CEG' : 'CEGRIO'),
+      "DAT_EN_SEP": request.requestDate || "",
+      "NRO_EST_AN": request.previousStudy || request.studyNumber,
+      "SOL_ORGAO": areaMapping[request.requesterArea || ""] || 0,
+      "SOL_RESPON": request.requesterName || "",
+      "MEMORANDO": "",
+      "MEMO_NUM": "",
+      "MEMO_DATA": "",
+      "TITULO": request.studyTitle || "",
+      "LOCALIZ": `${request.address || ""}${request.number ? ", " + request.number : ""}`,
+      "GRUPO_EST": request.networkGroup || 0,
+      "TIPO_EST": typeMapping[request.studyType || ""] || 0,
+      "DAT_IN_SEP": request.startedAt || "",
+      "DAT_SA_SEP": request.completedAt || "",
+      "PRESSAO": request.pressure || "",
+      "RESP_SEPLA": request.analystGB || "",
+      "STATUS": statusMapping[request.status] || 0,
+      "OBSERVS": `${request.comments || ""}${request.validatorObservations ? "\nValid.: " + request.validatorObservations : ""}`,
+      "OPERADOR_M": "",
+      "DATA_M": "",
+      "Bairro": request.neighborhood || "",
+      "Municipio": request.city || "",
+      "TPGASS": request.gasType || "",
+      "PRESGAS": request.pressure || "",
+      "NumEconomias": numRes,
+      "VazaoSol": request.totalFlowRes || 0,
+      "VazaoInsta": request.instantConsumption || 0,
+      "UnidSol": "m³/h",
+      "ConsMens": request.monthlyConsumption || 0,
+      "QDC": request.qdc || 0,
+      "PresSolMax": pBase?.pmax || 0,
+      "PresSolMin": pBase?.pmin || 0,
+      "HorOpeIni": "",
+      "HorOpeFin": "",
+      "DiaOpeMes": diaOpeMes,
+      "ObsEstudSol": "",
+      "PresClieMax": request.responsePressureBase ? `${pBase?.pmax || ""} bar` : "",
+      "PresClieMin": request.responsePressureBase ? `${pBase?.pmin || ""} bar` : "",
+      "PresClieGarant": request.responsePressureBase ? `${pBase?.pgarantia || ""} bar` : "",
+      "CODCARSEP": 0,
+      "PresSol": request.pressure || "",
+      "StatusEntrega": "",
+      "ObservaResp": request.responseObservations || "",
+      "RegulardoSN": request.regSizingActive || false,
+      "ReguladroVazao": request.regSizingFlow || "",
+      "HoraFunciona": "",
+      "CriadorRegistro": "",
+      "DataCriaReg": "",
+      "PressaoResposta": request.responsePressureBase || "",
+      "CustoRegulador": request.regSizingCost || "0,00",
+      "PressaoEntrada": parseFloat(request.regSizingInPress || "0") || 0,
+      "unidPresEnt": "bar",
+      "PressaoSaida": parseFloat(request.regSizingOutPress || "0") || 0,
+      "unidPresSai": "bar",
+      "VazaoFutura": parseFloat(request.regSizingFutureFlow || "0") || 0,
+      "fd": getDiversificationFactor(numRes),
+      "fp": 1,
+      "vu": 0.09,
+      "Diversificar": request.totalFlowRes || 0,
+      "dtEntregaPrevista": request.estimatedDeliveryDate || "",
+      "EmailContato": request.email || "",
+      "EntradaReal": request.requestDate || "",
+      "carta_sepla": "",
+      "EMAIL_ENVIADO": request.status === StudyStatus.CONCLUIDO,
+      "DAT_PREN_INI_OP": "",
+      "CROQUI": request.mapReceived || false,
+      "PRESCALC": typeof request.responseCalculatedPressure === 'number' ? request.responseCalculatedPressure : 0,
+      "PRAZ_EST_CONST": 0,
+      "CONSUMO_ESTIMADO": 0,
+      "PRESSAO_INICIAL": 0,
+      "PRESSAO_FINAL": 0,
+      "PRESSAO_ABSOLUTA": 0,
+      "PRESSAO_ATM": 0,
+      "CODIGO_PASTA": 0,
+      "TIP_ES": 0,
+      "GRUPORED": request.networkGroup || 0,
+      "SIGEP": "FALSO",
+      "BAIXA_SIGEP": "FALSO",
+      "Preparacion": "",
+      "Simulacao": "",
+      "Supervision": "",
+      "Tempo": "",
+      "TempoEstimado": "",
+      "RedeExtTotal": "",
+      "OperadorConta": "",
+      "IDSIGEP": request.studyNumber,
+      "IDSIGEPVINC": "",
+      "NumEconomiasComIndEtc": numComInd,
+      "VazaoSolComIndEtc": vazaoComInd,
+      "UnidSolComIndEtc": "m³/h",
+      "ESTRERERIDO": "",
+      "GrauDificult": difficultyMapping[request.difficulty || ""] || 0,
+      "REGGNV": 0,
+      "EstudoRelevante": request.relevantStudy || false
+    };
   },
 
   verifyResetToken: async (email: string, token: string): Promise<boolean> => {
@@ -668,6 +853,14 @@ export const StorageService = {
       .from('requests')
       .update({ data: finalData })
       .eq('id', request.id);
+
+    // Sincronizar com Tabela Integrada
+    try {
+      const integratedRow = StorageService.mapToIntegratedRequest(request);
+      await supabase.from('integrated_requests').upsert(integratedRow);
+    } catch (intErr) {
+      console.warn('[StorageService] Erro ao sincronizar com tabela integrada:', intErr);
+    }
 
     // Alinhado com a solicitação do usuário: Sempre que houver edição/adição, 
     // regeneramos o PDF para garantir que o arquivo no storage reflita os dados mais recentes.
