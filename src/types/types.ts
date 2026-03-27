@@ -254,4 +254,5 @@ export interface FormData {
   holdResponseSeen?: boolean;
   holdRequestSeen?: boolean;
   qcRequestDate?: string;
+  responseMemo?: string;
 }

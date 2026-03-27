@@ -1036,9 +1036,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
   const handleConfirmHold = () => {
     if (!holdInfo.trim()) return;
-    onStatusUpdate(data.id || '', StudyStatus.AGUARDANDO_INFORMACAO, holdInfo, undefined, { 
+    onStatusUpdate(data.id || '', StudyStatus.AGUARDANDO_INFORMACAO, holdInfo, undefined, {
       totalExecutionTime: elapsedTime,
-      holdRequestSeen: false 
+      holdRequestSeen: false
     });
     setShowHoldModal(false);
     onBack();
@@ -2212,80 +2212,67 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         </h4>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="space-y-6">
-            <div className="p-5 border border-slate-200 rounded-2xl relative">
-              <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos Geogas</span>
-              <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
-                <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-export text-[#004080]"></i> Caminho de Exportação Shapefile</li>
-                <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda Geogas</li>
-                <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
-                <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa Geogas</li>
-              </ul>
-            </div>
-
-            <div className="p-5 border border-slate-200 rounded-2xl relative">
-              <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos QGis</span>
-              <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
-                <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda QGis</li>
-                <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
-                <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa QGis</li>
-              </ul>
-            </div>
-
-            <div className="p-5 border border-slate-200 rounded-2xl relative bg-indigo-50/50">
-              <span className="absolute -top-3 left-4 bg-indigo-50/50 px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Envio</span>
-              <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-700">
-                <li
-                  onClick={() => !readOnly && setShowCartaPreview(true)}
-                  className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'}`}
-                >
-                  <i className="fa-solid fa-magnifying-glass"></i> Visualizar
-                </li>
-                <li
-                  onClick={() => !readOnly && handleExportCartaPDF()}
-                  className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'} ${isExportingCarta ? 'animate-pulse opacity-50' : ''}`}
-                >
-                  <i className="fa-solid fa-envelope-open-text"></i> {isExportingCarta ? 'Exportando...' : 'Exportar Carta Resposta'}
-                </li>
-                <li
-                  onClick={handleJustifyPreQC}
-                  className={`flex items-center gap-2 text-red-500 ${readOnly ? '' : 'cursor-pointer hover:text-red-700'}`}
-                >
-                  <i className="fa-solid fa-paper-plane"></i> Justificar Envio Antes do Controle
-                </li>
-
-                <li
-                  onClick={() => setShowQCModal(true)}
-                  className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${data.qcData ? 'text-purple-600 font-black' : ''}`}
-                >
-                  <i className={`fa-solid ${data.qcData?.qcStatusCQ === 'Reprovado' ? 'fa-triangle-exclamation text-red-500' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'fa-check-circle text-green-500' : 'fa-plus text-[#004080]'}`}></i>
-                  {data.qcData?.qcStatusCQ === 'Reprovado' ? 'Ver Motivo da Reprovação CQ' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'Ver Aprovação CQ' : 'Abrir Controle de Qualidade'}
-                </li>
-              </ul>
-            </div>
+          <div className="p-5 border border-slate-200 rounded-2xl relative">
+            <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos Geogas</span>
+            <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
+              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-export text-[#004080]"></i> Caminho de Exportação Shapefile</li>
+              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda Geogas</li>
+              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
+              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa Geogas</li>
+            </ul>
           </div>
 
-          <div className="lg:col-span-2 space-y-6 flex flex-col">
-            <div className="flex-grow flex flex-col">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Copiar Colar:</span>
-              <textarea readOnly={readOnly} className="flex-grow min-h-[150px] border border-slate-200 rounded-2xl bg-slate-50 p-4 resize-none text-xs" />
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 border border-slate-200 p-4 rounded-2xl">
-              <div className="flex flex-col items-center gap-2">
-                <span className="text-[10px] font-black text-white bg-[#004080] w-full text-center py-1 rounded">Estudos Servidor</span>
-                <div className="w-full h-32 bg-white border border-slate-200 rounded-xl"></div>
-              </div>
-              <div className="flex flex-col items-center justify-center gap-4 border-x border-slate-100 px-2">
-                <button disabled={readOnly} className="text-[9px] font-black text-[#004080] uppercase tracking-widest hover:underline disabled:opacity-50">Baixar Arquivo Winflow {">>>"}</button>
-                <button disabled={readOnly} className="text-[9px] font-black text-[#004080] uppercase tracking-widest hover:underline disabled:opacity-50">{"<<<"} Guardar Winflow</button>
-              </div>
-              <div className="flex flex-col items-center gap-2">
-                <span className="text-[10px] font-black text-white bg-[#004080] w-full text-center py-1 rounded">Estudos Locais</span>
-                <div className="w-full h-32 bg-white border border-slate-200 rounded-xl"></div>
-              </div>
-            </div>
+          <div className="p-5 border border-slate-200 rounded-2xl relative">
+            <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos QGis</span>
+            <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
+              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda QGis</li>
+              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
+              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa QGis</li>
+            </ul>
           </div>
+
+          <div className="p-5 border border-slate-200 rounded-2xl relative bg-indigo-50/50">
+            <span className="absolute -top-3 left-4 bg-indigo-50/50 px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Envio</span>
+            <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-700">
+              <li
+                onClick={() => !readOnly && setShowCartaPreview(true)}
+                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'}`}
+              >
+                <i className="fa-solid fa-magnifying-glass"></i> Visualizar
+              </li>
+              <li
+                onClick={() => !readOnly && handleExportCartaPDF()}
+                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'} ${isExportingCarta ? 'animate-pulse opacity-50' : ''}`}
+              >
+                <i className="fa-solid fa-envelope-open-text"></i> {isExportingCarta ? 'Exportando...' : 'Exportar Carta Resposta'}
+              </li>
+              <li
+                onClick={handleJustifyPreQC}
+                className={`flex items-center gap-2 text-red-500 ${readOnly ? '' : 'cursor-pointer hover:text-red-700'}`}
+              >
+                <i className="fa-solid fa-paper-plane"></i> Justificar Envio Antes do Controle
+              </li>
+
+              <li
+                onClick={() => setShowQCModal(true)}
+                className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${data.qcData ? 'text-purple-600 font-black' : ''}`}
+              >
+                <i className={`fa-solid ${data.qcData?.qcStatusCQ === 'Reprovado' ? 'fa-triangle-exclamation text-red-500' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'fa-check-circle text-green-500' : 'fa-plus text-[#004080]'}`}></i>
+                {data.qcData?.qcStatusCQ === 'Reprovado' ? 'Ver Motivo da Reprovação CQ' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'Ver Aprovação CQ' : 'Abrir Controle de Qualidade'}
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="flex-grow flex flex-col min-h-[300px]">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Copiar Colar:</span>
+          <textarea
+            readOnly={readOnly}
+            className="flex-grow border border-slate-200 rounded-2xl bg-slate-50 p-4 resize-none text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono"
+            placeholder=""
+            value={data.responseMemo || ''}
+            onChange={(e) => onUpdateData && onUpdateData({ ...data, responseMemo: e.target.value })}
+          />
         </div>
       </div>
     );
@@ -2737,7 +2724,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         {!readOnly ? (
           <div className="flex w-full justify-between items-center">
             <div className="flex gap-4">
-               <button
+              <button
                 onClick={handlePauseToggle}
                 className={`px-8 py-4 rounded-[1.5rem] font-black uppercase text-[11px] tracking-widest flex items-center gap-3 transition-all active:scale-95 shadow-lg ${isPaused ? 'bg-orange-500 text-white border-orange-400 shadow-orange-100' : 'bg-white text-orange-600 border border-orange-100 hover:bg-orange-50'}`}
               >
@@ -2902,8 +2889,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               </div>
             </div>
             <div className="p-8 bg-slate-50 flex gap-4">
-              <button 
-                onClick={() => { setShowHoldModal(false); setHoldInfo(''); setIsPaused(false); }} 
+              <button
+                onClick={() => { setShowHoldModal(false); setHoldInfo(''); setIsPaused(false); }}
                 className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors bg-white rounded-2xl border border-slate-100"
               >
                 Continuar Executando
