@@ -27,11 +27,7 @@ export const FormFO02: React.FC<FormFO02Props> = ({ data, onChange, readOnly = f
       processedValue = value === '' ? '' : parseFloat(value);
     }
 
-    if (name === 'studyTitle') {
-      onChange({ [name]: processedValue, studyTitle: value });
-    } else {
-      onChange({ [name]: processedValue });
-    }
+    onChange({ [name]: processedValue });
   };
 
   const handleGridChange = (rowKey: string, colKey: string, value: string) => {

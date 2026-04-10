@@ -1,20 +1,15 @@
-
 import React, { useState, useEffect } from 'react';
-import { User, UserRole } from '../types/types';
+import { User } from '../types/types';
 import { NaturgyBranding } from '../components/NaturgyBranding';
 import { StorageService } from '../services/storage';
 import bcrypt from 'bcryptjs';
-import { EmailService } from '../services/emailService';
-import { useDialog } from '../components/AppDialog';
 
 interface LoginProps {
   onLogin: (user: User) => void;
-  onCreateAccount: () => void;
+  onCreateAccount: (email?: string, password?: string) => void;
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
-  const { showToast } = useDialog();
-  const [users, setUsers] = useState<User[]>([]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isAutoEmail, setIsAutoEmail] = useState(false);
@@ -22,23 +17,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
   const [isDetecting, setIsDetecting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
 
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetCodeInput, setResetCodeInput] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [resetStep, setResetStep] = useState(0); // 0: Login, 1: Email, 2: Code, 3: New Pass
-
   useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const allUsers = await StorageService.getUsers();
-        setUsers(allUsers);
-      } catch (e) {
-        console.error('Erro ao carregar usuários:', e);
-      }
-    };
-    fetchUsers();
-
     let cancelled = false;
     (async () => {
       try {
@@ -54,7 +33,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
         if (!cancelled) setIsDetecting(false);
       }
     })();
-
     return () => { cancelled = true; };
   }, []);
 
@@ -94,80 +72,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
           setError('Senha incorreta. Tente novamente.');
         }
       } else {
-        setError('E-mail não cadastrado. Por favor, utilize o botão "Criar agora" abaixo.');
+        onCreateAccount(email, password);
       }
     } catch (err) {
-      setError('Erro ao processar login');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRequestReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
-    try {
-      const users = await StorageService.getUsers();
-      const user = users.find(u => u.email.toLowerCase() === resetEmail.toLowerCase().trim());
-
-      if (!user) {
-        setError('E-mail não encontrado no sistema.');
-        setIsLoading(false);
-        return;
-      }
-
-      const code = await StorageService.requestPasswordReset(resetEmail);
-      const emailData = EmailService.generatePasswordResetEmail(user.email, user.name, code);
-      await EmailService.send(emailData);
-      setResetStep(2);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao solicitar redefinição');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
-    try {
-      const isValid = await StorageService.verifyResetToken(resetEmail, resetCodeInput);
-      if (isValid) {
-        setResetStep(3);
-      } else {
-        setError('Código inválido ou expirado.');
-      }
-    } catch (err) {
-      setError('Erro ao verificar código');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (newPassword !== confirmPassword) {
-      setError('As senhas não coincidem.');
-      return;
-    }
-    if (newPassword.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const salt = bcrypt.genSaltSync(10);
-      const hash = bcrypt.hashSync(newPassword, salt);
-      await StorageService.updateUserPassword(resetEmail, hash);
-      setResetStep(0);
-      setEmail(resetEmail);
-      showToast('Senha redefinida com sucesso!', 'success');
-    } catch (err) {
-      setError('Erro ao atualizar senha');
+      setError(`Erro ao processar login`);
     } finally {
       setIsLoading(false);
     }
@@ -182,7 +90,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
           <div className="w-full md:w-1/2 p-8 md:p-14 flex flex-col justify-center bg-[#004080]">
             <div className="mb-10 text-center md:text-left">
               <h2 className="text-2xl font-black text-white uppercase tracking-tight mb-2">Autenticação</h2>
-              <p className="text-slate-300 text-xs font-bold uppercase tracking-widest"></p>
             </div>
 
             <form onSubmit={handleFormLogin} className="space-y-6">
@@ -220,21 +127,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                     className="w-full pl-11 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder-white/60 focus:border-white/60"
                   />
                 </div>
-                <div className="flex justify-end pr-1">
-                  <button
-                    type="button"
-                    onClick={() => { setResetStep(1); setResetEmail(email); setError(''); }}
-                    className="text-[10px] font-black text-white/40 uppercase tracking-widest hover:text-orange-400 transition-colors"
-                  >
-                    Esqueci minha senha
-                  </button>
-                </div>
               </div>
 
               {error && (
                 <div className="p-4 bg-red-500/20 border border-red-400 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <i className="fa-solid fa-circle-exclamation text-red-300"></i>
-                  <p className="text-[11px] font-bold text-red-200 uppercase tracking-tight">{error}</p>
+                  <i className="fa-solid fa-circle-exclamation text-red-400"></i>
+                  <p className="text-red-200 text-xs font-bold leading-tight">{error}</p>
                 </div>
               )}
 
@@ -246,7 +144,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                 {isLoading ? (
                   <i className="fa-solid fa-circle-notch fa-spin text-lg"></i>
                 ) : (
-                  isDetecting ? 'Aguardando Agente...' : <>Login <i className="fa-solid fa-arrow-right-long"></i></>
+                  isDetecting ? 'Detectando...' : <>Login <i className="fa-solid fa-arrow-right-long"></i></>
                 )}
               </button>
 
@@ -254,7 +152,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                 <div className="text-center pt-2">
                   <button
                     type="button"
-                    onClick={onCreateAccount}
+                    onClick={() => onCreateAccount(email, password)}
                     className="text-[10px] font-black text-white/60 uppercase tracking-widest hover:text-orange-400 transition-colors"
                   >
                     Não possui conta? <span className="text-white border-b border-white/30 ml-1">Criar agora</span>
@@ -265,108 +163,57 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
           </div>
 
           {/* Lado Direito */}
-          <div className="w-full md:w-1/2 bg-white p-12 text-[#004080] flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-slate-100 rounded-full -mr-32 -mt-32 blur-3xl"></div>
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-orange-100 rounded-full -ml-24 -mb-24 blur-3xl"></div>
+          <div className="w-full md:w-1/2 bg-white p-8 md:p-16 text-[#004080] flex flex-col relative overflow-hidden text-center justify-between min-h-[600px]">
+            {/* Background Decor */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-slate-50 rounded-full -mr-32 -mt-32 blur-3xl opacity-60"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-50/20 rounded-full blur-[100px] pointer-events-none"></div>
+            
+            {/* Logo Section */}
+            <div className="relative z-10 pt-4">
+              <div className="transform hover:scale-105 transition-all duration-700 ease-out">
+                <NaturgyBranding />
+              </div>
+            </div>
 
-            <div className="relative z-10">
-              <div className="inline-block mb-16 transform -rotate-2">
-                <div className="scale-125 origin-top-left">
-                  <NaturgyBranding />
+            {/* Hero Section */}
+            <div className="relative z-10 flex-grow flex flex-col justify-center py-12">
+              <div className="space-y-8">
+                <div className="space-y-2">
+                  <h1 className="text-4xl md:text-5xl font-[900] tracking-tight leading-[0.9] flex flex-col items-center">
+                    <span className="text-[#004080] uppercase opacity-90">Portal de</span>
+                    <span className="text-orange-500 uppercase drop-shadow-sm">Planificação</span>
+                  </h1>
+                </div>
+                
+                <div className="flex flex-col items-center gap-6">
+                  <div className="w-12 h-1 bg-orange-500 rounded-full shadow-lg shadow-orange-200/50"></div>
+                  
+                  <p className="text-[#004080]/40 text-[9px] md:text-[11px] font-[800] uppercase tracking-[0.5em] leading-none">
+                    Área Técnica APR
+                  </p>
                 </div>
               </div>
-              <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-tight mb-4 text-[#004080]">
-                Portal de Solicitações de <br />
-                <span className="text-orange-500">Estudo de Rede</span>
-              </h1>
+            </div>
+
+            {/* Footer Badge */}
+            <div className="relative z-10">
+              <div className="inline-flex items-center gap-4 text-left bg-slate-50/80 backdrop-blur-sm p-5 rounded-[2rem] border border-slate-100/50 shadow-sm transition-all hover:bg-white hover:shadow-md group">
+                <div className="w-12 h-12 bg-[#004080] rounded-[1.25rem] flex items-center justify-center text-white shadow-lg shadow-blue-900/20 group-hover:rotate-6 transition-transform">
+                  <i className="fa-solid fa-shield-halved text-xl"></i>
+                </div>
+                <div className="pr-4">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-[#004080] mb-0.5">Ambiente Seguro</h4>
+                  <p className="text-[10px] text-[#004080]/50 font-semibold leading-tight">Acesso autenticado aos servidores Naturgy.</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Modal Redefinição */}
-      {resetStep > 0 && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-[#004080]/60 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-white">
-            <div className="bg-[#004080] p-8 text-center text-white">
-              <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/10">
-                <i className={`fa-solid ${resetStep === 1 ? 'fa-envelope' : resetStep === 2 ? 'fa-shield-halved' : 'fa-key'} text-2xl text-blue-200`}></i>
-              </div>
-              <h3 className="text-xl font-black uppercase tracking-tight">Redefinir Senha</h3>
-              <p className="text-blue-100/60 text-[9px] font-black uppercase tracking-widest mt-1">Passo {resetStep} de 3</p>
-            </div>
-
-            <div className="p-8">
-              {resetStep === 1 && (
-                <form onSubmit={handleRequestReset} className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">E-mail Corporativo</label>
-                    <input
-                      type="email" required value={resetEmail}
-                      onChange={(e) => setResetEmail(e.target.value)}
-                      placeholder="exemplo@gmail.com"
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#004080] text-sm font-medium"
-                    />
-                  </div>
-                  {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight text-center bg-red-50 py-2 rounded-lg">{error}</p>}
-                  <button type="submit" disabled={isLoading} className="w-full py-4 bg-[#004080] text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-orange-500 transition-all">
-                    {isLoading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Enviar Código'}
-                  </button>
-                </form>
-              )}
-
-              {resetStep === 2 && (
-                <form onSubmit={handleVerifyCode} className="space-y-6">
-                  <div className="space-y-2 text-center">
-                    <p className="text-[11px] text-slate-500 font-medium mb-4">Código enviado para <br /><span className="font-bold text-[#004080]">{resetEmail}</span></p>
-                    <input
-                      type="text" required maxLength={6} value={resetCodeInput}
-                      onChange={(e) => setResetCodeInput(e.target.value.replace(/\D/g, ''))}
-                      placeholder="000000"
-                      className="w-full text-center px-4 py-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#004080] text-2xl font-black tracking-[0.5em]"
-                    />
-                  </div>
-                  {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight text-center bg-red-50 py-2 rounded-lg">{error}</p>}
-                  <button type="submit" disabled={isLoading} className="w-full py-4 bg-[#004080] text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-orange-500 transition-all">
-                    {isLoading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Validar Código'}
-                  </button>
-                </form>
-              )}
-
-              {resetStep === 3 && (
-                <form onSubmit={handleResetPassword} className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Nova Senha</label>
-                    <input
-                      type="password" required value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#004080] text-sm font-medium"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Confirmar Senha</label>
-                    <input
-                      type="password" required value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#004080] text-sm font-medium"
-                    />
-                  </div>
-                  {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight text-center bg-red-50 py-2 rounded-lg">{error}</p>}
-                  <button type="submit" disabled={isLoading} className="w-full py-4 bg-orange-500 text-white rounded-xl font-black transition-all">
-                    {isLoading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Atualizar Senha'}
-                  </button>
-                </form>
-              )}
-
-              <button type="button" onClick={() => setResetStep(0)} className="w-full mt-4 py-2 text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-red-500 transition-colors">
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <footer className="p-8 text-center">
+        <p className="text-[10px] font-black text-[#004080]/30 uppercase tracking-[0.3em]">© 2026 Naturgy • APR Técnica</p>
+      </footer>
     </div>
   );
 };

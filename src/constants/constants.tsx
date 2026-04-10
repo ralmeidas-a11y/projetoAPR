@@ -46,6 +46,12 @@ export const MUNICIPALITIES_SP = [
 ].sort();
 
 export const REQUESTER_AREAS = [
+  "ADR-Análise e Dimensionamento de Rede",
+  "BDG - Balanço de Gás",
+  "CCAU - Centro de Controle e Atendimento a Urgência",
+  "CCOR-Centro de Controle e Operação da Rede",
+  "CCR NovaDutra",
+  "Coordenação de Mercado Termoelétrico",
   "Delegação Centro Sul",
   "Delegação Comercial Lagos e Zona Fluminense",
   "Delegação Leste",
@@ -58,11 +64,62 @@ export const REQUESTER_AREAS = [
   "GENE - Gerência de Novas Edificações",
   "GERAT-Regulação e Aprovisionamento de Tarifas",
   "Gerência Comercial - GNSPS",
-  "GESET - Gerência de Novas Edificações Rio",
+  "Gerência de Gestão de Ativos",
+  "GESET - Gerência de Serviços Técnicos Rio",
   "GESET-LE - Gerência de Serviços Técnicos LESTE",
+  "Gestão de Energia",
+  "GGC-Gerência de Grandes Clientes",
+  "GGCSPS - Grandes Clientes",
+  "GNF/SPS - Vendas Industriais",
+  "Grandes Clientes e Soluções Energéticas Sul",
   "Operacional - SPS",
-  "ST Zona Metropolitana RJ"
+  "Operações Centrais de Rede",
+  "PMI – Planificação da Manutenção e Integridade",
+  "Planificação da Expansão",
+  "ST Zona Metropolitana RJ",
+  "Soluções de Mobilidade"
 ].sort();
+
+export const AREA_CODE_MAPPING: Record<string, string> = {
+  "230": "GGC-Gerência de Grandes Clientes",
+  "0": "Desconhecido",
+  "921": "Delegação Leste",
+  "922": "Delegação Oeste",
+  "923": "GENE - Gerência de Novas Edificações",
+  "924": "GESET - Gerência de Serviços Técnicos Rio",
+  "925": "GERAT-Regulação e Aprovisionamento de Tarifas",
+  "926": "GESET-LE - Gerência de Serviços Técnicos LESTE",
+  "927": "Delegação Sul Fluminense e Baixada",
+  "928": "Delegação Comercial Lagos e Zona Fluminense",
+  "829": "Gerência Comercial - GNSPS",
+  "929": "Delegação Centro Sul",
+  "930": "Delegação Norte",
+  "931": "Operacional - SPS",
+  "932": "GNF/SPS - Vendas Industriais",
+  "933": "Operações Centrais de Rede",
+  "934": "Delegação Norte Fluminense Litorânea",
+  "935": "Delegação Leste Fluminense Litorânea",
+  "936": "Coordenação de Mercado Termoelétrico",
+  "938": "Delegação Leste Fluminense Serrana",
+  "940": "Gerência de Gestão de Ativos",
+  "941": "Grandes Clientes e Soluções Energéticas Sul",
+  "942": "ADR-Análise e Dimensionamento de Rede",
+  "943": "CCAU - Centro de Controle e Atendimento a Urgência",
+  "944": "GGCSPS - Grandes Clientes",
+  "945": "Soluções de Mobilidade",
+  "947": "CCR NovaDutra",
+  "948": "Planificação da Expansão",
+  "950": "ST Zona Metropolitana RJ",
+  "952": "CCOR-Centro de Controle e Operação da Rede",
+  "953": "Gestão de Energia",
+  "954": "PMI – Planificação da Manutenção e Integridade",
+  "955": "BDG - Balanço de Gás"
+};
+
+export const REVERSE_AREA_MAPPING: Record<string, string> = Object.entries(AREA_CODE_MAPPING).reduce((acc, [code, name]) => {
+  acc[name] = code;
+  return acc;
+}, {} as Record<string, string>);
 
 // Domínios corporativos permitidos para autenticação
 // Adicione novos domínios conforme necessário

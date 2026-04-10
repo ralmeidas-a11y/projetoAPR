@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole } from '../types/types';
-import { formatToLocalTime, normalizeArea } from '../utils/utils';
+import { formatToLocalTime, formatDate, normalizeArea } from '../utils/utils';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { useDialog } from '../components/AppDialog';
 
@@ -28,11 +28,10 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [browsingRequest, setBrowsingRequest] = useState<FormData | null>(null);
-  const [activeTab, setActiveTab] = useState<'personal' | 'area'>('personal');
   const [statusFilter, setStatusFilter] = useState('Todas');
   const [viewingHoldReason, setViewingHoldReason] = useState<FormData | null>(null);
   const [holdResponseText, setHoldResponseText] = useState('');
-  const [hasAutoOpened, setHasAutoOpened] = useState(false);
+  const [viewMode, setViewMode] = useState<'meus' | 'area'>('meus');
 
   React.useEffect(() => {
     if (autoOpenRequestId) {
@@ -45,8 +44,6 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
   }, [autoOpenRequestId, allRequests, onModalOpened]);
 
   const itemsPerPage = 6;
-
-
 
   // Lógica para exibir todas as solicitações sem duplicar por revisão
   const latestRequests = useMemo(() => {
@@ -62,17 +59,12 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       'Cancelado': (r: FormData) => r.status === StudyStatus.CANCELADO
     };
 
-    // Filtrar primeiro por dono/área antes de agrupar revisões
+    // Filtrar solicitações baseado no modo de visualização
     const filteredByTab = requests.filter(req => {
-      if (activeTab === 'personal') {
-        return req.user_id === currentUser?.id;
-      } else {
-        // Aba 'Área': solicitações da mesma área mas que NÃO são do usuário logado
-        const currentUserAreaNormalized = normalizeArea(currentUser?.area);
-        return currentUserAreaNormalized &&
-          normalizeArea(req.requesterArea) === currentUserAreaNormalized &&
-          req.user_id !== currentUser.id;
-      }
+      if (viewMode === 'meus') return req.user_id === currentUser?.id;
+      // Para o modo área, o backend já traz apenas os da área dele via SOL_ORGAO
+      // Mas para garantir no frontend, podemos checar se o SOL_ORGAO bate com o area do usuário
+      return true; 
     });
 
     // Agrupar por estudo base (sem revisão)
@@ -128,13 +120,21 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
 
     // Ordenar por data (mais recente primeiro)
     return result.sort((a, b) => {
-      const dateA = a.requestDate || '1900-01-01';
-      const dateB = b.requestDate || '1900-01-01';
-      return dateB.localeCompare(dateA);
+      const dateA = new Date(a.requestDate || a.createdAt || a.updatedAt || 0).getTime();
+      const dateB = new Date(b.requestDate || b.createdAt || b.updatedAt || 0).getTime();
+      return dateB - dateA;
     });
-  }, [requests, searchQuery, activeTab, currentUser, statusFilter]);
+  }, [requests, searchQuery, currentUser, statusFilter, viewMode]);
 
   const totalPages = Math.ceil(latestRequests.length / itemsPerPage);
+
+  // Garantir que a página atual é válida após filtros/sincronização
+  React.useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
   const startIndex = (currentPage - 1) * itemsPerPage;
   const displayedRequests = latestRequests.slice(startIndex, startIndex + itemsPerPage);
 
@@ -156,17 +156,22 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
     }
   };
 
-  const getFO = (type: string) => (type || '').split('-').pop() || '';
-
-  const canCancel = (status: StudyStatus) => {
-    return status !== StudyStatus.CANCELADO && status !== StudyStatus.CONCLUIDO;
+  const getFO = (type: string) => {
+    const fo = (type || '').split('-').pop() || '';
+    return fo.replace(/\D/g, ''); // Extract only digits
   };
 
-  const handleConfirmCancel = () => {
-    if (requestToCancel) {
-      onCancelRequest(requestToCancel.id);
-      setRequestToCancel(null);
-    }
+  const formatStudyID = (req: FormData) => {
+    // Formato fixo conforme solicitado: PE.00492-FO + número do formulário
+    const foNumber = getFO(req.formType).padStart(2, '0');
+    return `PE.00492-FO${foNumber}`;
+  };
+
+  const canCancel = (req: FormData) => {
+    const isOwner = req.user_id === currentUser?.id;
+    const isAdm = currentUser?.role === UserRole.ADM;
+    // O usuário só pode cancelar se for o dono ou ADM, e se o estudo não estiver concluído/cancelado
+    return (isOwner || isAdm) && req.status !== StudyStatus.CANCELADO && req.status !== StudyStatus.CONCLUIDO;
   };
 
   const goToPage = (page: number) => {
@@ -177,6 +182,26 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
     setCurrentPage(1); // Volta para a primeira página ao buscar
+  };
+
+  /**
+   * Calcula as páginas a serem exibidas na paginação (Ex: 1 2 ... 96 97)
+   */
+  const getPageNumbers = () => {
+    const pages = [];
+    const delta = 2; // Quantas páginas mostrar ao redor da atual
+    const left = currentPage - delta;
+    const right = currentPage + delta;
+    
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= left && i <= right)) {
+        pages.push(i);
+      } else if (i === left - 1 || i === right + 1) {
+        pages.push('...');
+      }
+    }
+    // Remover duplicatas de '...'
+    return pages.filter((item, pos, self) => self.indexOf(item) === pos);
   };
 
   const handleOpenFolder = (req: FormData) => {
@@ -321,26 +346,11 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             <div className="shrink-0">
               <h2 className="text-2xl font-black text-white uppercase tracking-tight">
-                {activeTab === 'personal' ? 'Minhas Solicitações' : 'Solicitações da Área'}
+                Minhas Solicitações
               </h2>
               <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mt-1">
                 Naturgy SPS • {currentUser?.area || 'CEP'}
               </p>
-            </div>
-
-            <div className="flex bg-white/10 p-1 rounded-2xl border border-white/20">
-              <button
-                onClick={() => { setActiveTab('personal'); setCurrentPage(1); }}
-                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'personal' ? 'bg-white text-[#004080] shadow-md' : 'text-blue-100 hover:text-white hover:bg-white/5'}`}
-              >
-                Meus Pedidos
-              </button>
-              <button
-                onClick={() => { setActiveTab('area'); setCurrentPage(1); }}
-                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'area' ? 'bg-white text-[#004080] shadow-md' : 'text-blue-100 hover:text-white hover:bg-white/5'}`}
-              >
-                Equipe / Área
-              </button>
             </div>
           </div>
 
@@ -412,6 +422,25 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
 
           {/* Painel MyRequest (Lista de Cards) */}
           <div className="flex-1 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+              <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-2xl border border-slate-200 shadow-sm">
+                <button
+                  onClick={() => setViewMode('meus')}
+                  className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${viewMode === 'meus' ? 'bg-[#004080] text-white shadow-blue-100' : 'text-slate-400 hover:bg-white hover:text-[#004080]'}`}
+                >
+                  <i className="fa-solid fa-user-circle mr-2 opacity-70"></i>
+                  Meus Pedidos
+                </button>
+                <button
+                  onClick={() => setViewMode('area')}
+                  className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${viewMode === 'area' ? 'bg-[#004080] text-white shadow-blue-100' : 'text-slate-400 hover:bg-white hover:text-[#004080]'}`}
+                >
+                  <i className="fa-solid fa-users mr-2 opacity-70"></i>
+                  Pedidos da Área
+                </button>
+              </div>
+            </div>
+
             {/* Removido Filtro de Status Superior conforme solicitado */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
               {latestRequests.length === 0 ? (
@@ -438,22 +467,22 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                       <div className={isCancelled ? 'pointer-events-none' : ''}>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div>
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">{getFO(req.formType)}</p>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">{formatStudyID(req)}</p>
                             <h3 className="font-black text-[#004080] text-sm leading-tight group-hover:text-orange-500 transition-colors">
                               {req.studyTitle || req.clientName || 'Sem Título'}
                             </h3>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                              {activeTab === 'area' ? `Por: ${req.requesterName} • ` : ''}Enviado em: {req.createdAt ? formatToLocalTime(req.createdAt) : 'Data não disponível'}
+                              Enviado em: {req.requestDate ? formatDate(req.requestDate) : 'Data não disponível'}
                             </p>
                             {isCompleted && (req.completedAt || req.updatedAt) && (
                               <p className="text-[10px] text-green-600 font-bold uppercase tracking-widest mt-0.5">
-                                Concluído em: {formatToLocalTime(req.completedAt || req.updatedAt!)}
+                                Concluído em: {formatDate(req.completedAt || req.updatedAt!)}
                               </p>
                             )}
                           </div>
                           <div className="flex flex-col gap-1">
                             <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border inline-block ${getStatusStyle(req.status)}`}>
-                              {[StudyStatus.EM_EXECUCAO, StudyStatus.CONTROLE_QUALIDADE, StudyStatus.APROVADO_CQ, StudyStatus.REPROVADO_CQ].includes(req.status) ? 'Em Execução' : req.status}
+                              {req.status}
                             </span>
                             {req.status === StudyStatus.AGUARDANDO_INFORMACAO && req.holdReason && (
                               <button
@@ -497,7 +526,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                             Ver Arquivos
                           </button>
 
-                          {activeTab === 'personal' && canCancel(req.status) && (
+                          {canCancel(req) && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -512,14 +541,14 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                           )}
                         </div>
 
-                        {activeTab === 'personal' && req.status === StudyStatus.REJEITADO && req.rejectionReason && (
+                        {req.status === StudyStatus.REJEITADO && req.rejectionReason && (
                           <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-2">
                             <p className="text-[9px] font-black text-red-600 uppercase tracking-widest mb-1">Motivo da Rejeição:</p>
                             <p className="text-[11px] text-red-700 font-semibold leading-tight whitespace-pre-wrap">{req.rejectionReason}</p>
                           </div>
                         )}
 
-                        {activeTab === 'personal' && (req.status === StudyStatus.REJEITADO || req.status === StudyStatus.EM_ANALISE) && (
+                        {(req.status === StudyStatus.REJEITADO || req.status === StudyStatus.EM_ANALISE) && (
                           <button
                             type="button"
                             onClick={() => onEditRequest(req)}
@@ -530,7 +559,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                           </button>
                         )}
 
-                        {activeTab === 'personal' && isCompleted && onRequestRevision && (
+                        {isCompleted && onRequestRevision && (
                           <button
                             type="button"
                             onClick={() => onRequestRevision(req)}
@@ -549,33 +578,40 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
         </div>
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 py-4">
+          <div className="flex items-center justify-center gap-2 py-8 bg-white/40 backdrop-blur-sm rounded-3xl border border-slate-200/50 mt-8 shadow-sm">
             <button
               onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage === 1}
-              className="w-9 h-9 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90"
+              className="w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-white hover:text-[#004080] hover:border-[#004080] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 bg-white"
             >
-              <i className="fa-solid fa-chevron-left"></i>
+              <i className="fa-solid fa-chevron-left text-xs"></i>
             </button>
 
-            <div className="flex gap-1 mx-2">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => goToPage(page)}
-                  className={`w-9 h-9 rounded-lg text-xs font-black transition-all ${currentPage === page ? 'bg-[#004080] text-white shadow-md' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'}`}
-                >
-                  {page}
-                </button>
+            <div className="flex items-center gap-1 mx-4">
+              {getPageNumbers().map((page, idx) => (
+                <React.Fragment key={idx}>
+                  {page === '...' ? (
+                    <span className="px-2 text-slate-300 font-black">...</span>
+                  ) : (
+                    <button
+                      onClick={() => goToPage(Number(page))}
+                      className={`w-10 h-10 rounded-xl text-[11px] font-black transition-all transform ${currentPage === page 
+                        ? 'bg-[#004080] text-white shadow-lg shadow-blue-200 scale-110' 
+                        : 'bg-white border border-slate-200 text-slate-500 hover:border-[#004080] hover:text-[#004080]'}`}
+                    >
+                      {page}
+                    </button>
+                  )}
+                </React.Fragment>
               ))}
             </div>
 
             <button
               onClick={() => goToPage(currentPage + 1)}
               disabled={currentPage === totalPages}
-              className="w-9 h-9 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90"
+              className="w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-white hover:text-[#004080] hover:border-[#004080] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 bg-white"
             >
-              <i className="fa-solid fa-chevron-right"></i>
+              <i className="fa-solid fa-chevron-right text-xs"></i>
             </button>
           </div>
         )}

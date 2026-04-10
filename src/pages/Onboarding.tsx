@@ -20,8 +20,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
   const [area, setArea] = useState(user.area || '');
   const [phone, setPhone] = useState(user.phone || '');
   const [naturgyUnit, setNaturgyUnit] = useState(user.naturgyUnit || '');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [password, setPassword] = useState(user.password || '');
+  const [confirmPassword, setConfirmPassword] = useState(user.password || '');
   const [isLoading, setIsLoading] = useState(false);
   
   // Success screen

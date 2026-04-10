@@ -11,10 +11,10 @@ import { TechnicalExecutionPanel } from './pages/TechnicalExecutionPanel';
 import { PasswordChange } from './pages/PasswordChange';
 // EmailPreviewModal removed <!-- id: 11 -->
 import { FormType, User, UserRole, FormData, StudyStatus } from './types/types';
-import { NaturgyLogo, HeaderTitle } from './constants/constants';
+import { NaturgyLogo, HeaderTitle, REVERSE_AREA_MAPPING } from './constants/constants';
 import { StorageService } from './services/storage';
 import { EmailService, EmailNotificationData } from './services/emailService';
-import { getGMT3ISOString, normalizeArea } from './utils/utils';
+import { getGMT3ISOString, normalizeArea, isAssignedToMe, isSystemAssigned } from './utils/utils';
 import { useDialog } from './components/AppDialog';
 
 const App: React.FC = () => {
@@ -28,7 +28,9 @@ const App: React.FC = () => {
   const [notification, setNotification] = useState<{ message: string; subtext?: string; type?: 'success' | 'info' } | null>(null);
 
   const [allRequests, setAllRequests] = useState<FormData[]>([]);
+  const allRequestsRef = useRef<FormData[]>([]);
   const isUpdatingRef = useRef(false);
+  const pendingUpdatesRef = useRef<Record<string, { status: StudyStatus; timestamp: number }>>({});
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const notifiedHoldIdsRef = useRef<Set<string>>(new Set());
   const [autoOpenRequestId, setAutoOpenRequestId] = useState<string | null>(null);
@@ -36,12 +38,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initData = async () => {
+      if (isUpdatingRef.current) return;
       const [requests, users] = await Promise.all([
         StorageService.getRequests(),
         StorageService.getUsers()
       ]);
-      setAllRequests(requests);
-      setAllUsers(users);
+      if (!isUpdatingRef.current) {
+        setAllRequests(requests);
+        setAllUsers(users);
+      }
     };
     initData();
 
@@ -57,6 +62,10 @@ const App: React.FC = () => {
 
   // Removidos os useEffects de salvamento automático no localStorage
   // A persistência agora é tratada diretamente nos handlers async
+
+  useEffect(() => {
+    allRequestsRef.current = allRequests;
+  }, [allRequests]);
 
   useEffect(() => {
     if (notification) {
@@ -134,7 +143,7 @@ const App: React.FC = () => {
     }
 
     try {
-      // Salvar/Atualizar no Supabase
+      // Salvar/Atualizar no Banco de Dados Local
       const savedUser = await StorageService.saveUser(loggedUser);
       setUser(savedUser);
 
@@ -169,7 +178,7 @@ const App: React.FC = () => {
     handleLogin(updatedUser);
   };
 
-  // 3s Auto-sync for requests
+  // 3s Auto-sync for requests (merge strategy to prevent flickering)
   useEffect(() => {
     if (!user) return;
 
@@ -177,11 +186,59 @@ const App: React.FC = () => {
     const intervalId = setInterval(async () => {
       if (isUpdatingRef.current) return;
       try {
-        const updatedRequests = await StorageService.getRequests();
+        const areaParam = user.area ? (REVERSE_AREA_MAPPING[user.area] || user.area) : undefined;
+        const serverRequests = await StorageService.getRequests(user.id, user.role, areaParam);
         if (isUpdatingRef.current) return; // double check
-        if (updatedRequests && updatedRequests.length > 0) {
-          setAllRequests(updatedRequests);
-        }
+        if (!serverRequests) return;
+
+        // Merge strategy: server data is authoritative, but keep local items
+        // that the server might not have yet (recently validated/moved/deleted)
+        setAllRequests(prev => {
+          const serverIds = new Set(serverRequests.map(r => String(r.id)));
+          const now = Date.now();
+          
+          // Cleanup expired pending updates (older than 10s)
+          Object.keys(pendingUpdatesRef.current).forEach(id => {
+            if (now - pendingUpdatesRef.current[id].timestamp > 10000) {
+              delete pendingUpdatesRef.current[id];
+            }
+          });
+
+          // Keep local-only items that were updated in the last 60s
+          const recentLocal = prev.filter(r => {
+            if (serverIds.has(String(r.id))) {
+              // If it's on server but in our pending list, WE KEEP it to prevent reversion
+              if (pendingUpdatesRef.current[String(r.id)]) return true;
+              return false;
+            }
+            const updateTime = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+            return (Date.now() - updateTime) < 60000;
+          });
+
+          // Merge server results, but override status if it's in our pending list
+          const merged = serverRequests.map(sReq => {
+            const pending = pendingUpdatesRef.current[String(sReq.id)];
+            if (pending) {
+              return { ...sReq, status: pending.status };
+            }
+            return sReq;
+          });
+
+          // Add only unique local items
+          const finalResult = [...merged];
+          recentLocal.forEach(loc => {
+            if (!merged.some(m => String(m.id) === String(loc.id))) {
+              finalResult.push(loc);
+            }
+          });
+          
+          // Global Sort: Most recent first (using requestDate, createdAt or updatedAt)
+          return finalResult.sort((a, b) => {
+            const dateA = new Date(a.requestDate || a.createdAt || a.updatedAt || 0).getTime();
+            const dateB = new Date(b.requestDate || b.createdAt || b.updatedAt || 0).getTime();
+            return dateB - dateA;
+          });
+        });
       } catch (err) {
         console.warn('[Auto-sync] Error fetching updates:', err);
       }
@@ -201,7 +258,7 @@ const App: React.FC = () => {
     if ((user.role === UserRole.ANALISTA || user.role === UserRole.ADM)) {
       const answered = allRequests.filter(r =>
         r.status === StudyStatus.AGUARDANDO_INFORMACAO &&
-        r.assignedTo === user.id &&
+        isAssignedToMe(r.assignedTo, user) &&
         !!r.holdResponse &&
         !r.holdResponseSeen &&
         !notifiedHoldIdsRef.current.has(`${r.id}-resp-${r.holdResponse}`)
@@ -212,10 +269,18 @@ const App: React.FC = () => {
           'success',
           () => {
             setAutoOpenRequestId(req.id);
-            updateRequestStatus(req.id, req.status, undefined, req.assignedTo, { holdResponseSeen: true });
+            // Captura o status atual no momento do clique (evita stale closure se o status mudou via outra via)
+            const currentReq = allRequestsRef.current.find(r => r.id === req.id);
+            const statusToUse = currentReq?.status || req.status;
+            updateRequestStatus(req.id, statusToUse, undefined, req.assignedTo, { holdResponseSeen: true });
           },
           'Ver',
-          () => updateRequestStatus(req.id, req.status, undefined, req.assignedTo, { holdResponseSeen: true })
+          () => {
+            // Captura o status atual no momento de fechar (evita stale closure se o status mudou via outra via)
+            const currentReq = allRequestsRef.current.find(r => r.id === req.id);
+            const statusToUse = currentReq?.status || req.status;
+            updateRequestStatus(req.id, statusToUse, undefined, req.assignedTo, { holdResponseSeen: true });
+          }
         );
         notifiedHoldIdsRef.current.add(`${req.id}-resp-${req.holdResponse}`);
       });
@@ -236,10 +301,18 @@ const App: React.FC = () => {
           'info',
           () => {
             setAutoOpenRequestId(req.id);
-            updateRequestStatus(req.id, req.status, undefined, req.assignedTo, { holdRequestSeen: true });
+            // Captura o status atual no momento do clique
+            const currentReq = allRequestsRef.current.find(r => r.id === req.id);
+            const statusToUse = currentReq?.status || req.status;
+            updateRequestStatus(req.id, statusToUse, undefined, req.assignedTo, { holdRequestSeen: true });
           },
           'Ver',
-          () => updateRequestStatus(req.id, req.status, undefined, req.assignedTo, { holdRequestSeen: true })
+          () => {
+            // Captura o status atual no momento de fechar
+            const currentReq = allRequestsRef.current.find(r => r.id === req.id);
+            const statusToUse = currentReq?.status || req.status;
+            updateRequestStatus(req.id, statusToUse, undefined, req.assignedTo, { holdRequestSeen: true });
+          }
         );
         notifiedHoldIdsRef.current.add(`${req.id}-req-${req.holdReason || ''}`);
       });
@@ -276,7 +349,7 @@ const App: React.FC = () => {
   };
 
   const handleSyncStorage = async () => {
-    const ok = await showConfirm('Deseja sincronizar todos os arquivos com o Supabase Storage? Isso garantirá que todos os estudos antigos tenham suas pastas e arquivos na nova estrutura.', 'Sincronizar Storage');
+    const ok = await showConfirm('Deseja sincronizar todos os arquivos com o servidor de arquivos local? Isso garantirá que todos os estudos antigos tenham suas pastas e arquivos na nova estrutura.', 'Sincronizar Storage');
     if (ok) {
       setIsSyncing(true);
       setSyncStatus('Iniciando...');
@@ -304,6 +377,7 @@ const App: React.FC = () => {
 
   const updateRequestStatus = async (id: string, status: StudyStatus, reason?: string, assignedTo?: string, additionalData?: Partial<FormData>) => {
     isUpdatingRef.current = true;
+    const originalRequest = allRequests.find(r => r.id === id);
     try {
       const currentRequests = allRequests || [];
       let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | null; request?: FormData; reason?: string } = { type: null };
@@ -335,7 +409,10 @@ const App: React.FC = () => {
             startedAt: status === StudyStatus.EM_EXECUCAO ? (req.startedAt || new Date().toISOString()) : req.startedAt,
             completedAt: status === StudyStatus.CONCLUIDO ? (req.completedAt || new Date().toISOString()) : req.completedAt,
             qcRequestDate: status === StudyStatus.CONTROLE_QUALIDADE ? (req.qcRequestDate || new Date().toISOString()) : req.qcRequestDate,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            // DEADLINE: Never recalculate estimatedDeliveryDate during status transitions.
+            // It must remain fixed based on the original Request Date (SLA requirement).
+            estimatedDeliveryDate: req.estimatedDeliveryDate 
           };
 
           if ((status === StudyStatus.VALIDADO || status === StudyStatus.AGUARDANDO_EXECUCAO) && req.status !== status) {
@@ -379,9 +456,12 @@ const App: React.FC = () => {
       });
 
       setAllRequests(updatedList);
+      
+      // Track this update as "pending" for 10s to prevent sync reversion
+      pendingUpdatesRef.current[id] = { status, timestamp: Date.now() };
 
       const updatedReq = updatedList.find(r => r.id === id);
-      const needsRename = (status === StudyStatus.AGUARDANDO_EXECUCAO || status === StudyStatus.VALIDADO) && updatedReq?.previousStudyNumber?.startsWith('PROV-');
+      const needsRename = (status === StudyStatus.AGUARDANDO_EXECUCAO || status === StudyStatus.VALIDADO) && updatedReq?.previousStudy?.startsWith('PROV-');
       // Wait, needsRename was local to the map. I need to capture it or recalculate.
 
       if (updatedReq) {
@@ -396,7 +476,7 @@ const App: React.FC = () => {
           // Await to ensure it's saved before any auto-sync overwrites it
           await StorageService.addRequest(updatedReq);
         } catch (err) {
-          console.warn('Falha ao salvar request ou mover arquivos no Supabase:', err);
+          console.warn('Falha ao salvar request ou mover arquivos no servidor:', err);
         }
 
         // Removido uploadOfficialForm daqui para garantir que o PDF seja um espelho fiel 
@@ -543,12 +623,15 @@ const App: React.FC = () => {
       }
 
     } catch (outerError) {
-      console.error('Erro crítico ao atualizar status:', outerError);
       setNotification({
-        message: "Erro ao Atualizar",
-        subtext: "Ocorreu um erro ao atualizar o status. Tente novamente.",
+        message: "Erro de Sincronização",
+        subtext: "Ocorreu uma falha ao salvar as alterações no servidor.",
         type: 'info'
       });
+      // Reverter estado local se originalRequest existir
+      if (originalRequest) {
+        setAllRequests(prev => prev.map(r => r.id === id ? originalRequest : r));
+      }
     } finally {
       isUpdatingRef.current = false;
     }
@@ -558,7 +641,7 @@ const App: React.FC = () => {
     const isFinished = request.status === StudyStatus.CONCLUIDO || request.status === StudyStatus.CONTROLE_QUALIDADE;
     const isPostQC = request.status === StudyStatus.APROVADO_CQ || request.status === StudyStatus.REPROVADO_CQ;
 
-    if (user?.role === UserRole.ANALISTA && request.assignedTo && request.assignedTo !== user.id && !isFinished && !isPostQC) {
+    if (user?.role === UserRole.ANALISTA && request.assignedTo && !isAssignedToMe(request.assignedTo, user) && !isSystemAssigned(request.assignedTo) && !isFinished && !isPostQC) {
       setNotification({ message: "Acesso Negado", subtext: "Este estudo já possui um responsável técnico atribuído.", type: 'info' });
       return;
     }
@@ -580,22 +663,70 @@ const App: React.FC = () => {
       return;
     }
 
-    const needsAssignment = user?.role === UserRole.ANALISTA && !request.assignedTo;
+    const needsAssignment = user?.role === UserRole.ANALISTA && (!request.assignedTo || isSystemAssigned(request.assignedTo));
     const needsStatusUpdate = request.status === StudyStatus.AGUARDANDO_EXECUCAO;
 
     const newStatus = needsStatusUpdate ? StudyStatus.EM_EXECUCAO : request.status;
     const newAssignedTo = needsAssignment ? user?.id : request.assignedTo;
 
+    // specialized Mapping Logic (FO.02 / FO.03)
+    let specializedMapping: any = {};
+    if (request.formType === 'PE.00492-FO.02' && request.gridDataFO02) {
+      let numRes = 0;
+      let flowRes = 0;
+      let numCom = 0;
+      let flowCom = 0;
+
+      Object.entries(request.gridDataFO02).forEach(([segment, data]) => {
+        const rowSum = (Number(data.atuais) || 0) + (Number(data.y2) || 0) + (Number(data.y5) || 0) + (Number(data.y20) || 0);
+        const rowFlow = Number(data.totalQ) || 0;
+
+        if (segment.toLowerCase().includes('residencial')) {
+          numRes += rowSum;
+          flowRes += rowFlow;
+        } else {
+          numCom += rowSum;
+          flowCom += rowFlow;
+        }
+      });
+
+      specializedMapping = {
+        numClientsRes: numRes,
+        totalFlowRes: flowRes,
+        numClientsCom: numCom,
+        totalFlowCom: flowCom
+      };
+    } else if (request.formType === 'PE.00492-FO.03') {
+      const consumption = Number(request.instantConsumption) || 0;
+      specializedMapping = {
+        numClientsCom: 1,
+        totalFlowCom: consumption
+      };
+    }
+
     if (needsStatusUpdate || needsAssignment) {
       const now = new Date().toISOString();
+      let updatedStudyNumber = request.studyNumber;
+
+      // Se validado, remover PROV-
+      if ((newStatus === StudyStatus.AGUARDANDO_EXECUCAO || newStatus === StudyStatus.VALIDADO) && updatedStudyNumber.startsWith('PROV-')) {
+        updatedStudyNumber = updatedStudyNumber.replace('PROV-', '');
+      }
+
       const updatedReq = {
         ...request,
+        ...specializedMapping,
+        studyNumber: updatedStudyNumber,
         status: newStatus,
         assignedTo: newAssignedTo,
         startedAt: needsStatusUpdate ? now : request.startedAt
       };
       setEditingRequest(updatedReq);
-      updateRequestStatus(request.id, newStatus, undefined, newAssignedTo, { startedAt: needsStatusUpdate ? now : request.startedAt });
+      updateRequestStatus(request.id, newStatus, undefined, newAssignedTo, { 
+        ...specializedMapping,
+        studyNumber: updatedStudyNumber,
+        startedAt: needsStatusUpdate ? now : request.startedAt 
+      });
     } else {
       setEditingRequest(request);
     }
@@ -626,10 +757,19 @@ const App: React.FC = () => {
     updateRequestStatus(id, StudyStatus.CANCELADO);
   };
 
-  const handleStartForm = (formId: FormType) => {
-    setSelectedForm(formId);
-    setEditingRequest(null);
-    setView('form');
+  const handleStartForm = async (formId: FormType) => {
+    try {
+      const nextId = await StorageService.getNextId();
+      setEditingRequest({ id: nextId } as any);
+      setSelectedForm(formId);
+      setView('form');
+    } catch (err) {
+      console.error('Error starting form:', err);
+      // Fallback if ID generation fails
+      setEditingRequest(null);
+      setSelectedForm(formId);
+      setView('form');
+    }
   };
 
   const handleEditRequest = (request: FormData) => {
@@ -664,39 +804,46 @@ const App: React.FC = () => {
     if (existingStudy) {
       if (existingStudy.status === StudyStatus.CONCLUIDO) {
         // Permitir nova revisão como novo estudo
-        const revisionData: FormData = {
-          ...originalRequest,
-          id: crypto.randomUUID(),
-          studyNumber: '',
-          status: StudyStatus.EM_ANALISE,
-          studyType: '',
-          previousStudy: originalRequest.studyNumber,
-          requestDate: getGMT3ISOString().split('T')[0],
-          assignedTo: undefined,
-          rejectionReason: undefined,
-          selectedFiles: [],
-          categorizedFiles: {},
-          totalExecutionTime: 0,
-          executionStartTime: undefined,
-          responseObservations: '',
-          qcData: undefined,
-          qcRequestDate: undefined,
-          completedAt: undefined,
-          // Clear validation fields
-          gasType: '',
-          suggestedPressureRange: '',
-          minPressure: '',
-          mapReceived: false,
-          relevantStudy: false,
-          gniName: '',
-          studySubType: '',
-          difficulty: '',
-          validatorObservations: '',
-          user_id: user?.id || originalRequest.user_id
-        };
-        setEditingRequest(revisionData);
-        setSelectedForm(originalRequest.formType);
-        setView('form');
+        (async () => {
+          try {
+            const nextId = await StorageService.getNextId();
+            const revisionData: FormData = {
+              ...originalRequest,
+              id: nextId,
+              studyNumber: '',
+              status: StudyStatus.EM_ANALISE,
+              studyType: '',
+              previousStudy: originalRequest.studyNumber,
+              requestDate: getGMT3ISOString().split('T')[0],
+              assignedTo: undefined,
+              rejectionReason: undefined,
+              selectedFiles: [],
+              categorizedFiles: {},
+              totalExecutionTime: 0,
+              executionStartTime: undefined,
+              responseObservations: '',
+              qcData: undefined,
+              qcRequestDate: undefined,
+              completedAt: undefined,
+              // Clear validation fields
+              gasType: '',
+              suggestedPressureRange: '',
+              minPressure: '',
+              mapReceived: false,
+              relevantStudy: false,
+              gniName: '',
+              studySubType: '',
+              difficulty: '',
+              validatorObservations: '',
+              user_id: user?.id || originalRequest.user_id
+            };
+            setEditingRequest(revisionData);
+            setSelectedForm(originalRequest.formType);
+            setView('form');
+          } catch (err) {
+            console.error('Error getting next ID for revision:', err);
+          }
+        })();
       } else {
         setNotification({
           message: "Estudo Existente",
@@ -706,39 +853,46 @@ const App: React.FC = () => {
       }
     } else {
       // Criar revisão normalmente
-      const revisionData: FormData = {
-        ...originalRequest,
-        id: crypto.randomUUID(),
-        studyNumber: '',
-        status: StudyStatus.PENDENTE,
-        studyType: '',
-        previousStudy: originalRequest.studyNumber,
-        requestDate: new Date().toISOString().split('T')[0],
-        assignedTo: undefined,
-        rejectionReason: undefined,
-        selectedFiles: [],
-        categorizedFiles: {},
-        totalExecutionTime: 0,
-        executionStartTime: undefined,
-        responseObservations: '',
-        qcData: undefined,
-        qcRequestDate: undefined,
-        completedAt: undefined,
-        // Clear validation fields
-        gasType: '',
-        suggestedPressureRange: '',
-        minPressure: '',
-        mapReceived: false,
-        relevantStudy: false,
-        gniName: '',
-        studySubType: '',
-        difficulty: '',
-        validatorObservations: '',
-        user_id: user?.id || originalRequest.user_id
-      };
-      setEditingRequest(revisionData);
-      setSelectedForm(originalRequest.formType);
-      setView('form');
+      (async () => {
+        try {
+          const nextId = await StorageService.getNextId();
+          const revisionData: FormData = {
+            ...originalRequest,
+            id: nextId,
+            studyNumber: '',
+            status: StudyStatus.PENDENTE,
+            studyType: '',
+            previousStudy: originalRequest.studyNumber,
+            requestDate: new Date().toISOString().split('T')[0],
+            assignedTo: undefined,
+            rejectionReason: undefined,
+            selectedFiles: [],
+            categorizedFiles: {},
+            totalExecutionTime: 0,
+            executionStartTime: undefined,
+            responseObservations: '',
+            qcData: undefined,
+            qcRequestDate: undefined,
+            completedAt: undefined,
+            // Clear validation fields
+            gasType: '',
+            suggestedPressureRange: '',
+            minPressure: '',
+            mapReceived: false,
+            relevantStudy: false,
+            gniName: '',
+            studySubType: '',
+            difficulty: '',
+            validatorObservations: '',
+            user_id: user?.id || originalRequest.user_id
+          };
+          setEditingRequest(revisionData);
+          setSelectedForm(originalRequest.formType);
+          setView('form');
+        } catch (err) {
+          console.error('Error getting next ID for revision:', err);
+        }
+      })();
     }
   };
 
@@ -763,144 +917,110 @@ const App: React.FC = () => {
       setView('dashboard');
     } else {
       setView('my-requests');
+      setEditingRequest(null);
     }
-    setEditingRequest(null);
   };
 
-  const handleRequestSubmit = (newRequest: FormData, pdfFile?: File) => {
-    let finalRequest = { ...newRequest };
-    let isUpdate = false;
-
+  const handleRequestSubmit = async (newRequest: FormData, pdfFile?: File) => {
+    if (isUpdatingRef.current) return;
+    
     // Helper for normalization
     const normalize = (s: string) => s?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() || "";
 
     // 1. Verificar se é um update de estudo existente
-    const existingRequest = allRequests.find(r => r.id === newRequest.id);
+    const currentRequests = Array.isArray(allRequests) ? allRequests : [];
+    const existingRequest = currentRequests.find(r => r.id === newRequest.id);
+    let isUpdate = !!existingRequest;
+    let finalRequest = { ...newRequest };
 
-    if (existingRequest) {
-      isUpdate = true;
-      const prevStatus = existingRequest.status;
-      // Se estava rejeitado, volta para Em Análise ao reenviar
-      const status = prevStatus === StudyStatus.REJEITADO ? StudyStatus.EM_ANALISE : prevStatus;
-      finalRequest = { ...newRequest, status, rejectionReason: undefined };
-    } else {
-      // 2. É um NOVO estudo - Gerar Metadados (StudyNumber, Status inicial, etc)
-      const newAddress = normalize(newRequest.address);
-      const newCity = normalize(newRequest.city);
-      const newTitle = normalize(newRequest.studyTitle || newRequest.clientName || '');
-
-      // Procurar por estudos com mesmo endereço, cidade E título (deduplica por local)
-      const matchingStudy = allRequests.find(r =>
-        normalize(r.address) === newAddress &&
-        normalize(r.city) === newCity &&
-        normalize(r.studyTitle || r.clientName || '') === newTitle
-      );
-
-      let studyNumber = '';
-
-      if (matchingStudy || newRequest.previousStudy) {
-        // É uma revisão - reutilizar código base
-        const baseReference = matchingStudy ? matchingStudy.studyNumber : newRequest.previousStudy!;
-        const cleanBase = baseReference.replace('PROV-', '');
-        const revMatch = cleanBase.match(/(.+)-REV\d+$/i);
-        const baseCode = revMatch ? revMatch[1] : cleanBase;
-
-        // Filter carefully to match ONLY this baseCode
-        const relatedVersions = allRequests.filter(r => {
-          const rClean = r.studyNumber?.replace('PROV-', '') || '';
-          const rRevMatch = rClean.match(/(.+)-REV\d+$/i);
-          const rBase = rRevMatch ? rRevMatch[1] : rClean;
-          return rBase === baseCode;
-        });
-
-        const totalVersions = relatedVersions.length;
-        studyNumber = `PROV-${baseCode}-REV${totalVersions}`;
-
-        finalRequest = {
-          ...newRequest,
-          studyType: '',
-          previousStudy: baseReference,
-          studyNumber,
-          status: StudyStatus.EM_ANALISE,
-          responseObservations: '',
-          qcData: undefined,
-          qcRequestDate: undefined,
-          completedAt: undefined,
-          // Clear validation fields
-          gasType: '',
-          suggestedPressureRange: '',
-          minPressure: '',
-          mapReceived: false,
-          relevantStudy: false,
-          gniName: '',
-          studySubType: '',
-          difficulty: '',
-          validatorObservations: '',
-          user_id: user?.id
-        };
+    isUpdatingRef.current = true;
+    
+    try {
+      if (existingRequest) {
+        const prevStatus = existingRequest.status;
+        // Se estava rejeitado, volta para Em Análise ao reenviar
+        const status = prevStatus === StudyStatus.REJEITADO ? StudyStatus.EM_ANALISE : prevStatus;
+        finalRequest = { ...newRequest, status, rejectionReason: undefined };
       } else {
-        // Novo estudo - gerar código sequencial global
-        const currentYear = new Date().getFullYear();
+        // 2. É um NOVO estudo - Gerar Metadados (StudyNumber via Servidor)
+        const newAddress = normalize(newRequest.address);
+        const newCity = normalize(newRequest.city);
+        const newTitle = normalize(newRequest.studyTitle || newRequest.clientName || '');
 
-        // Encontrar a última sequência numérica global para o ano corrente
-        let maxSeq = 0;
-        allRequests.forEach(r => {
-          // Match format: PROV-APR-YEAR-SEQ or APR-YEAR-SEQ
-          const match = r.studyNumber?.match(new RegExp(`APR-${currentYear}-(\\d+)`));
-          if (match) {
-            const num = parseInt(match[1]);
-            if (!isNaN(num) && num > maxSeq) maxSeq = num;
-          }
-        });
+        // Procurar por estudos com mesmo endereço, cidade E título (deduplica por local)
+        // NOTA: A decisão do usuário sobre duplicatas já foi tratada pelo modal customizado
+        // no FormContainer.tsx. Se o formulário chegou aqui com previousStudy definido,
+        // já é uma revisão. Se não, o usuário optou por prosseguir normalmente.
+        let isRevision = !!newRequest.previousStudy;
 
-        const newSeq = String(maxSeq + 1).padStart(4, '0');
-        studyNumber = `PROV-APR-${currentYear}-${newSeq}`;
-
-        finalRequest = {
-          ...newRequest,
-          studyNumber,
-          status: StudyStatus.EM_ANALISE,
-          user_id: user?.id
-        };
+        let studyNumber = '';
+        
+        if (isRevision) {
+          // É uma revisão - Pedir próxima revisão ao servidor
+          const baseRef = newRequest.previousStudy!;
+          const nextNumResult = await StorageService.getNextStudyNumber('revision', baseRef);
+          studyNumber = nextNumResult.nextNumber;
+          
+          finalRequest = {
+            ...newRequest,
+            studyNumber,
+            status: StudyStatus.EM_ANALISE,
+            previousStudy: baseRef,
+            user_id: user?.id || ''
+          };
+        } else {
+          // Novo estudo - Pedir próximo número global ao servidor
+          const nextNumResult = await StorageService.getNextStudyNumber('new');
+          studyNumber = nextNumResult.nextNumber;
+          
+          finalRequest = {
+            ...newRequest,
+            studyNumber,
+            status: StudyStatus.EM_ANALISE,
+            user_id: user?.id || ''
+          };
+        }
       }
+
+      // 3. Atualizar Estado Local IMEDIATAMENTE (Sincronamente)
+      setAllRequests(prev => {
+        const idx = prev.findIndex(r => r.id === finalRequest.id);
+        if (idx > -1) {
+          return prev.map(r => r.id === finalRequest.id ? finalRequest : r);
+        } else {
+          return [finalRequest, ...prev];
+        }
+      });
+
+      // 4. Fluxo de Persistência no SQL Server
+      const submitFlow = async () => {
+        try {
+          console.log('[App] Persisting request to local SQL Server:', finalRequest.studyNumber);
+          await StorageService.addRequest(finalRequest);
+
+          // Success notification ONLY AFTER DB CONFIRMATION
+          setNotification({
+            message: isUpdate ? "Estudo Atualizado" : "Estudo Enviado",
+            subtext: `O estudo ${finalRequest.studyNumber} foi salvo com sucesso.`,
+            type: 'success'
+          });
+          setView('my-requests');
+          setEditingRequest(null);
+
+          // Automated email trigger on submit
+          setTimeout(() => {
+            handleSendEmail(generateEmailForNewRequest(finalRequest));
+          }, 500);
+        } catch (error) {
+          console.error('Error saving request to SQL Server:', error);
+          showAlert('Erro ao salvar solicitação no banco de dados local. Verifique sua conexão e tente novamente.', 'Erro ao Salvar', 'error');
+        }
+      };
+
+      await submitFlow();
+    } finally {
+      isUpdatingRef.current = false;
     }
-
-    // 3. Atualizar Estado Local IMEDIATAMENTE (Sincronamente)
-    setAllRequests(prev => {
-      const idx = prev.findIndex(r => r.id === finalRequest.id);
-      if (idx > -1) {
-        return prev.map(r => r.id === finalRequest.id ? finalRequest : r);
-      } else {
-        return [finalRequest, ...prev];
-      }
-    });
-
-    // 4. Fluxo de Persistência no Supabase
-    const submitFlow = async () => {
-      try {
-        // Immediate redirect
-        setView('my-requests');
-        setNotification({
-          message: isUpdate ? "Estudo Atualizado" : "Estudo Enviado",
-          subtext: `O estudo ${finalRequest.studyNumber} foi salvo com sucesso.`,
-          type: 'success'
-        });
-        setEditingRequest(null);
-
-        console.log('[App] Persisting request to Supabase:', finalRequest.studyNumber);
-        await StorageService.addRequest(finalRequest, pdfFile);
-
-        // Automated email trigger on submit
-        setTimeout(() => {
-          handleSendEmail(generateEmailForNewRequest(finalRequest));
-        }, 500);
-      } catch (error) {
-        console.error('Error saving request to Supabase:', error);
-        showAlert('Erro ao salvar solicitação no banco de dados. Verifique sua conexão e tente novamente.', 'Erro ao Salvar', 'error');
-      }
-    };
-
-    submitFlow();
   };
 
   const handleUpdateUser = async (updatedUser: User) => {
@@ -969,17 +1089,19 @@ const App: React.FC = () => {
 
     return allRequests.filter(r => {
       // Se está atribuído ao próprio analista, ele vê sempre
-      if (r.assignedTo === user.id) return true;
+      if (isAssignedToMe(r.assignedTo, user)) return true;
 
       // Se está atribuído a outro colega, ele NÃO vê (exceto ADM, que já tratamos acima)
-      if (r.assignedTo && r.assignedTo !== user.id) return false;
+      if (r.assignedTo && !isAssignedToMe(r.assignedTo, user)) return false;
 
       // Se não está atribuído a ninguém (Fila Livre):
       // Analistas veem tudo que está Pendente, Em Análise ou Aguardando Execução
       if (r.status === StudyStatus.PENDENTE ||
         r.status === StudyStatus.EM_ANALISE ||
         r.status === StudyStatus.AGUARDANDO_EXECUCAO ||
-        r.status === StudyStatus.EM_EXECUCAO) {
+        r.status === StudyStatus.EM_EXECUCAO ||
+        r.status === StudyStatus.CONCLUIDO ||
+        r.status === StudyStatus.CANCELADO) {
         return true;
       }
 
@@ -988,7 +1110,20 @@ const App: React.FC = () => {
     });
   }, [allRequests, user]);
 
-  if (view === 'login') return <Login onLogin={handleLogin} onCreateAccount={() => setView('onboarding')} />;
+  if (view === 'login') return <Login onLogin={handleLogin} onCreateAccount={(presetEmail, presetPassword) => {
+    // Gerar um ID único para o novo solicitante para não sobrescrever outros com ID vazio
+    const newId = `sol-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newUser: User = { 
+      id: newId, 
+      name: '', 
+      role: UserRole.SOLICITANTE, 
+      email: presetEmail || '', 
+      password: presetPassword || '', 
+      profileComplete: false 
+    };
+    setUser(newUser);
+    setView('onboarding');
+  }} />;
   if (view === 'onboarding') return <Onboarding user={user || { id: '', name: '', role: UserRole.SOLICITANTE, email: '', profileComplete: false }} onComplete={handleOnboardingComplete} />;
   if (view === 'password-change' && user) return <PasswordChange user={user} onComplete={handlePasswordChangeComplete} />;
 

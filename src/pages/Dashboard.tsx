@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole, QCControlData } from '../types/types';
-import { formatToLocalTime, formatDate } from '../utils/utils';
+import { formatToLocalTime, formatDate, normalizeArea, isAssignedToMe, isSystemAssigned } from '../utils/utils';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { ValidationModal } from '../components/ValidationModal';
 import { QCControlModal } from '../components/QCControlModal';
@@ -16,6 +16,7 @@ interface DashboardProps {
   onExecute: (request: FormData) => void;
   onStatusUpdate: (id: string, status: StudyStatus, reason?: string, assignedTo?: string, additionalData?: Partial<FormData>) => void;
   autoOpenRequestId?: string | null;
+  onModalOpened?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -36,6 +37,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [qcRequest, setQcRequest] = useState<FormData | null>(null);
   const [hasAutoNotified, setHasAutoNotified] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
 
   React.useEffect(() => {
     if (autoOpenRequestId) {
@@ -54,19 +57,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const isAdmin = user.role === UserRole.ADM;
   const isQC = user.role === UserRole.ADM || user.permissions?.includes('controle_qualidade');
 
-  const getFilters = () => {
-    const base = ['Todas', 'Pendentes/Novas', 'Em Execução', 'Controle de Qualidade', 'Concluídas', 'Canceladas'];
-    if (isValidator) return ['Todas', 'Pendentes/Novas', 'Cadastradas', 'Em Execução', 'Controle de Qualidade', 'Concluídas', 'Canceladas'];
-    return base;
+
+  const resolveAnalystName = (id: string | undefined | null) => {
+    if (!id) return 'Sistema';
+    if (isSystemAssigned(id)) return 'ADRSIS - Sistema';
+    
+    // Tenta encontrar pelo id, email ou sap no allUsers
+    const found = allUsers.find(u => 
+      u.id === id || 
+      u.email === id || 
+      (u.sap && id.replace(/^0+/, '') === u.sap.replace(/^0+/, ''))
+    );
+    
+    return found ? found.name : id;
   };
 
-  const filteredRequests = requests.filter(r => {
+  const filteredRequests = useMemo(() => {
+    return requests.filter(r => {
+
     // Restrição por papel (Role)
     if (user.role === UserRole.ANALISTA && !isValidator) {
-      const isOwnedByMe = r.assignedTo === user.id;
-      const isUnassigned = !r.assignedTo;
+      const isOwnedByMe = isAssignedToMe(r.assignedTo, user);
+      const isShared = isSystemAssigned(r.assignedTo);
       const isQCStatus = isQC && r.status === StudyStatus.CONTROLE_QUALIDADE;
-      if (!isOwnedByMe && !isUnassigned && !isQCStatus) return false;
+      if (!isOwnedByMe && !isShared && !isQCStatus) return false;
     }
 
     // Filtro de Busca (Search)
@@ -83,7 +97,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     if (filter === 'Todas') return true;
     if (filter === 'Pendentes/Novas') return r.status === StudyStatus.PENDENTE || r.status === StudyStatus.REJEITADO || r.status === StudyStatus.EM_ANALISE || r.status === StudyStatus.AGUARDANDO_INFORMACAO;
-    if (filter === 'Cadastradas') return r.status === StudyStatus.AGUARDANDO_EXECUCAO;
+    if (filter === 'Cadastradas') return r.status === StudyStatus.AGUARDANDO_EXECUCAO || r.status === StudyStatus.ABERTO;
     if (filter === 'Em Execução') return r.status === StudyStatus.EM_EXECUCAO;
     if (filter === 'Controle de Qualidade') {
       return r.status === StudyStatus.CONTROLE_QUALIDADE ||
@@ -95,7 +109,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (filter === 'Concluídas') return r.status === StudyStatus.CONCLUIDO;
     if (filter === 'Canceladas') return r.status === StudyStatus.CANCELADO;
     return true;
-  });
+    }).sort((a, b) => {
+      const numA = a.studyNumber || '';
+      const numB = b.studyNumber || '';
+      // Numeric localesort ensures 2024042001 > 2024041901 > 2020000416
+      return numB.localeCompare(numA, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [requests, filter, searchTerm, user, isValidator, isQC]);
+
+  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const displayedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
+
+  // Garantir que a página atual é válida após filtros
+  React.useEffect(() => {
+    if (totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const delta = 2;
+    const left = currentPage - delta;
+    const right = currentPage + delta;
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= left && i <= right)) {
+        pages.push(i);
+      } else if (i === left - 1 || i === right + 1) {
+        pages.push('...');
+      }
+    }
+    return pages.filter((item, pos, self) => self.indexOf(item) === pos);
+  };
+
+  const getFilters = () => {
+    const base = ['Todas', 'Pendentes/Novas', 'Em Execução', 'Controle de Qualidade', 'Concluídas', 'Canceladas'];
+    if (isValidator) return ['Todas', 'Pendentes/Novas', 'Cadastradas', 'Em Execução', 'Controle de Qualidade', 'Concluídas', 'Canceladas'];
+    return base;
+  };
 
   const getStatusStyle = (status: StudyStatus) => {
     switch (status) {
@@ -115,12 +167,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const getFO = (type: string) => type.split('-').pop() || '';
+  const getFO = (type: string) => (type || '').split('-').pop() || '';
 
   const getResponsibleName = (assignedToId?: string) => {
-    if (!assignedToId) return 'Sistema';
-    const found = allUsers.find(u => u.id === assignedToId);
-    return found ? found.name : 'Analista Externo';
+    if (!assignedToId || assignedToId === 'ADRSis - SISTEMA' || assignedToId === 'ADRSis - Sistema') return 'ADRSis - SISTEMA';
+    
+    // Check if it's a known user
+    const found = allUsers.find(u => {
+      if (u.id === assignedToId) return true;
+      if (u.email?.toLowerCase().trim() === assignedToId.toLowerCase().trim()) return true;
+      if (u.sap?.trim().replace(/^0+/, '') === assignedToId.trim().replace(/^0+/, '')) return true;
+      return false;
+    });
+
+    if (found) return found.name;
+
+    // If it's an email format or numeric SAP that wasn't found, return Analista Externo
+    const isEmail = assignedToId.includes('@');
+    const isNumeric = /^\d+$/.test(assignedToId);
+    
+    if (isEmail || isNumeric) return 'Analista Externo';
+
+    return assignedToId;
   };
 
   const handleOpenAssign = (req: FormData) => {
@@ -140,7 +208,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (!targetRequest || !onStatusUpdate) return;
 
       if (action === 'validate') {
-        onStatusUpdate(targetRequest.id, StudyStatus.AGUARDANDO_EXECUCAO, undefined, assignedTo, data);
+        const isNewValidation = (targetRequest.status as any) === 330 || targetRequest.status === StudyStatus.PENDENTE;
+        const nextStatus = isNewValidation ? StudyStatus.AGUARDANDO_EXECUCAO : targetRequest.status;
+        
+        onStatusUpdate(targetRequest.id, nextStatus, undefined, assignedTo, data);
         setValidatingRequest(null);
         setAssigningRequest(null);
       } else if (action === 'reject') {
@@ -168,7 +239,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const renderActionButton = (req: FormData) => {
     try {
-      const isLockedForMe = req.assignedTo && req.assignedTo !== user.id && !isAdmin && !(isQC && req.status === StudyStatus.CONTROLE_QUALIDADE);
+      const isMe = isAssignedToMe(req.assignedTo, user);
+      const isSystem = isSystemAssigned(req.assignedTo);
+      const isLockedForMe = req.assignedTo && !isMe && !isSystem && !isAdmin && !(isQC && req.status === StudyStatus.CONTROLE_QUALIDADE);
 
       if (isLockedForMe) {
         return (
@@ -178,7 +251,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         );
       }
 
-      if (req.status === StudyStatus.AGUARDANDO_EXECUCAO || req.status === StudyStatus.EM_EXECUCAO) {
+      if (req.status === StudyStatus.AGUARDANDO_EXECUCAO || req.status === StudyStatus.EM_EXECUCAO || req.status === StudyStatus.ABERTO) {
         return (
           <div className="flex gap-2">
             <button
@@ -231,8 +304,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       if (req.status === StudyStatus.CONCLUIDO || req.status === StudyStatus.CONTROLE_QUALIDADE || req.status === StudyStatus.APROVADO_CQ || req.status === StudyStatus.REPROVADO_CQ) {
         const isAprovedCQ = req.status === StudyStatus.APROVADO_CQ;
-        const isAssignedToMe = req.assignedTo === user.id;
-        const canFinalize = isAprovedCQ && isAssignedToMe;
+        const isAssignedToMeFlag = isAssignedToMe(req.assignedTo, user);
+        const canFinalize = isAprovedCQ && isAssignedToMeFlag;
 
         // Se estiver aprovado pelo CQ, o "aviãozinho" é exclusivo do analista responsável
         // Outros usuários (não admin) veem o ícone de bloqueio
@@ -373,7 +446,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Pesquisar..."
               className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#004080] focus:bg-white transition-all text-xs font-bold text-slate-700 placeholder:text-slate-400"
             />
@@ -391,7 +467,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {getFilters().map(s => (
               <button
                 key={s}
-                onClick={() => setFilter(s)}
+                onClick={() => {
+                  setFilter(s);
+                  setCurrentPage(1);
+                }}
                 className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === s ? 'bg-white shadow-sm text-[#004080]' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 {s}
@@ -415,15 +494,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredRequests.length === 0 ? (
+              {displayedRequests.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-20 text-center text-slate-400 font-bold uppercase tracking-widest italic">
                     Nenhuma solicitação nesta categoria disponível para você.
                   </td>
                 </tr>
               ) : (
-                filteredRequests.map((req) => (
-                  <tr key={req.id} className={`hover:bg-slate-50/50 transition-colors ${req.assignedTo && req.assignedTo !== user.id && !isAdmin && !(isQC && req.status === StudyStatus.CONTROLE_QUALIDADE) ? 'opacity-40 grayscale-[0.5]' : ''}`}>
+                displayedRequests.map((req) => {
+                  const isMe = isAssignedToMe(req.assignedTo, user);
+                  const isSystem = isSystemAssigned(req.assignedTo);
+                  return (
+                  <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <span className="bg-[#004080] text-white text-[9px] font-black px-1.5 py-0.5 rounded">{getFO(req.formType)}</span>
@@ -433,7 +515,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-xs font-bold text-slate-700">{req.requesterName}</p>
-                      <p className="text-[9px] text-slate-400 uppercase mt-0.5">{req.requesterArea}</p>
+                      <p className="text-[9px] text-slate-400 uppercase mt-0.5">{normalizeArea(req.requesterArea)}</p>
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-xs font-bold text-[#004080] truncate max-w-[200px]">{req.studyTitle || req.uteName || req.clientName}</p>
@@ -447,9 +529,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <div className="flex items-center gap-1.5">
                           {req.assignedTo ? (
                             <>
-                              <i className={`fa-solid ${req.assignedTo === user.id ? 'fa-user-check text-green-500' : 'fa-user-lock text-orange-400'} text-[8px]`}></i>
-                              <span className={`text-[8px] font-black uppercase ${req.assignedTo === user.id ? 'text-green-600' : 'text-slate-400'}`}>
-                                {req.assignedTo === user.id ? 'Sua Tarefa' : getResponsibleName(req.assignedTo)}
+                              <i className={`fa-solid ${isMe ? 'fa-user-check text-green-500' : (isSystemAssigned(req.assignedTo) ? 'fa-users text-slate-300' : 'fa-user-lock text-orange-400')} text-[8px]`}></i>
+                              <span className={`text-[8px] font-black uppercase ${isMe ? 'text-green-600' : (isSystemAssigned(req.assignedTo) ? 'text-slate-300' : 'text-slate-400')}`}>
+                                {isMe ? 'Sua Tarefa' : resolveAnalystName(req.assignedTo)}
                               </span>
                             </>
                           ) : (
@@ -478,16 +560,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         )}
 
                         {/* Botão de Atribuição Direta para ADM / Validador */}
-                        {isValidator && [StudyStatus.PENDENTE, StudyStatus.EM_ANALISE, StudyStatus.AGUARDANDO_EXECUCAO, StudyStatus.EM_EXECUCAO].includes(req.status) && (
+                        {isValidator && [StudyStatus.PENDENTE, StudyStatus.EM_ANALISE, StudyStatus.AGUARDANDO_EXECUCAO, StudyStatus.EM_EXECUCAO, StudyStatus.ABERTO].includes(req.status) && (
                           <button
                             onClick={() => handleOpenAssign(req)}
                             className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center text-xs shadow-sm active:scale-95 ${req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE
                               ? 'bg-orange-50 text-orange-600 border border-orange-100 hover:bg-orange-600 hover:text-white'
                               : 'bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-600 hover:text-white'
                               }`}
-                            title={req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE ? 'Validar / Rejeitar Estudo' : 'Gerenciar Atribuição'}
+                            title={req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE || req.status === StudyStatus.ABERTO ? 'Validar / Rejeitar Estudo' : 'Gerenciar Atribuição'}
                           >
-                            <i className={`fa-solid ${req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE ? 'fa-clipboard-check' : 'fa-user-gear'}`}></i>
+                            <i className={`fa-solid ${req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE || req.status === StudyStatus.ABERTO ? 'fa-clipboard-check' : 'fa-user-gear'}`}></i>
                           </button>
                         )}
 
@@ -505,16 +587,62 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Paginação */}
+        {totalPages > 1 && (
+          <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              Mostrando {startIndex + 1} - {Math.min(startIndex + itemsPerPage, filteredRequests.length)} de {filteredRequests.length} estudos
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-white hover:text-[#004080] hover:border-[#004080] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 bg-white shadow-sm"
+              >
+                <i className="fa-solid fa-chevron-left text-[10px]"></i>
+              </button>
+
+              <div className="flex items-center gap-1">
+                {getPageNumbers().map((page, idx) => (
+                  <React.Fragment key={idx}>
+                    {page === '...' ? (
+                      <span className="px-2 text-slate-300 font-black">...</span>
+                    ) : (
+                      <button
+                        onClick={() => setCurrentPage(Number(page))}
+                        className={`w-9 h-9 rounded-xl text-[10px] font-black transition-all transform ${currentPage === page
+                          ? 'bg-[#004080] text-white shadow-md scale-110'
+                          : 'bg-white border border-slate-200 text-slate-500 hover:border-[#004080] hover:text-[#004080]'}`}
+                      >
+                        {page}
+                      </button>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-white hover:text-[#004080] hover:border-[#004080] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 bg-white shadow-sm"
+              >
+                <i className="fa-solid fa-chevron-right text-[10px]"></i>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       {validatingRequest && (
         <ValidationModal
           initialData={validatingRequest}
-          executors={executors.map(u => ({ id: u.id, name: u.name }))}
+          executors={executors}
           onConfirm={(assignedTo, data) => handleConfirmAction('validate', data, assignedTo)}
           onReject={(reason) => {
             handleConfirmAction('reject', undefined, undefined, reason);

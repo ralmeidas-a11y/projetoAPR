@@ -46,7 +46,8 @@ export enum StudyStatus {
   ENVIADO_SEM_CQ = 'Enviado sem CQ',
   CONCLUIDO = 'Concluído',
   REJEITADO = 'Rejeitado',
-  CANCELADO = 'Cancelado'
+  CANCELADO = 'Cancelado',
+  ABERTO = 'Aberto'
 }
 
 export interface User {
@@ -67,6 +68,7 @@ export interface User {
   company?: string;
   roleDescription?: string;
   gb?: string;
+  sap?: string;
 }
 
 export interface ElectronAPI {
@@ -130,6 +132,7 @@ export interface FormData {
   formType: FormType;
   rejectionReason?: string;
   assignedTo?: string;
+  createdAt?: string;
   
   // Dados do Solicitante
   naturgyUnit?: string;
@@ -148,6 +151,7 @@ export interface FormData {
   number?: string;
   city?: string;
   neighborhood?: string;
+  empresa?: string;
   networkType?: string;
   mapLocation?: string;
   pressure?: string;
@@ -186,7 +190,12 @@ export interface FormData {
 
   // FO.04 (UTE - Termogeração)
   uteName?: string;
+  gasPressureLevel?: number | '';
+  averageFlow?: number | '';
+  peakFlow?: number | '';
+  operationStartDate?: string;
   pressMaxUTE?: number | '';
+
   pressMinUTE?: number | '';
   instantFlow?: number | '';
   qdc?: number | '';
@@ -194,11 +203,22 @@ export interface FormData {
   pressMinUPGN?: number | '';
 
   numClientsRes?: number | '';
-  flowUnitRes?: number | '';
-  totalFlowRes?: number | '';
   numClientsCom?: number | '';
-  flowUnitCom?: number | '';
+  unitFlow?: number | '';
+  flowUnitRes?: number | ''; // Added for backward compatibility
+  penetrationFactor?: number | '';
+  diversificationFactor?: number | '';
+  totalFlowRes?: number | '';
   totalFlowCom?: number | '';
+  totalClients?: number | '';
+  penetration?: number | '';
+  diversification?: number | '';
+  totalFlow?: number | '';
+  technicalMetadata?: {
+    calculatedPressure?: string;
+    [key: string]: any;
+  };
+  calcMode?: 'auto' | 'manual';
 
   deadlineDays?: number;
   estimatedDeliveryDate?: string;
@@ -221,6 +241,7 @@ export interface FormData {
   studySubType?: string;
   difficulty?: string;
   validatorObservations?: string;
+  validationDate?: string;
   networkGroup?: number;
   networkDescription?: string;
   responsePressureBase?: string;

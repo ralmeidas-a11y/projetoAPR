@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { FormType, FormData, StudyStatus, User, UserRole } from '../types/types';
 import { FORM_OPTIONS } from '../constants/constants';
-import { formatToLocalTime, getGMT3ISOString, isWithinLast12Months } from '../utils/utils';
+import { getGMT3ISOString, isWithinLast12Months } from '../utils/utils';
+import { getCompanyByCity } from '../utils/cityCompanyMapping';
 import { FormFO01 } from './FormFO01';
 import { FormFO02 } from './FormFO02';
 import { FormFO03 } from './FormFO03';
@@ -29,31 +30,46 @@ interface FormContainerProps {
 }
 
 export const FormContainer: React.FC<FormContainerProps> = ({
-  formType, initialData, onBack, onSubmit, userId, currentUser, allUsers = [], allRequests = [], readOnly = false, onStatusUpdate, onStartExecution, onViewRequest
+  formType: propFormType, initialData, onBack, onSubmit, userId, currentUser, allUsers = [], allRequests = [], readOnly = false, onStatusUpdate, onStartExecution, onViewRequest
 }) => {
+  // Normalize formType (handle shorthand FO.01 -> PE.00492-FO.01)
+  const formType = propFormType?.startsWith('FO.') 
+    ? `PE.00492-${propFormType}` 
+    : propFormType;
   const { showAlert } = useDialog();
   const [browsingPrecedentStudy, setBrowsingPrecedentStudy] = useState<FormData | null>(null);
-  const [formData, setFormData] = useState<FormData>(initialData || {
-    id: crypto.randomUUID(),
-    studyNumber: '',
-    status: StudyStatus.EM_ANALISE,
-    user_id: userId,
-    formType: formType,
-    requestDate: getGMT3ISOString().split('T')[0],
-    studyType: 'Novo Estudo',
-    naturgyUnit: currentUser?.naturgyUnit || '',
-    requesterName: currentUser?.name || '',
-    requesterArea: currentUser?.area || '',
-    phone: currentUser?.phone || '',
-    email: currentUser?.email || '',
-    gridDataFO02: {
-      residenciais: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
-      comerciais: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
-      grandesComercios: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
-      industrias: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
-      gnv: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
-      outros: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' }
+  const [formData, setFormData] = useState<FormData>(() => {
+    const defaults: any = {
+      id: 0,
+      studyNumber: '',
+      status: StudyStatus.EM_ANALISE,
+      user_id: userId,
+      formType: formType,
+      requestDate: getGMT3ISOString().split('T')[0],
+      studyType: 'Novo Estudo',
+      naturgyUnit: currentUser?.naturgyUnit || '',
+      requesterName: currentUser?.name || '',
+      requesterArea: currentUser?.area || '',
+      phone: currentUser?.phone || '',
+      email: currentUser?.email || '',
+      gridDataFO02: {
+        residenciais: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
+        comerciais: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
+        grandesComercios: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
+        industrias: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
+        gnv: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
+        outros: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' }
+      }
+    };
+    
+    if (initialData) {
+      return { 
+        ...defaults, 
+        ...initialData,
+        requestDate: getGMT3ISOString().split('T')[0] // Always Today on edit
+      };
     }
+    return defaults;
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,18 +79,23 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   const [assignedAnalyst, setAssignedAnalyst] = useState(initialData?.assignedTo || '');
 
   const [showPrecedentWarning, setShowPrecedentWarning] = useState(false);
+  const [duplicateStep, setDuplicateStep] = useState<1 | 2>(1);
   const [hasShownWarning, setHasShownWarning] = useState(false);
 
   const currentOption = FORM_OPTIONS.find(o => o.id === formType);
   const isAdmin = currentUser?.role === UserRole.ADM;
   const executors = useMemo(() => allUsers.filter(u => u.permissions?.includes('executar') || u.role === UserRole.ADM), [allUsers]);
   const isOwner = initialData?.assignedTo === currentUser?.id;
-  const [supabaseFiles, setSupabaseFiles] = useState<any[]>([]);
+  const [serverFiles, setServerFiles] = useState<any[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateDecision, setDuplicateDecision] = useState<'revision' | 'ignored' | 'viewing' | null>(null);
+  const [backendPrecedentStudy, setBackendPrecedentStudy] = useState<FormData | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
-  // Carregar arquivos do Supabase se initialData existir
+
+  // Carregar arquivos do servidor se initialData existir
   React.useEffect(() => {
     let isMounted = true;
     const fetchFiles = async () => {
@@ -84,10 +105,10 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         const files = await StorageService.getRequestFiles(initialData.studyNumber, 'Solicitacao');
         if (isMounted) {
           const filtered = files.filter(f => f.name !== '.keep');
-          setSupabaseFiles(filtered);
+          setServerFiles(filtered);
         }
       } catch (err) {
-        console.error('Error loading Supabase files:', err);
+        console.error('Error loading files:', err);
       } finally {
         if (isMounted) setIsLoadingFiles(false);
       }
@@ -99,60 +120,178 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
 
   const precedentStudy = useMemo(() => {
-    if (initialData || !formData.address || !formData.city || allRequests.length === 0) return null;
+    if (!formData.address || !formData.city || allRequests.length === 0) return null;
     const normalize = (s: string) => s?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() || "";
     const addr = normalize(formData.address);
     const city = normalize(formData.city);
-    if (addr.length < 5 || city.length < 2) return null;
+    const neighborhood = normalize(formData.neighborhood || "");
+    const title = normalize(formData.studyTitle || formData.clientName || "");
+    
+    if (addr.length < 5 || city.length < 2 || title.length < 2) return null;
 
-    // Check if the current form itself is matching (e.g., during edit)
-    return allRequests.find(r =>
-      r.id !== formData.id &&
-      normalize(r.address) === addr &&
-      normalize(r.city) === city
-    );
-  }, [allRequests, formData.address, formData.city, initialData, formData.id]);
+    return allRequests.find(r => {
+      if (r.id === formData.id) return false;
+      // Skip matching against the study we're currently editing
+      if (initialData && String(r.id) === String(initialData.id)) return false;
+      
+      const rAddr = normalize(r.address);
+      const rCity = normalize(r.city);
+      const rNeighborhood = normalize(r.neighborhood || "");
+      const rTitle = normalize(r.studyTitle || r.clientName || "");
+      
+      // Match: address + city + neighborhood + title
+      const neighborhoodMatch = !neighborhood || !rNeighborhood || rNeighborhood === neighborhood;
+      return rAddr === addr && rCity === city && neighborhoodMatch && (title.length > 0 && rTitle === title);
+    });
+  }, [allRequests, formData.address, formData.city, formData.neighborhood, formData.studyTitle, formData.clientName, initialData, formData.id]);
+
 
   const studyHistory = useMemo(() => {
     if (!formData.studyNumber) return [];
-    const cleanCode = (formData.studyNumber || '').replace('PROV-', '');
-    const revMatch = cleanCode.match(/(.+)-REV\d+$/i);
-    const baseCode = revMatch ? revMatch[1] : cleanCode;
-    return allRequests
-      .filter(r => (r.studyNumber || '').replace('PROV-', '').startsWith(baseCode))
-      .sort((a, b) => {
-        const revA = (a.studyNumber.match(/-REV(\d+)$/)?.[1] || '0');
-        const revB = (b.studyNumber.match(/-REV(\d+)$/)?.[1] || '0');
-        return parseInt(revB) - parseInt(revA);
-      });
-  }, [allRequests, formData.studyNumber]);
+    
+    const normalize = (code: string) => (code || '').replace('PROV-', '').trim();
+    const currentCode = normalize(formData.studyNumber);
 
-  React.useEffect(() => {
-    if (precedentStudy && !hasShownWarning && !initialData) {
-      const activeStatus = [
-        StudyStatus.PENDENTE,
-        StudyStatus.EM_ANALISE,
-        StudyStatus.AGUARDANDO_EXECUCAO,
-        StudyStatus.EM_EXECUCAO,
-        StudyStatus.CONTROLE_QUALIDADE
-      ].includes(precedentStudy.status);
-
-      const recentlyCompleted = precedentStudy.status === StudyStatus.CONCLUIDO && isWithinLast12Months(precedentStudy.createdAt);
-
-      if (activeStatus || recentlyCompleted) {
-        setShowPrecedentWarning(true);
-      }
+    // Get Base ID and current revision
+    let baseCode = currentCode;
+    const revSuffixMatch = currentCode.match(/(.+)-REV(\d+)$/i);
+    
+    if (revSuffixMatch) {
+      baseCode = revSuffixMatch[1];
+    } else if (currentCode.length === 10 && /^\d+$/.test(currentCode)) {
+      baseCode = currentCode.substring(0, 8);
     }
-  }, [precedentStudy, hasShownWarning, initialData]);
+
+    return allRequests
+      .filter(r => {
+        const rCode = normalize(r.studyNumber);
+        const rPrev = normalize(r.previousStudy || '');
+        
+        // 1. Match by same base ID (New format YYYYXXXXRR)
+        if (revSuffixMatch || (currentCode.length === 10 && /^\d+$/.test(currentCode))) {
+          if (rCode.startsWith(baseCode)) return true;
+        }
+
+        // 2. Match by direct linkage (this is a revision of that, or both follow same previous study)
+        if (formData.previousStudy && r.studyNumber === formData.previousStudy) return true;
+        if (r.previousStudy && r.previousStudy === formData.studyNumber) return true;
+        if (formData.previousStudy && r.previousStudy === formData.previousStudy) return true;
+
+        // 3. Exact match (self or exact duplicate)
+        return rCode === currentCode;
+      })
+      .sort((a, b) => {
+        const getRev = (code: string | undefined) => {
+          if (!code) return 0;
+          const norm = normalize(code);
+          const m = norm.match(/-REV(\d+)$/i);
+          if (m) return parseInt(m[1]);
+          if (norm.length === 10 && /^\d+$/.test(norm)) return parseInt(norm.substring(8, 10));
+          return 0;
+        };
+        const dateA = a.requestDate || '';
+        const dateB = b.requestDate || '';
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        return getRev(b.studyNumber) - getRev(a.studyNumber);
+      });
+  }, [allRequests, formData.studyNumber, formData.id]);
+
+  // Debounced backend duplicate check
+  useEffect(() => {
+    // Skip if already decided or read-only
+    if (readOnly || duplicateDecision) return;
+    
+    // Only check if we have enough info (address + city + title)
+    if (!formData.address || !formData.city || !formData.studyTitle) {
+      setBackendPrecedentStudy(null);
+      return;
+    }
+    if ((formData.address?.length || 0) < 5 || (formData.studyTitle?.length || 0) < 2) {
+      setBackendPrecedentStudy(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        console.log('[DuplicateCheck-FE] Checking for:', formData.address, formData.city, formData.neighborhood, formData.studyTitle);
+        const result = await StorageService.getNextStudyNumber(
+          'new', 
+          undefined, 
+          formData.city, 
+          formData.address, 
+          formData.studyTitle,
+          formData.neighborhood
+        );
+
+        console.log('[DuplicateCheck-FE] Result:', result);
+
+        if (result.isRevision && result.previousStudy) {
+          // Don't show popup for the same study we're currently editing
+          if (initialData && result.previousStudy === initialData.studyNumber) {
+            console.log('[DuplicateCheck-FE] Skipping - same study being edited');
+            return;
+          }
+
+          // BUSCA COMPLETA: Fetching full details to ensure all technical fields are cloned
+          const fullData = await StorageService.getStudyByNumber(result.previousStudy);
+          if (fullData) {
+            setBackendPrecedentStudy(fullData);
+          } else {
+            // Fallback to basic info if full fetch fails
+            setBackendPrecedentStudy({
+              studyNumber: result.previousStudy,
+              address: result.matchedAddress || formData.address || '',
+              studyTitle: result.matchedTitle,
+              status: result.status,
+              city: result.city || formData.city
+            } as any);
+          }
+          setShowDuplicateModal(true);
+        } else {
+          setBackendPrecedentStudy(null);
+        }
+      } catch (err) {
+        console.error('Error checking duplicate in backend:', err);
+      }
+    }, 1000); // 1s debounce
+
+    return () => clearTimeout(timer);
+  }, [formData.address, formData.city, formData.neighborhood, formData.studyTitle, initialData, readOnly, duplicateDecision]);
+
+
+  useEffect(() => {
+    // Local duplicate check fallback - show modal regardless of status
+    if (precedentStudy && !readOnly && !duplicateDecision && !backendPrecedentStudy) {
+      setShowDuplicateModal(true);
+    }
+  }, [precedentStudy, readOnly, duplicateDecision, backendPrecedentStudy]);
 
   const handleUpdateData = (newData: Partial<FormData>) => {
     if (readOnly) return;
-    setFormData(prev => ({ ...prev, ...newData }));
+    
+    let updatedData = { ...newData };
+
+    // Auto-populate company and state based on city
+    if (newData.city) {
+      const cityInfo = getCompanyByCity(newData.city);
+      if (cityInfo) {
+        updatedData.empresa = cityInfo.company;
+        // Also update state if available and relevant for the form
+        if (cityInfo.state) {
+          updatedData.state = cityInfo.state === 'RJ' ? 'Rio de Janeiro' : 
+                             cityInfo.state === 'SP' ? 'São Paulo' : cityInfo.state;
+        }
+      }
+    }
+
+    setFormData(prev => ({ ...prev, ...updatedData }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnly) return;
+
+    // Block if there is a duplicate and no decision has been made
     setIsSubmitting(true);
 
     try {
@@ -256,13 +395,12 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       }
 
       // Envia os dados e o arquivo PDF gerado
-      onSubmit(formData, generatedPdfFile);
+      await onSubmit(formData, generatedPdfFile);
 
     } catch (err) {
       console.error('[FormContainer] Erro global ao processar submissão:', err);
-      onSubmit(formData);
     } finally {
-      setTimeout(() => setIsSubmitting(false), 2000);
+      setIsSubmitting(false);
     }
   };
 
@@ -331,7 +469,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       }
     }
 
-    // 3. Fallback: Se tivermos o studyNumber, tentar abrir a pasta
+    // 3. Fallback: Se tivermos the studyNumber, tentar abrir a pasta
     if (initialData?.studyNumber) {
       showAlert(`Não foi possível abrir o arquivo diretamente. Abrindo a pasta da solicitação: ${initialData.studyNumber}`, 'Aviso');
       if ((window as any).api?.openFolder) {
@@ -343,8 +481,65 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     }
   };
 
+  const handleSolicitarRevisaoAction = (precedent: any) => {
+    if (!precedent) return;
+    
+    setDuplicateDecision('revision');
+    
+    // "Copie tudo": Deep clone the relevant technical data
+    // We preserve technical fields but reset identity/requester fields to the current state
+    setFormData(prev => {
+      // Create a clean copy of the precedent
+      const cleanClone = { ...precedent };
+      
+      // Remove metadata that should not be carried to a new revision
+      delete cleanClone.id;
+      delete cleanClone.createdAt;
+      delete cleanClone.updatedAt;
+      delete cleanClone.approvedAt;
+      delete cleanClone.history;
+
+      return {
+        ...cleanClone, // Start with everything from the previous study
+        id: 0, 
+        studyNumber: '', 
+        status: StudyStatus.EM_ANALISE,
+        user_id: userId,
+        requestDate: getGMT3ISOString().split('T')[0],
+        studyType: 'Revisão de Estudo',
+        previousStudy: precedent.studyNumber,
+        
+        // Keep current user as the one requesting the revision
+        naturgyUnit: currentUser?.naturgyUnit || prev.naturgyUnit,
+        requesterName: currentUser?.name || prev.requesterName,
+        requesterArea: currentUser?.area || prev.requesterArea,
+        phone: currentUser?.phone || prev.phone,
+        email: currentUser?.email || prev.email,
+        
+        // Cleanup execution/quality data that shouldn't be in a new revision
+        assignedTo: undefined,
+        assignedToName: undefined,
+        analystName: undefined,
+        rejectionReason: undefined,
+        selectedFiles: [],
+        executionSteps: [],
+        qcControl: undefined,
+        currentStep: undefined,
+        activeTab: undefined
+      } as any;
+    });
+    
+    setShowDuplicateModal(false);
+  };
+
   const renderForm = () => {
-    const commonProps = { data: formData, onChange: handleUpdateData, readOnly: readOnly || isExporting };
+    const displayData = duplicateDecision === 'viewing' && precedentStudy ? precedentStudy : formData;
+    const commonProps = { 
+      data: displayData, 
+      onChange: handleUpdateData, 
+      readOnly: readOnly || isExporting || duplicateDecision === 'viewing',
+      precedentStudy: precedentStudy // Pass it down to forms if they need to show warnings
+    };
     switch (formType) {
       case FormType.RESIDENTIAL_COMMERCIAL: return <FormFO01 {...commonProps} />;
       case FormType.EXPANSION_AREAS: return <FormFO02 {...commonProps} />;
@@ -405,21 +600,81 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto items-start">
-      <div className="bg-white rounded-3xl shadow-2xl p-4 md:p-10 border border-slate-100 animate-in fade-in slide-in-from-right-8 duration-500 flex-grow w-full lg:max-w-5xl">
+      <div className="bg-white rounded-3xl shadow-2xl p-4 md:p-10 border border-slate-100 animate-in fade-in slide-in-from-right-8 duration-500 flex-grow w-full">
 
-        {precedentStudy && (
-          <div className="mb-8 p-6 bg-orange-50 border border-orange-200 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4 duration-300">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-orange-500 shadow-sm">
-                <i className="fa-solid fa-triangle-exclamation text-xl"></i>
+
+        {showDuplicateModal && (precedentStudy || backendPrecedentStudy) && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[999] p-4 animate-in fade-in duration-300">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] overflow-hidden flex flex-col items-center p-10 animate-in zoom-in-95 duration-300">
+              
+              <div className="w-20 h-20 bg-orange-50 rounded-3xl flex items-center justify-center mb-8">
+                <i className="fa-solid fa-triangle-exclamation text-orange-500 text-3xl"></i>
               </div>
-              <div>
-                <h4 className="text-xs font-black text-orange-800 uppercase tracking-widest">Estudo Anterior Identificado</h4>
-                <p className="text-[11px] text-orange-700/80 font-bold uppercase mt-1">
-                  Já existe um estudo para este local (<span className="underline">{precedentStudy.studyNumber}</span>).
-                  Esta nova solicitação será vinculada como uma **Revisão Técnica**.
+
+              <h3 className="text-[22px] font-black text-[#004080] uppercase tracking-tighter text-center leading-tight mb-4 px-4">
+                Estudo já concluído ou Estudo vigente
+              </h3>
+
+              <div className="text-center px-4 mb-8">
+                <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                  Identificamos que já existe uma solicitação (<span className="font-bold text-[#004080]">{(backendPrecedentStudy || precedentStudy)?.studyNumber}</span>) para este endereço com status <span className="font-bold text-orange-600">"{(backendPrecedentStudy || precedentStudy)?.status || 'Concluído'}"</span>. Estudos concluídos permanecem vigentes por 12 meses.
                 </p>
               </div>
+
+              <div className="w-full bg-slate-50 rounded-2xl p-6 mb-10 text-left border border-slate-100">
+                <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Detalhes do Estudo Encontrado</span>
+                <p className="text-base font-black text-slate-700 leading-none mb-2">
+                  {(backendPrecedentStudy as any)?.title || (precedentStudy as any)?.studyTitle || (precedentStudy as any)?.clientName || 'Sem Título'}
+                </p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                  {(backendPrecedentStudy || precedentStudy)?.address}, {(backendPrecedentStudy || precedentStudy)?.city}
+                </p>
+              </div>
+              
+              <div className="w-full space-y-3 flex flex-col">
+                <button
+                  onClick={() => {
+                    const matchedStudy = backendPrecedentStudy || precedentStudy;
+                    if (matchedStudy) {
+                      setDuplicateDecision('viewing');
+                    }
+                    setShowDuplicateModal(false);
+                  }}
+                  className="w-full py-4 bg-[#004080] text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-100/50 hover:bg-[#003366] transition-all active:scale-[0.98]"
+                >
+                  Visualizar Estudo Existente
+                </button>
+                <button
+                  onClick={() => {
+                    const matchedStudy = backendPrecedentStudy || precedentStudy;
+                    handleSolicitarRevisaoAction(matchedStudy);
+                  }}
+                  className="w-full py-4 bg-white text-slate-600 border border-slate-200 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all active:scale-[0.98]"
+                >
+                  Solicitar Revisão
+                </button>
+
+                <button
+                  onClick={() => setShowDuplicateModal(false)}
+                  className="w-full py-2 text-slate-400 hover:text-slate-600 text-[11px] font-bold transition-all mt-2"
+                >
+                  Cancelar e Voltar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {duplicateDecision === 'viewing' && (precedentStudy || backendPrecedentStudy) && (
+          <div className="mb-8 p-6 bg-blue-50 border border-blue-200 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top-4 duration-300">
+            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-[#004080] shadow-sm">
+              <i className="fa-solid fa-eye text-xl"></i>
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-[#004080] uppercase tracking-widest">Modo Visualização (Espelho)</h4>
+              <p className="text-[11px] text-blue-700/80 font-bold uppercase mt-1">
+                Você está visualizando o estudo <span className="underline">{(backendPrecedentStudy || precedentStudy)?.studyNumber}</span>. Veja os detalhes abaixo e escolha uma ação no final da página.
+              </p>
             </div>
           </div>
         )}
@@ -460,69 +715,6 @@ export const FormContainer: React.FC<FormContainerProps> = ({
             allRequests={allRequests}
             onClose={() => setBrowsingPrecedentStudy(null)}
           />
-        )}
-
-
-        {showPrecedentWarning && precedentStudy && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 border-t-8 border-orange-500">
-              <div className="w-16 h-16 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center mb-6 text-2xl">
-                <i className="fa-solid fa-triangle-exclamation"></i>
-              </div>
-              <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight mb-2">ESTUDO JÁ CONCLUÍDO OU ESTUDO VIGENTE</h3>
-              <p className="text-xs text-slate-500 font-bold mb-6 leading-relaxed text-justify">
-                Identificamos que já existe uma solicitação (<span className="text-[#004080]">{precedentStudy.studyNumber}</span>) para este endereço com status "<span className="text-orange-600">{precedentStudy.status}</span>".
-                {precedentStudy.status === StudyStatus.CONCLUIDO ? ' Estudos concluídos permanecem vigentes por 12 meses.' : ' Este estudo ainda está em processamento técnico.'}
-              </p>
-
-              <div className="bg-slate-50 rounded-2xl p-4 mb-8">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Detalhes do Estudo Encontrado</p>
-                <p className="text-xs font-bold text-slate-700">{precedentStudy.clientName || precedentStudy.studyTitle || 'Nome não informado'}</p>
-                <p className="text-[10px] text-slate-500 mt-1 uppercase">{precedentStudy.address}, {precedentStudy.city}</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3">
-                <button
-                  onClick={() => {
-                    setShowPrecedentWarning(false);
-                    setBrowsingPrecedentStudy(precedentStudy);
-                  }}
-                  className="w-full py-4 bg-[#004080] text-white rounded-xl font-black text-[11px] uppercase tracking-wider shadow-lg"
-                >
-                  Visualizar Estudo Existente
-                </button>
-                <button
-                  onClick={() => {
-                    setShowPrecedentWarning(false);
-                    setHasShownWarning(true);
-                    setFormData(prev => ({
-                      ...prev,
-                      studyType: 'Revisão Técnica',
-                      precedentStudyId: precedentStudy.id
-                    }));
-                  }}
-                  className="w-full py-4 bg-orange-500 text-white rounded-xl font-black text-[11px] uppercase tracking-wider shadow-lg hover:bg-orange-600 transition-colors"
-                >
-                  SOLICITAR REVISÃO DO ESTUDO
-                </button>
-                <button
-                  onClick={() => {
-                    setShowPrecedentWarning(false);
-                    setHasShownWarning(true);
-                  }}
-                  className="w-full py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-[11px] uppercase tracking-wider hover:bg-slate-200 transition-all"
-                >
-                  Ignorar e Continuar Novo Estudo
-                </button>
-                <button
-                  onClick={onBack}
-                  className="w-full py-4 bg-slate-50 text-slate-400 rounded-xl font-black text-[11px] uppercase tracking-wider hover:bg-red-50 hover:text-red-400 transition-all"
-                >
-                  Cancelar e Voltar
-                </button>
-              </div>
-            </div>
-          </div>
         )}
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 border-b border-slate-100 pb-8">
@@ -571,13 +763,33 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                     <button type="button" onClick={handleFinishExecution} className="px-10 py-4 rounded-xl bg-indigo-600 text-white font-black uppercase text-xs shadow-lg transition-all">Enviar para Qualidade</button>
                   )}
                 </>
+              ) : duplicateDecision === 'viewing' ? (
+                <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const matchedStudy = backendPrecedentStudy || precedentStudy;
+                      handleSolicitarRevisaoAction(matchedStudy);
+                    }}
+                    className="px-12 py-5 rounded-2xl font-black text-white transition-all shadow-2xl text-lg flex items-center justify-center uppercase tracking-tighter bg-[#004080] hover:bg-[#FF8000] active:scale-95 shadow-[#004080]/30"
+                  >
+                    Solicitar Revisão <i className="fa-solid fa-rotate ml-4"></i>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="px-10 py-5 rounded-2xl font-black text-slate-500 transition-all text-sm flex items-center justify-center uppercase tracking-tighter border-2 border-slate-200 hover:border-slate-400 active:scale-95"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               ) : (
                 <button
                   type="submit"
                   disabled={isSubmitting}
                   className={`px-12 py-5 rounded-2xl font-black text-white transition-all shadow-2xl text-lg flex items-center uppercase tracking-tighter ${isSubmitting ? 'bg-slate-400' : 'bg-[#004080] hover:bg-[#FF8000] active:scale-95 shadow-[#004080]/30'}`}
                 >
-                  {isSubmitting ? <><i className="fa-solid fa-circle-notch fa-spin mr-3"></i>Enviando...</> : <>{initialData ? 'Reenviar Solicitação' : 'Gerar Solicitação'} <i className="fa-solid fa-paper-plane ml-4"></i></>}
+                  {isSubmitting ? <><i className="fa-solid fa-circle-notch fa-spin mr-3"></i>Enviando...</> : <>{initialData?.studyNumber ? 'Reenviar Solicitação' : 'Gerar Solicitação'} <i className="fa-solid fa-paper-plane ml-4"></i></>}
                 </button>
               )}
             </div>
@@ -585,7 +797,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         </form>
       </div>
 
-      {readOnly && studyHistory.length > 1 && (
+      {(studyHistory.length > 1 || (!readOnly && studyHistory.length > 0)) && (
         <aside className="w-full lg:w-72 bg-white rounded-3xl shadow-xl border border-slate-100 p-6 animate-in slide-in-from-bottom-4 duration-500 lg:sticky lg:top-24">
           <h4 className="text-xs font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-2 border-b border-slate-100 pb-4">
             <i className="fa-solid fa-clock-rotate-left text-orange-500"></i>
@@ -600,7 +812,16 @@ export const FormContainer: React.FC<FormContainerProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <span className={`text-[10px] font-black uppercase tracking-tighter ${item.id === formData.id ? 'text-[#004080]' : 'text-slate-400'}`}>
-                    {item.studyNumber.includes('-REV') ? `Revisão ${item.studyNumber.split('-REV')[1]}` : 'Versão Original'}
+                    {(() => {
+                      const norm = item.studyNumber.replace('PROV-', '');
+                      const revMatch = norm.match(/-REV(\d+)$/i);
+                      if (revMatch) return `Revisão ${revMatch[1]}`;
+                      if (norm.length === 10 && /^\d+$/.test(norm)) {
+                        const rev = norm.substring(8, 10);
+                        return rev === '01' ? 'Versão Original' : `Revisão ${rev}`;
+                      }
+                      return 'Versão Original';
+                    })()}
                   </span>
                   {item.id === formData.id && <span className="w-1.5 h-1.5 bg-[#004080] rounded-full animate-pulse"></span>}
                 </div>

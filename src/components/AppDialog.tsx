@@ -30,7 +30,7 @@ interface ToastItem {
 
 interface DialogContextValue {
   showAlert: (message: string, title?: string, type?: DialogType) => Promise<void>;
-  showConfirm: (message: string, title?: string) => Promise<boolean>;
+  showConfirm: (message: string, title?: string, confirmLabel?: string, cancelLabel?: string) => Promise<boolean>;
   showToast: (message: string, type?: ToastItem['type']) => void;
   showBanner: (message: string, type?: ToastItem['type'], onAction?: () => void, actionLabel?: string, onClose?: () => void) => void;
 }
@@ -79,9 +79,9 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
   }, []);
 
-  const showConfirm = useCallback((message: string, title?: string): Promise<boolean> => {
+  const showConfirm = useCallback((message: string, title?: string, confirmLabel?: string, cancelLabel?: string): Promise<boolean> => {
     return new Promise((resolve) => {
-      setDialog({ visible: true, message, title, type: 'confirm', resolve });
+      setDialog({ visible: true, message, title, type: 'confirm', confirmLabel, cancelLabel, resolve });
     });
   }, []);
 

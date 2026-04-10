@@ -1,5 +1,6 @@
 import { FormData, User, UserRole, StudyStatus } from "../types/types";
 import mjml2html from "mjml-browser";
+import { formatDate } from "../utils/utils";
 
 export interface EmailNotificationData {
   recipientEmail: string;
@@ -252,13 +253,7 @@ const buildRefinedHtmlTemplate = (
 
 const safeFormatDate = (dateStr?: string | null) => {
   if (!dateStr) return "N/A";
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return "N/A";
-    return d.toLocaleDateString("pt-BR", { hour: '2-digit', minute: '2-digit' }).replace(',', ' -');
-  } catch (e) {
-    return "N/A";
-  }
+  return formatDate(dateStr);
 };
 
 /**
@@ -337,9 +332,7 @@ Naturgy - Portal Técnico APR`,
               },
               {
                 label: "Data de Criação",
-                value: new Date(request.requestDate).toLocaleDateString(
-                  "pt-BR",
-                ),
+                value: formatDate(request.requestDate),
               },
             ],
           },
@@ -425,7 +418,7 @@ Um analista especializado iniciará o processamento do seu estudo em breve.
 Código: ${request.studyNumber || "Não informado"}
 Título: ${request.studyTitle || request.clientName || "Não informado"}
 Local:  ${request.address || ""}, ${request.city || ""}
-Data:   ${new Date().toLocaleDateString("pt-BR")}
+Data:   ${safeFormatDate(request.requestDate)}
 Status: AGUARDANDO EXECUÇÃO
 
 Para acompanhar o progresso, acesse o Portal Técnico APR.
@@ -453,7 +446,7 @@ Naturgy - Portal Técnico APR`,
                 label: "Local",
                 value: `${request.address || ""}, ${request.city || ""}`,
               },
-              { label: "Data", value: new Date().toLocaleDateString("pt-BR") },
+              { label: "Data", value: safeFormatDate(request.requestDate) },
               { label: "Status", value: "AGUARDANDO EXECUÇÃO" },
             ],
           },
@@ -586,7 +579,7 @@ Temos o prazer de informar que sua solicitação de Análise de Planificação d
 Código: ${request.studyNumber || "Não informado"}
 Título: ${request.studyTitle || request.clientName || "Não informado"}
 Local:  ${request.address || ""}, ${request.city || ""}
-Data:   ${new Date().toLocaleDateString("pt-BR")}
+Data:   ${safeFormatDate(request.requestDate)}
 
 📂 ACESSO AOS RESULTADOS
 ───────────────────────────────────────────────────────────
@@ -625,7 +618,7 @@ Naturgy - Portal Técnico APR`,
                 label: "Local",
                 value: `${request.address || ""}, ${request.city || ""}`,
               },
-              { label: "Data", value: new Date().toLocaleDateString("pt-BR") },
+              { label: "Data", value: safeFormatDate(request.requestDate) },
             ],
           },
           {
@@ -687,7 +680,7 @@ Informo que o estudo ${request.studyNumber} foi concluído e está sendo encamin
 Código: ${request.studyNumber || 'N/A'}
 Título: ${request.studyTitle || request.clientName || 'N/A'}
 Analista Responsável: ${analystName}
-Data de Envio: ${new Date().toLocaleDateString('pt-BR')}
+Data: ${safeFormatDate(request.requestDate)}
 
 Solicito a análise e validação conforme os critérios do Controle de Qualidade.
 
@@ -756,7 +749,7 @@ O estudo passará pelo Controle de Qualidade normalmente. Caso sejam identificad
 Código: ${request.studyNumber || 'N/A'}
 Título: ${request.studyTitle || request.clientName || 'N/A'}
 Local:  ${request.address || ''}, ${request.city || ''}
-Data:   ${new Date().toLocaleDateString('pt-BR')}
+Data:   ${safeFormatDate(request.requestDate)}
 
 📂 ACESSO AOS RESULTADOS
 ───────────────────────────────────────────────────────────
@@ -828,7 +821,7 @@ O estudo está sendo encaminhado para análise no CQ normalmente. Caso sejam ide
 Código: ${request.studyNumber || 'N/A'}
 Título: ${request.studyTitle || request.clientName || 'N/A'}
 Analista Responsável: ${analystName}
-Data de Envio ao Solicitante: ${new Date().toLocaleDateString('pt-BR')}
+Data: ${safeFormatDate(request.requestDate)}
 Motivo: Prazo de entrega
 
 Solicito a análise e validação conforme os critérios do Controle de Qualidade.
@@ -847,7 +840,7 @@ Naturgy - Portal Técnico APR`,
               { label: 'Título', value: request.studyTitle || request.clientName || 'N/A' },
               { label: 'Local', value: `${request.address || ''}, ${request.city || ''}` },
               { label: 'Analista Responsável', value: analystName },
-              { label: 'Enviado ao Solicitante em', value: new Date().toLocaleDateString('pt-BR') },
+              { label: 'Data', value: safeFormatDate(request.requestDate) },
               { label: 'Motivo', value: 'Prazo de entrega' },
             ]
           },

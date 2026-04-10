@@ -1,0 +1,530 @@
+[
+  {
+    "COLUMN_NAME": "id",
+    "DATA_TYPE": "varchar"
+  },
+  {
+    "COLUMN_NAME": "NRO_ESTUDO",
+    "DATA_TYPE": "varchar"
+  },
+  {
+    "COLUMN_NAME": "FK_MODELO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "EMPRESA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "DAT_EN_SEP",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "NRO_EST_AN",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "SOL_ORGAO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "SOL_RESPON",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "MEMORANDO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "MEMO_NUM",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "MEMO_DATA",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "TITULO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "LOCALIZ",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "GRUPO_EST",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "TIPO_EST",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "DAT_IN_SEP",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "DAT_SA_SEP",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PRESSAO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "RESP_SEPLA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "STATUS",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "OBSERVS",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "OPERADOR_M",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "DATA_M",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "Bairro",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "Municipio",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "TPGASS",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PRESGAS",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "NumEconomias",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "VazaoSol",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "VazaoInsta",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "UnidSol",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "ConsMens",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "QDC",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "PresSolMax",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PresSolMin",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "HorOpeIni",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "HorOpeFin",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "DiaOpeMes",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "ObsEstudSol",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PresClieMax",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PresClieMin",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PresClieGarant",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "CODCARSEP",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PresSol",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "StatusEntrega",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "ObservaResp",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "RegulardoSN",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "ReguladroVazao",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "HoraFunciona",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "CriadorRegistro",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "DataCriaReg",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PressaoResposta",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "CustoRegulador",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "PressaoEntrada",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "unidPresEnt",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PressaoSaida",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "unidPresSai",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "VazaoFutura",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "fd",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "fp",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "vu",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "Diversificar",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "dtEntregaPrevista",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "EmailContato",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "EntradaReal",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "carta_sepla",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "EMAIL_ENVIADO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "DAT_PREN_INI_OP",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "CROQUI",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PRESCALC",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PRAZ_EST_CONST",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "CONSUMO_ESTIMADO",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "PRESSAO_INICIAL",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PRESSAO_FINAL",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "PRESSAO_ABSOLUTA",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PRESSAO_ATM",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "CODIGO_PASTA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "TIP_ES",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "GRUPORED",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "SIGEP",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "BAIXA_SIGEP",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "Preparacion",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "Simulacao",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "Supervision",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "Tempo",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "TempoEstimado",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "RedeExtTotal",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "OperadorConta",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "IDSIGEP",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "IDSIGEPVINC",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "NumEconomiasComIndEtc",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "VazaoSolComIndEtc",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "UnidSolComIndEtc",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "ESTRERERIDO",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "GrauDificult",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "REGGNV",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "EstudoRelevante",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "meta_data",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "user_id",
+    "DATA_TYPE": "varchar"
+  },
+  {
+    "COLUMN_NAME": "TEL_SOL",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "MOTIVO_REJEICAO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "MOTIVO_PAUSA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "RESPOSTA_PAUSA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "LINK_MAPA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "TIPO_ARQUIVO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "UF",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "TIPO_GASIFICACAO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "NOME_CLIENTE",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PONTO_ENTREGA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "INCREMENTO_CONSUMO",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "DIAS_TRABALHO_SEMANA",
+    "DATA_TYPE": "int"
+  },
+  {
+    "COLUMN_NAME": "VAZAO_TOTAL_PREVISTA",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PRESSAO_MINIMA",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "CODIGO_SAP_ISU",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "NOME_INDUSTRIA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "CONSUMO_ATUAL",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PRESSAO_CONTRATUAL",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "FAIXA_PRESSAO_ATUAL",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "NOME_UTE",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "PRESS_MAX_UTE",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PRESS_MIN_UTE",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PRESS_MAX_UPGN",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "PRESS_MIN_UPGN",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "RESP_MAX_PO",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "RESP_MIN",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "RESP_GARANTIA",
+    "DATA_TYPE": "float"
+  },
+  {
+    "COLUMN_NAME": "ANALISTA_EMPRESA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "ANALISTA_CARGO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "ANALISTA_GB",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "MEMO_RESPOSTA",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "CATEGORIA_MERCADO",
+    "DATA_TYPE": "nvarchar"
+  },
+  {
+    "COLUMN_NAME": "RESP_UNID",
+    "DATA_TYPE": "nvarchar"
+  }
+]

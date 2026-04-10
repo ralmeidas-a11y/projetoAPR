@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole, FormType, InterconnectionPoint, PlannedExtension } from '../types/types';
-import { formatDateTimeBR } from '../utils/utils';
+import { formatDateTimeBR, calculateDeadline, isSystemAssigned } from '../utils/utils';
 import { StorageService } from '../services/storage';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { QCControlModal } from '../components/QCControlModal';
@@ -32,9 +32,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [previewStudy, setPreviewStudy] = useState<FormData | null>(null);
   const [browsingRevision, setBrowsingRevision] = useState<FormData | null>(null);
   const [filePreview, setFilePreview] = useState<{ name: string; base64: string; mime: string } | null>(null);
-  const [isPaused, setIsPaused] = useState(readOnly);
+  const [isPaused, setIsPaused] = useState(readOnly || data.status === StudyStatus.AGUARDANDO_INFORMACAO);
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(data.totalExecutionTime || 0);
-  const [supabaseFiles, setSupabaseFiles] = useState<any[]>([]);
+  const [studyFiles, setStudyFiles] = useState<any[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,6 +66,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [isExportingCarta, setIsExportingCarta] = useState(false);
   const [showQCModal, setShowQCModal] = useState(false);
   const [showHoldModal, setShowHoldModal] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [holdInfo, setHoldInfo] = useState('');
   const cartaRef = useRef<HTMLDivElement>(null);
   const hiddenCartaRef = useRef<HTMLDivElement>(null);
@@ -127,12 +130,28 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   // Helper to add multiple items at once
   const handleUpdateResponseObs = (newList: string[]) => {
     if (!onUpdateData) return;
-    onUpdateData({ ...data, responseObservations: newList.join('\n') });
+    handleUpdateData({ ...data, responseObservations: newList.join('\n') });
   };
 
   const extractVars = (text: string) => {
     const matches = text.match(/\[(.*?)\]/g);
     return matches ? Array.from(new Set(matches)) : [];
+  };
+
+  // Debounced auto-save effect
+  useEffect(() => {
+    if (readOnly || !onUpdateData) return;
+
+    // Check if data changed and it's not the initial mount
+    // to show "Salvo" briefly
+    setLastSaved(new Date());
+    setIsAutoSaving(false);
+  }, [data, readOnly, onUpdateData]);
+
+  const handleUpdateData = (newData: FormData) => {
+    if (!onUpdateData || readOnly) return;
+    setIsAutoSaving(true);
+    onUpdateData(newData);
   };
 
   const handleAddCondition = (cond?: string) => {
@@ -314,7 +333,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Carta Resposta salva com sucesso!', 'success');
       if (activeFolder === 'Resposta') {
         const files = await StorageService.getRequestFiles(data.studyNumber, 'Resposta');
-        setSupabaseFiles(files.filter((f: any) => f.name !== '.keep'));
+        setStudyFiles(files.filter((f: any) => f.name !== '.keep'));
       } else {
         setActiveFolder('Resposta');
       }
@@ -328,6 +347,27 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
   const renderCartaPaper = (reference: React.RefObject<HTMLDivElement>) => {
     const docDate = data.cartaGeneratedAt || data.completedAt || new Date().toISOString();
+    const assignedUser = allUsers.find(u => {
+      const matchId = u.id === data.assignedTo;
+      const matchEmail = u.email?.toLowerCase() === data.assignedTo?.toLowerCase();
+      const matchGB = u.gb?.toLowerCase() === data.assignedTo?.toLowerCase();
+      const matchSAP = u.sap && data.assignedTo?.replace(/^0+/, '') === u.sap.replace(/^0+/, '');
+      return matchId || matchEmail || matchGB || matchSAP;
+    }) || (data.assignedTo === currentUser?.id || data.assignedTo === currentUser?.email ? currentUser : null);
+
+    const toTitleCase = (str: string) => {
+      if (!str || str === 'Responsável Técnico' || str === 'Empresa' || str === 'Cargo') return str;
+      return str.toLowerCase().split(' ').map(word => {
+        if (word.length <= 2 && ['da', 'de', 'do', 'das', 'dos', 'e'].includes(word)) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      }).join(' ');
+    };
+
+    const analystName = toTitleCase(assignedUser?.name || data.analystName || 'Responsável Técnico').trim();
+    const analystCompany = toTitleCase(assignedUser?.company || data.analystCompany || 'Empresa').trim();
+    const analystRole = toTitleCase(assignedUser?.roleDescription || data.analystRole || 'Cargo').trim();
+    const analystGB = (assignedUser?.gb || data.analystGB || assignedUser?.sap || 'SISTEMA').trim();
+
     const validUntilDate = (() => {
       const d = new Date(docDate);
       d.setFullYear(d.getFullYear() + 1);
@@ -539,23 +579,23 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           <div className="pt-8 flex justify-around items-end">
             <div className="flex flex-col items-center">
               <div className="w-56 border-t border-black mb-1"></div>
-              <span className="text-[10px] font-black text-slate-900 uppercase">
-                {(data.analystName || (data.assignedTo === currentUser?.id || data.assignedTo?.toLowerCase() === currentUser?.email.toLowerCase() ? currentUser?.name : allUsers.find(u => u.id === data.assignedTo || u.email.toLowerCase() === data.assignedTo?.toLowerCase())?.name) || 'Responsável Técnico').toUpperCase()}
+              <span className="text-[12px] font-black text-slate-900">
+                {analystName}
               </span>
-              <span className="text-[7px] font-bold text-slate-900 uppercase tracking-tighter text-center">
-                {data.analystCompany || (data.assignedTo === currentUser?.id || data.assignedTo?.toLowerCase() === currentUser?.email.toLowerCase() ? currentUser?.company : allUsers.find(u => u.id === data.assignedTo || u.email.toLowerCase() === data.assignedTo?.toLowerCase())?.company) || 'Empresa'} - {data.analystRole || (data.assignedTo === currentUser?.id || data.assignedTo?.toLowerCase() === currentUser?.email.toLowerCase() ? currentUser?.roleDescription : allUsers.find(u => u.id === data.assignedTo || u.email.toLowerCase() === data.assignedTo?.toLowerCase())?.roleDescription) || 'Cargo'}
+              <span className="text-[10px] font-bold text-slate-900 tracking-tighter text-center">
+                {analystCompany} - {analystRole}
               </span>
             </div>
             <div className="flex flex-col items-center">
               <div className="w-56 border-t border-black mb-1"></div>
-              <span className="text-[10px] font-black text-slate-900 uppercase">Ricardo Solon</span>
-              <span className="text-[7px] font-bold text-slate-900 uppercase tracking-tighter text-center">Chefe da Análise e Planificação da Rede</span>
+              <span className="text-[12px] font-black text-slate-900">Ricardo Solon</span>
+              <span className="text-[10px] font-bold text-slate-900 tracking-tighter text-center">Chefe da Análise e Planificação da Rede</span>
             </div>
           </div>
 
           <div className="pt-10 flex flex-col items-end gap-1 mt-4">
-            <p className="text-[8px] font-black text-black uppercase tracking-widest text-right italic">
-              {`Documento gerado eletronicamete pelo usuário "${data.analystGB || (data.assignedTo === currentUser?.id || data.assignedTo?.toLowerCase() === currentUser?.email.toLowerCase() ? currentUser?.gb : allUsers.find(u => u.id === data.assignedTo || u.email.toLowerCase() === data.assignedTo?.toLowerCase())?.gb) || 'SISTEMA'}" em ${new Date(docDate).toLocaleDateString('pt-BR')} às ${new Date(docDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+            <p className="text-[9px] font-black text-slate-900 tracking-widest text-right italic">
+              {`Documento gerado pelo gb ${analystGB} ${analystName === 'Responsável Técnico' ? '' : analystName} em ${new Date(docDate).toLocaleDateString('pt-BR')} às ${new Date(docDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
             </p>
           </div>
         </div>
@@ -634,7 +674,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       location: '',
       comment: INTERCONNECTION_COMMENTS[0]
     };
-    onUpdateData({
+    handleUpdateData({
       ...data,
       interconnectionPoints: [...(data.interconnectionPoints || []), newPoint]
     });
@@ -645,13 +685,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     const updated = (data.interconnectionPoints || []).map(p =>
       p.id === id ? { ...p, [field]: value } : p
     );
-    onUpdateData({ ...data, interconnectionPoints: updated });
+    handleUpdateData({ ...data, interconnectionPoints: updated });
   };
 
   const removeInterconnectionPoint = (id: string) => {
     if (!onUpdateData) return;
     const filtered = (data.interconnectionPoints || []).filter(p => p.id !== id);
-    onUpdateData({ ...data, interconnectionPoints: filtered });
+    handleUpdateData({ ...data, interconnectionPoints: filtered });
   };
 
   // Row management for Planned Network Extensions
@@ -668,7 +708,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       gasType: GAS_TYPES_EXT[0], // GN
       status: STATUS_EXT[2] // Estudo (Construir)
     };
-    onUpdateData({
+    handleUpdateData({
       ...data,
       plannedExtensions: [...(data.plannedExtensions || []), newExt]
     });
@@ -679,13 +719,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     const updated = (data.plannedExtensions || []).map(p =>
       p.id === id ? { ...p, [field]: value } : p
     );
-    onUpdateData({ ...data, plannedExtensions: updated });
+    handleUpdateData({ ...data, plannedExtensions: updated });
   };
 
   const removePlannedExtension = (id: string) => {
     if (!onUpdateData) return;
     const filtered = (data.plannedExtensions || []).filter(p => p.id !== id);
-    onUpdateData({ ...data, plannedExtensions: filtered });
+    handleUpdateData({ ...data, plannedExtensions: filtered });
   };
 
   // Timer logic
@@ -706,7 +746,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
   }, [elapsedTime, onUpdateData]);
 
-  // Fetch Supabase files when folder changes
+  // Fetch study files when folder changes
   useEffect(() => {
     let isMounted = true;
     const fetchFiles = async () => {
@@ -716,7 +756,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         const files = await StorageService.getRequestFiles(data.studyNumber, activeFolder);
         if (isMounted) {
           const filtered = files.filter(f => f.name !== '.keep');
-          setSupabaseFiles(filtered);
+          setStudyFiles(filtered);
         }
       } catch (err) {
         console.error('Error fetching study files:', err);
@@ -735,11 +775,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
     // 1. Repair estimatedDeliveryDate
     if (!data.estimatedDeliveryDate && data.requestDate) {
-      const requestDateObj = new Date(data.requestDate);
-      if (!isNaN(requestDateObj.getTime())) {
-        const deliveryDateObj = new Date(requestDateObj);
-        deliveryDateObj.setDate(deliveryDateObj.getDate() + 7);
-        updated.estimatedDeliveryDate = deliveryDateObj.toISOString().split('T')[0];
+      const deadline = calculateDeadline(data.requestDate, data.formType || '');
+      if (deadline) {
+        updated.estimatedDeliveryDate = deadline;
         changed = true;
       }
     }
@@ -765,7 +803,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
 
     if (changed && onUpdateData) {
-      onUpdateData(updated);
+      handleUpdateData(updated);
     }
   }, [data.requestDate, data.estimatedDeliveryDate, data.status, data.startedAt, data.completedAt, onUpdateData]);
 
@@ -803,18 +841,38 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const handleApplyAutoCalc = () => {
     if (!onUpdateData || readOnly) return;
     setCalcMode('auto');
-    onUpdateData({
+    handleUpdateData({
       ...data,
-      totalFlowRes: totalFlowAuto
+      numClientsRes: totalClientsAuto,
+      totalClients: totalClientsAuto,
+      unitFlow: unitFlowAuto,
+      flowUnitRes: unitFlowAuto, // Dual sync for compatibility
+      penetrationFactor: penetrationAuto,
+      penetration: penetrationAuto,
+      diversificationFactor: diversificationAuto,
+      diversification: diversificationAuto,
+      totalFlowRes: totalFlowAuto,
+      totalFlow: totalFlowAuto,
+      calcMode: 'auto'
     });
   };
 
   const handleApplyManualCalc = () => {
     if (!onUpdateData || readOnly) return;
     const total = manualCalc.totalClients * manualCalc.unitFlow * manualCalc.penetration * manualCalc.diversification;
-    onUpdateData({
+    handleUpdateData({
       ...data,
-      totalFlowRes: total
+      numClientsRes: manualCalc.totalClients,
+      totalClients: manualCalc.totalClients,
+      unitFlow: manualCalc.unitFlow,
+      flowUnitRes: manualCalc.unitFlow, // Dual sync
+      penetrationFactor: manualCalc.penetration,
+      penetration: manualCalc.penetration,
+      diversificationFactor: manualCalc.diversification,
+      diversification: manualCalc.diversification,
+      totalFlowRes: total,
+      totalFlow: total,
+      calcMode: 'manual'
     });
   };
 
@@ -980,6 +1038,16 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
   };
 
+  const handleResumeTimer = () => {
+    if (readOnly) return;
+    setIsPaused(false);
+    setShowResumePrompt(false);
+    // Se o status era Aguardando Informação, voltamos para Em Execução ao retomar
+    if (data.status === StudyStatus.AGUARDANDO_INFORMACAO) {
+      handleUpdateStatus(StudyStatus.EM_EXECUCAO);
+    }
+  };
+
   const handleUpdateStatus = (status: StudyStatus, additional?: Partial<FormData>) => {
     const finalAdditional: Partial<FormData> = { ...additional };
 
@@ -1064,9 +1132,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   );
 
   const getFilesForActiveFolder = () => {
-    // Sempre usar os arquivos do Supabase Storage como fonte de verdade.
+    // Sempre usar os arquivos do Storage como fonte de verdade.
     // Os dados locais (data.selectedFiles / categorizedFiles) podem estar desatualizados.
-    const storageFiles = supabaseFiles.filter(f => f.name !== '.keep');
+    const storageFiles = studyFiles.filter(f => f.name !== '.keep');
 
     // Se o Storage ainda está sendo carregado, não mostrar nada (evita dados fantasmas)
     if (isLoadingFiles) return [];
@@ -1283,7 +1351,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     const locationData = getEmpresaEstado(data.city);
 
     return (
-      <div className="space-y-6 animate-in fade-in duration-300 pb-12">
+      <div className={`space-y-6 animate-in fade-in duration-300 pb-12`}>
         {/* Identificação Card */}
         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
           <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
@@ -1330,7 +1398,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </div>
               ));
             })()}
-            {renderTechnicalField('Data de Solicitação', formatDateTimeBR(data.requestDate))}
+            {renderTechnicalField('Data de Solicitação', formatDateTimeBR(data.createdAt))}
             {renderTechnicalField('Solicitante', data.requesterName || '-')}
             {renderTechnicalField('E-mail', data.email || 'NÃO UTILIZAR ESSE REGISTRO')}
             {renderTechnicalField('Área Solicitante', data.requesterArea || 'Desconhecido')}
@@ -1355,6 +1423,66 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             {renderTechnicalField('Estado', locationData.estado)}
             {renderTechnicalField('Empresa', locationData.empresa)}
           </div>
+        </div>
+
+        {/* Histórico de Revisões Card */}
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
+          <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
+            <i className="fa-solid fa-clock-rotate-left text-orange-500"></i>
+            Histórico de Revisões Relacionadas
+          </h4>
+          {revisionHistory.length === 0 ? (
+            <div className="py-8 text-center bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nenhuma revisão anterior encontrada</p>
+            </div>
+          ) : (
+            <div className="overflow-hidden border border-slate-100 rounded-[2rem] bg-slate-50 shadow-inner">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-[#004080] text-white">
+                  <tr>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest">Código</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest">Data</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest">Status</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {revisionHistory.map((h) => (
+                    <tr key={h.id} className="hover:bg-white transition-colors group">
+                      <td className="px-6 py-4 text-xs font-black text-[#004080] uppercase">{h.studyNumber}</td>
+                      <td className="px-6 py-4 text-xs text-slate-500 font-bold">{formatDateTimeBR(h.requestDate)}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${h.status === StudyStatus.CONCLUIDO ? 'bg-green-100 text-green-600' :
+                          h.status === StudyStatus.CANCELADO ? 'bg-red-100 text-red-600' :
+                            'bg-blue-100 text-blue-600'
+                          }`}>
+                          {h.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setPreviewStudy(h)}
+                            className="p-2 bg-white border border-slate-200 text-[#004080] rounded-xl hover:bg-[#004080] hover:text-white transition-all shadow-sm"
+                            title="Ver Resumo"
+                          >
+                            <i className="fa-solid fa-eye text-xs"></i>
+                          </button>
+                          <button
+                            onClick={() => setBrowsingRevision(h)}
+                            className="p-2 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+                            title="Ver Arquivos"
+                          >
+                            <i className="fa-solid fa-folder-open text-xs"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Parâmetros Técnicos & Demanda */}
@@ -1382,9 +1510,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 pt-6 border-t border-slate-100">
-            {renderTechnicalField('Nº Residenciais', data.numClientsRes || '0')}
+            {renderTechnicalField('Nº de Clientes Residenciais', data.numClientsRes || '0')}
             {renderTechnicalField('Vazão Residencial', formatCurrency(data.totalFlowRes), 'm³/h')}
-            {renderTechnicalField('Nº Com. Ind. Etc', data.numClientsCom || '0')}
+            {renderTechnicalField('Nº de Clientes Com. Ind. Etc', data.numClientsCom || '0')}
             {renderTechnicalField('Vazão Com. Ind. Etc', formatCurrency(data.totalFlowCom), 'm³/h')}
           </div>
         </div>
@@ -1405,14 +1533,23 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             {renderTechnicalField('Dificuldade', data.difficulty || '-')}
 
             {renderTechnicalField('Responsável Estudo', (() => {
+              if (data.analystName && data.analystName !== data.assignedTo) return data.analystName;
               if (!data.assignedTo) return '-';
-              const analyst = allUsers.find(u => u.id === data.assignedTo || u.email === data.assignedTo);
+
+              const normalize = (s: any) => String(s || '').trim().replace(/^0+/, '');
+              const target = normalize(data.assignedTo);
+
+              const analyst = allUsers.find(u =>
+                normalize(u.id) === target ||
+                normalize(u.email) === target ||
+                normalize(u.sap) === target
+              );
               return analyst ? analyst.name : data.assignedTo;
             })())}
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 pt-6 border-t border-slate-100">
-            {renderTechnicalField('Entrada Real', formatDateTimeBR(data.requestDate))}
+            {renderTechnicalField('Entrada Real', data.validationDate ? formatDateTimeBR(data.validationDate) : '-')}
             {renderTechnicalField('Entrega Prevista', data.estimatedDeliveryDate ? formatDateTimeBR(data.estimatedDeliveryDate) : '-')}
             {renderTechnicalField('Início Execução', data.startedAt ? formatDateTimeBR(data.startedAt) : '-')}
             {renderTechnicalField('Término Execução', data.completedAt ? formatDateTimeBR(data.completedAt) : '-')}
@@ -1468,13 +1605,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     onChange={(e) => {
                       const val = e.target.value;
                       if (!val) {
-                        if (onUpdateData) onUpdateData({ ...data, networkGroup: undefined, networkDescription: '' });
+                        if (onUpdateData) handleUpdateData({ ...data, networkGroup: undefined, networkDescription: '' });
                         return;
                       }
                       const code = parseInt(val);
                       const group = NETWORK_GROUPS.find(g => g.grupoRede === code);
                       if (onUpdateData) {
-                        onUpdateData({
+                        handleUpdateData({
                           ...data,
                           networkGroup: code,
                           networkDescription: group?.descricao || ''
@@ -1516,7 +1653,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     onChange={(e) => {
                       const base = e.target.value;
                       if (!base) {
-                        if (onUpdateData) onUpdateData({
+                        if (onUpdateData) handleUpdateData({
                           ...data,
                           responsePressureBase: undefined,
                           responseMaxPo: undefined,
@@ -1528,7 +1665,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                       }
                       const pressureObj = PRESSURE_BASES.find(p => p.base === base);
                       if (onUpdateData && pressureObj) {
-                        onUpdateData({
+                        handleUpdateData({
                           ...data,
                           responsePressureBase: base,
                           responseMaxPo: pressureObj.pmax,
@@ -1583,7 +1720,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     placeholder="-"
                     value={data.responseCalculatedPressure || ''}
                     onChange={(e) => {
-                      if (onUpdateData) onUpdateData({ ...data, responseCalculatedPressure: e.target.value });
+                      if (onUpdateData) handleUpdateData({ ...data, responseCalculatedPressure: e.target.value });
                     }}
                   />
                 )}
@@ -1945,9 +2082,19 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     const summary = `Vazão total para o dimensionamento: ${total.toFixed(3).replace('.', ',')} m³/h (Clientes: ${currentCalc.totalClients} | Qut: ${currentCalc.unitFlow.toFixed(2)} | FP: ${currentCalc.penetration} | FD: ${currentCalc.diversification.toFixed(2)})`;
 
                     if (onUpdateData) {
-                      onUpdateData({
+                      handleUpdateData({
                         ...data,
+                        numClientsRes: currentCalc.totalClients,
+                        totalClients: currentCalc.totalClients,
+                        unitFlow: currentCalc.unitFlow,
+                        flowUnitRes: currentCalc.unitFlow, // Dual sync
+                        penetrationFactor: currentCalc.penetration,
+                        penetration: currentCalc.penetration,
+                        diversificationFactor: currentCalc.diversification,
+                        diversification: currentCalc.diversification,
+                        calcMode: calcMode,
                         totalFlowRes: total,
+                        totalFlow: total,
                         responseObservations: [...responseObsList, summary].join('\n')
                       });
                       showToast('Cálculo aplicado à resposta técnica!', 'success');
@@ -1970,7 +2117,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 <input
                   type="checkbox"
                   checked={!!data.regSizingActive}
-                  onChange={(e) => onUpdateData && onUpdateData({ ...data, regSizingActive: e.target.checked })}
+                  onChange={(e) => onUpdateData && handleUpdateData({ ...data, regSizingActive: e.target.checked })}
                   disabled={readOnly}
                   className="rounded"
                 />
@@ -1981,7 +2128,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <input
                     type="text"
                     value={data.regSizingFlow || ''}
-                    onChange={(e) => onUpdateData && onUpdateData({ ...data, regSizingFlow: e.target.value })}
+                    onChange={(e) => onUpdateData && handleUpdateData({ ...data, regSizingFlow: e.target.value })}
                     disabled={readOnly || !data.regSizingActive}
                     placeholder="m³/h"
                     className="w-20 p-1 bg-white border border-indigo-200 rounded text-xs text-right"
@@ -1992,7 +2139,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <input
                     type="text"
                     value={data.regSizingCost || ''}
-                    onChange={(e) => onUpdateData && onUpdateData({ ...data, regSizingCost: e.target.value })}
+                    onChange={(e) => onUpdateData && handleUpdateData({ ...data, regSizingCost: e.target.value })}
                     disabled={readOnly || !data.regSizingActive}
                     placeholder="R$"
                     className="w-20 p-1 bg-white border border-indigo-200 rounded text-xs text-right"
@@ -2003,7 +2150,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <input
                     type="text"
                     value={data.regSizingInPress || ''}
-                    onChange={(e) => onUpdateData && onUpdateData({ ...data, regSizingInPress: e.target.value })}
+                    onChange={(e) => onUpdateData && handleUpdateData({ ...data, regSizingInPress: e.target.value })}
                     disabled={readOnly || !data.regSizingActive}
                     placeholder="bar"
                     className="w-20 p-1 bg-white border border-indigo-200 rounded text-xs text-right"
@@ -2014,7 +2161,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <input
                     type="text"
                     value={data.regSizingOutPress || ''}
-                    onChange={(e) => onUpdateData && onUpdateData({ ...data, regSizingOutPress: e.target.value })}
+                    onChange={(e) => onUpdateData && handleUpdateData({ ...data, regSizingOutPress: e.target.value })}
                     disabled={readOnly || !data.regSizingActive}
                     placeholder="mbar"
                     className="w-20 p-1 bg-white border border-indigo-200 rounded text-xs text-right"
@@ -2025,7 +2172,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <input
                     type="text"
                     value={data.regSizingFutureFlow || ''}
-                    onChange={(e) => onUpdateData && onUpdateData({ ...data, regSizingFutureFlow: e.target.value })}
+                    onChange={(e) => onUpdateData && handleUpdateData({ ...data, regSizingFutureFlow: e.target.value })}
                     disabled={readOnly || !data.regSizingActive}
                     placeholder="m³/h"
                     className="w-20 p-1 bg-white border border-indigo-200 rounded text-xs text-right"
@@ -2336,6 +2483,36 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-slate-50 font-sans animate-in fade-in duration-300 overflow-hidden">
+      {/* Overlay de Resume Prompt (Somente ao interagir pausado) */}
+      {showResumePrompt && !readOnly && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+          <div className="bg-white rounded-[3rem] p-12 max-w-lg w-full text-center shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-white/10 animate-in zoom-in-95 duration-300">
+            <div className="w-24 h-24 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-8 text-4xl shadow-lg border-4 border-white">
+              <i className="fa-solid fa-clock-rotate-left"></i>
+            </div>
+            <h3 className="text-3xl font-black text-[#004080] mb-4 uppercase tracking-tight">Cronômetro Pausado</h3>
+            <p className="text-slate-500 mb-10 font-medium text-lg leading-relaxed">
+              A análise técnica está em pausa. <br />
+              Para realizar qualquer alteração, você deve retomar o cronômetro primeiro.
+            </p>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowResumePrompt(false)}
+                className="flex-1 py-6 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-[2rem] font-black uppercase text-sm tracking-widest transition-all"
+              >
+                Voltar à Visualização
+              </button>
+              <button
+                onClick={handleResumeTimer}
+                className="flex-[1.5] py-6 bg-[#004080] hover:bg-[#003060] text-white rounded-[2rem] font-black uppercase text-sm tracking-[0.2em] shadow-2xl shadow-blue-900/40 transition-all hover:scale-[1.05] active:scale-95 flex items-center justify-center gap-4 group"
+              >
+                <i className="fa-solid fa-play group-hover:scale-125 transition-transform"></i>
+                Retomar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileChange} />
 
       {/* HISTORY MODAL */}
@@ -2577,8 +2754,19 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
         {!readOnly && (
           <div className="flex items-center gap-12 pr-12 border-r border-slate-100 mr-12">
-            <div className="text-right">
-              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest leading-none mb-2">Cronômetro de Execução Técnica</p>
+            <div className="text-right flex flex-col items-end">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest leading-none">Cronômetro de Execução Técnica</p>
+                {isAutoSaving ? (
+                  <div className="flex items-center gap-1 text-[8px] font-black text-amber-500 uppercase animate-pulse">
+                    <i className="fa-solid fa-spinner fa-spin"></i> Salvando...
+                  </div>
+                ) : lastSaved ? (
+                  <div className="flex items-center gap-1 text-[8px] font-black text-green-500 uppercase">
+                    <i className="fa-solid fa-cloud-check"></i> Salvo {lastSaved.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                ) : null}
+              </div>
               <p className={`text-2xl font-black font-mono tracking-widest transition-colors ${isPaused ? 'text-slate-200' : 'text-indigo-600'}`}>{formatTime(elapsedTime)}</p>
             </div>
             <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center border-2 transition-all ${isPaused ? 'bg-slate-50 text-slate-300 border-slate-100 shadow-inner' : 'bg-indigo-50 text-indigo-600 border-indigo-100 shadow-md animate-pulse'}`}>
@@ -2714,7 +2902,28 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         </div>
 
         {/* Área Central de Trabalho */}
-        <div className="flex-grow p-10 overflow-hidden flex flex-col min-w-0">
+        <div
+          className="flex-grow p-10 overflow-hidden flex flex-col min-w-0 relative"
+          onClickCapture={(e) => {
+            if (isPaused && !readOnly) {
+              // Permitir cliques em botões de download ou visualização básica, mas bloquear mudanças em inputs ou áreas de edição
+              const target = e.target as HTMLElement;
+              const isDownloadBtn = target.closest('button')?.innerText.toLowerCase().includes('baixar');
+              const isViewBtn = target.closest('button')?.title.toLowerCase().includes('visualizar');
+
+              if (!isDownloadBtn && !isViewBtn) {
+                e.stopPropagation();
+                setShowResumePrompt(true);
+              }
+            }
+          }}
+        >
+          {isPaused && !readOnly && (
+            <div className="absolute top-4 right-10 z-10 flex items-center gap-2 bg-orange-100/80 backdrop-blur-sm text-orange-700 px-4 py-2 rounded-full border border-orange-200 shadow-sm animate-pulse">
+              <i className="fa-solid fa-pause text-xs"></i>
+              <span className="text-[10px] font-black uppercase tracking-widest">Cronômetro Pausado • Modo Visualização</span>
+            </div>
+          )}
           {renderTabContent()}
         </div>
       </div>

@@ -21,11 +21,7 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
       processedValue = value === '' ? '' : parseFloat(value);
     }
 
-    if (name === 'clientName') {
-      onChange({ [name]: processedValue, studyTitle: value });
-    } else {
-      onChange({ [name]: processedValue });
-    }
+    onChange({ [name]: processedValue });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -233,6 +229,16 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
               <select name="marketCategory" value={data.marketCategory || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`}>
                 <option value="">Selecione...</option>
                 {marketOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+            <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
+              <label className={`${requiredLabelClass}`}>Unidade de Resposta :</label>
+              <select name="responseUnit" value={data.responseUnit || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`}>
+                <option value="">Selecione...</option>
+                <option value="bar">bar</option>
+                <option value="kpa">kpa</option>
+                <option value="Nm³/h">Nm³/h</option>
+                <option value="m³/h">m³/h</option>
               </select>
             </div>
             <div className="col-span-12 flex flex-col gap-1">

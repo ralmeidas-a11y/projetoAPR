@@ -1,0 +1,1678 @@
+const express = require('express');
+const sql = require('mssql');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const bcrypt = require('bcryptjs');
+require('dotenv').config();
+
+const serverStartTime = new Date();
+
+const app = express();
+const port = process.env.PORT || 3001;
+
+// Middlewares
+app.use(cors());
+app.use(express.json());
+
+// SQL Server Config
+const sqlConfig = {
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
+  server: process.env.DB_SERVER,
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000
+  },
+  options: {
+    encrypt: true, 
+    trustServerCertificate: true 
+  }
+};
+
+// Connect to DB and start server
+async function startServer() {
+  try {
+    console.log('[Server] Connecting to SQL Server...');
+    await sql.connect(sqlConfig);
+    console.log('[Server] Connected to SQL Server successfully');
+
+    // Utility: Convert string to Title Case
+    const toTitleCase = (str) => {
+      if (!str) return '';
+      return str.toLowerCase().replace(/\b\w/g, s => s.toUpperCase());
+    };
+
+    // Utility: Fetch analyst names mapping
+    const getSapToNameMap = async () => {
+      const usersRes = await sql.query("SELECT SAP as sap, NOME as name FROM E_OPEMAN WHERE SAP IS NOT NULL");
+      const sapToNameMap = {};
+      usersRes.recordset.forEach(u => {
+        if (u.sap) {
+          const normalizedSap = String(u.sap).trim().replace(/^0+/, '');
+          if (normalizedSap) sapToNameMap[normalizedSap] = u.name;
+        }
+      });
+      return sapToNameMap;
+    };
+    
+    // 1. Auto Create Solicitantes Table
+    console.log('[Server] Checking Users_Solicitantes table...');
+    await sql.query`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Users_Solicitantes' and xtype='U')
+      CREATE TABLE Users_Solicitantes (
+        [id] [varchar](100) PRIMARY KEY,
+        [email] [varchar](255) NOT NULL,
+        [name] [varchar](255) NOT NULL,
+        [role] [varchar](50) NOT NULL,
+        [password] [varchar](255) NULL,
+        [department] [varchar](100) NULL,
+        [company] [varchar](255) NULL,
+        [roleDescription] [varchar](255) NULL,
+        [gb] [varchar](100) NULL,
+        [profileComplete] [bit] DEFAULT 0,
+        [requiresPasswordChange] [bit] DEFAULT 0,
+        [createdAt] [datetime] DEFAULT GETDATE()
+      )
+    `;
+
+    // Ensure columns exist if table already existed
+    await sql.query`
+      IF COL_LENGTH('Users_Solicitantes', 'company') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [company] VARCHAR(255) NULL;
+      IF COL_LENGTH('Users_Solicitantes', 'roleDescription') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [roleDescription] VARCHAR(255) NULL;
+      IF COL_LENGTH('Users_Solicitantes', 'gb') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [gb] VARCHAR(100) NULL;
+      IF COL_LENGTH('Users_Solicitantes', 'phone') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [phone] VARCHAR(50) NULL;
+      IF COL_LENGTH('Users_Solicitantes', 'area') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [area] VARCHAR(100) NULL;
+      IF COL_LENGTH('Users_Solicitantes', 'naturgyUnit') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [naturgyUnit] VARCHAR(100) NULL;
+
+    `;
+
+    console.log('[Server] Verificando e criando colunas nativas na E_OPEMAN...');
+    await sql.query`
+      -- 1. Criação e Expansão das Colunas Físicas
+      ALTER TABLE E_OPEMAN ALTER COLUMN SAP VARCHAR(255) NULL;
+
+      IF COL_LENGTH('E_OPEMAN', 'PASSWORD') IS NULL
+          ALTER TABLE E_OPEMAN ADD PASSWORD VARCHAR(255) NULL;
+
+      IF COL_LENGTH('E_OPEMAN', 'PERMISSOES') IS NULL
+          ALTER TABLE E_OPEMAN ADD PERMISSOES VARCHAR(255) NULL;
+          
+      IF COL_LENGTH('E_OPEMAN', 'NATIVE_ROLE') IS NULL
+          ALTER TABLE E_OPEMAN ADD NATIVE_ROLE VARCHAR(50) NULL;
+
+      IF COL_LENGTH('E_OPEMAN', 'DEPARTMENT') IS NULL
+          ALTER TABLE E_OPEMAN ADD DEPARTMENT VARCHAR(100) NULL;
+
+      IF COL_LENGTH('E_OPEMAN', 'PROFILE_COMPLETE') IS NULL
+          ALTER TABLE E_OPEMAN ADD PROFILE_COMPLETE BIT NULL;
+
+      IF COL_LENGTH('E_OPEMAN', 'REQUIRES_PASSWORD_CHANGE') IS NULL
+          ALTER TABLE E_OPEMAN ADD REQUIRES_PASSWORD_CHANGE BIT NULL;
+
+      IF COL_LENGTH('E_OPEMAN', 'CREATED_AT') IS NULL
+          ALTER TABLE E_OPEMAN ADD CREATED_AT DATETIME NULL;
+      ELSE
+          -- Ensure it is DATETIME even if it existed as VARCHAR
+          BEGIN TRY
+            ALTER TABLE E_OPEMAN ALTER COLUMN CREATED_AT DATETIME;
+          END TRY
+          BEGIN CATCH
+            -- If data is incompatible, we just leave it for now but the TRY_CAST in use will handle it
+          END CATCH
+
+      IF COL_LENGTH('E_OPEMAN', 'EMPRESA') IS NULL
+          ALTER TABLE E_OPEMAN ADD EMPRESA VARCHAR(255) NULL;
+
+      IF COL_LENGTH('E_OPEMAN', 'CARGO') IS NULL
+          ALTER TABLE E_OPEMAN ADD CARGO VARCHAR(255) NULL;
+    `;
+
+    // 2. T_ESTPLA Schema Migration (INT -> VARCHAR for UUID compatibility)
+    console.log('[Server] Migrating T_ESTPLA ID type if needed...');
+    const idTypeRes = await sql.query`
+      SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'id'
+    `;
+    if (idTypeRes.recordset[0]?.DATA_TYPE === 'int') {
+      console.log('[Server] Converting T_ESTPLA.id to VARCHAR(100)...');
+      try {
+        const pkRes = await sql.query`SELECT name FROM sys.key_constraints WHERE type = 'PK' AND parent_object_id = OBJECT_ID('T_ESTPLA')`;
+        if (pkRes.recordset[0]) {
+          await sql.query`ALTER TABLE T_ESTPLA DROP CONSTRAINT ${sql.raw(pkRes.recordset[0].name)}`;
+        }
+        await sql.query`ALTER TABLE T_ESTPLA ALTER COLUMN id VARCHAR(100) NOT NULL`;
+        await sql.query`ALTER TABLE T_ESTPLA ADD CONSTRAINT PK_T_ESTPLA PRIMARY KEY (id)`;
+        console.log('[Server] T_ESTPLA id migration successful');
+      } catch (err) {
+        console.error('[Server] Failed to migrate T_ESTPLA ID:', err.message);
+      }
+    }
+
+    // NRO_ESTUDO Migration (Ensures legacy INT column becomes VARCHAR to support "PROV-" prefix)
+    console.log('[Server] Checking T_ESTPLA NRO_ESTUDO type...');
+    const nroTypeRes = await sql.query`
+      SELECT DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'NRO_ESTUDO'
+    `;
+    if (nroTypeRes.recordset[0]?.DATA_TYPE === 'int') {
+      console.log('[Server] Converting T_ESTPLA.NRO_ESTUDO to VARCHAR(100)...');
+      try {
+        // Drop any potential default constraint first to avoid blocking the alter
+        const defConstraintRes = await sql.query`
+          SELECT d.name FROM sys.default_constraints d
+          INNER JOIN sys.columns c ON d.parent_column_id = c.column_id AND d.parent_object_id = c.object_id
+          WHERE d.parent_object_id = OBJECT_ID('T_ESTPLA') AND c.name = 'NRO_ESTUDO'
+        `;
+        if (defConstraintRes.recordset[0]) {
+          await sql.query`ALTER TABLE T_ESTPLA DROP CONSTRAINT ${sql.raw(defConstraintRes.recordset[0].name)}`;
+        }
+        
+        // Use NULL allowed for easier migration if data exists
+        await sql.query`ALTER TABLE T_ESTPLA ALTER COLUMN NRO_ESTUDO VARCHAR(100) NULL`;
+        console.log('[Server] T_ESTPLA NRO_ESTUDO migration successful');
+      } catch (err) {
+        console.error('[Server] CRITICAL: Failed to migrate T_ESTPLA NRO_ESTUDO:', err.message);
+      }
+    }
+
+    // 3. Ensure Requests table exists and matches T_ESTPLA schema
+    console.log('[Server] Synchronizing Requests table schema with T_ESTPLA...');
+
+    await sql.query`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Requests' and xtype='U')
+      CREATE TABLE Requests (
+        [id] VARCHAR(100) PRIMARY KEY,
+        [user_id] VARCHAR(100) NULL,
+        [formType] VARCHAR(50) NULL,
+        [meta_data] NVARCHAR(MAX) NULL,
+        
+        -- Mirroring T_ESTPLA columns 100%
+        [NRO_ESTUDO] VARCHAR(100) NULL,
+        [FK_MODELO] NVARCHAR(50) NULL,
+        [STATUS] VARCHAR(50) NULL,
+        [SOL_RESPON] NVARCHAR(100) NULL,
+        [SOL_ORGAO] VARCHAR(50) NULL,
+        [TITULO] NVARCHAR(MAX) NULL,
+        [NOME_CLIENTE] NVARCHAR(MAX) NULL,
+        [LOCALIZ] NVARCHAR(MAX) NULL,
+        [Bairro] NVARCHAR(100) NULL,
+        [Municipio] NVARCHAR(100) NULL,
+        [EmailContato] NVARCHAR(255) NULL,
+        [TEL_SOL] NVARCHAR(50) NULL,
+        [EMPRESA] NVARCHAR(100) NULL,
+        [DAT_EN_SEP] VARCHAR(50) NULL,
+        [NRO_EST_AN] VARCHAR(100) NULL,
+        [PRESSAO] NVARCHAR(50) NULL,
+        [RESP_SEPLA] NVARCHAR(100) NULL,
+        [OBSERVS] NVARCHAR(MAX) NULL,
+        [TPGASS] NVARCHAR(50) NULL,
+        [PRESGAS] NVARCHAR(50) NULL,
+        [NumEconomias] INT NULL,
+        [VazaoSol] FLOAT NULL,
+        [ConsMens] INT NULL,
+        [IDSIGEP] BIGINT NULL,
+        [GRUPO_EST] NVARCHAR(50) NULL,
+        [TIPO_EST] NVARCHAR(50) NULL,
+        [TIP_ES] NVARCHAR(50) NULL,
+        [GrauDificult] NVARCHAR(50) NULL,
+        [CROQUI] NVARCHAR(20) DEFAULT 'FALSO',
+        [EstudoRelevante] NVARCHAR(20) DEFAULT 'FALSO',
+        [UnidSol] NVARCHAR(20) DEFAULT 'm³/h',
+        [dtEntregaPrevista] VARCHAR(50) NULL,
+        
+        -- Mandatory columns with defaults for legacy triggers
+        [RegulardoSN] NVARCHAR(10) DEFAULT 'NAO',
+        [EMAIL_ENVIADO] NVARCHAR(10) DEFAULT 'NAO',
+        [SIGEP] NVARCHAR(10) DEFAULT 'NAO',
+        [BAIXA_SIGEP] NVARCHAR(10) DEFAULT 'NAO',
+        
+        [createdAt] DATETIME DEFAULT GETDATE(),
+        [updatedAt] DATETIME DEFAULT GETDATE(),
+        [STATUS_TEXT] NVARCHAR(100) NULL,  -- For UI fallback
+        [requestDate] DATETIME NULL
+      );
+      
+      -- Add missing column to existing table if needed
+      IF COL_LENGTH('Requests', 'requestDate') IS NULL
+          ALTER TABLE Requests ADD requestDate DATETIME NULL;
+      IF COL_LENGTH('Requests', 'formType') IS NULL
+          ALTER TABLE Requests ADD formType VARCHAR(50) NULL;
+    `;
+
+    // Ensure T_ESTPLA also has metadata column if it doesn't
+    await sql.query`
+      IF COL_LENGTH('T_ESTPLA', 'meta_data') IS NULL
+          ALTER TABLE T_ESTPLA ADD [meta_data] NVARCHAR(MAX) NULL;
+      IF COL_LENGTH('T_ESTPLA', 'user_id') IS NULL
+          ALTER TABLE T_ESTPLA ADD [user_id] VARCHAR(100) NULL;
+      IF COL_LENGTH('T_ESTPLA', 'EmailContato') IS NULL
+          ALTER TABLE T_ESTPLA ADD [EmailContato] NVARCHAR(255) NULL;
+      IF COL_LENGTH('T_ESTPLA', 'TEL_SOL') IS NULL
+          ALTER TABLE T_ESTPLA ADD [TEL_SOL] NVARCHAR(50) NULL;
+          
+      -- Mandatory legacy columns defaults for T_ESTPLA compatibility
+      IF (SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'RegulardoSN') IS NULL
+          ALTER TABLE T_ESTPLA ADD CONSTRAINT DF_RegulardoSN DEFAULT 'NAO' FOR RegulardoSN;
+      IF (SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'EMAIL_ENVIADO') IS NULL
+          ALTER TABLE T_ESTPLA ADD CONSTRAINT DF_EMAIL_ENVIADO DEFAULT 'NAO' FOR EMAIL_ENVIADO;
+      IF (SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'CROQUI') IS NULL
+          ALTER TABLE T_ESTPLA ADD CONSTRAINT DF_CROQUI DEFAULT 'NAO' FOR CROQUI;
+      IF (SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'SIGEP') IS NULL
+          ALTER TABLE T_ESTPLA ADD CONSTRAINT DF_SIGEP DEFAULT 'NAO' FOR SIGEP;
+      IF (SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'BAIXA_SIGEP') IS NULL
+          ALTER TABLE T_ESTPLA ADD CONSTRAINT DF_BAIXA_SIGEP DEFAULT 'NAO' FOR BAIXA_SIGEP;
+      IF (SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'IDSIGEP') IS NULL
+          ALTER TABLE T_ESTPLA ADD CONSTRAINT DF_IDSIGEP DEFAULT 0 FOR IDSIGEP;
+      IF (SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T_ESTPLA' AND COLUMN_NAME = 'EstudoRelevante') IS NULL
+          ALTER TABLE T_ESTPLA ADD CONSTRAINT DF_EstudoRelevante DEFAULT 'NAO' FOR EstudoRelevante;
+    `;
+
+    // 4. Novas colunas para Sincronização Plena (FO03, FO04 e Resposta Técnica)
+    console.log('[Server] Verificando colunas para sincronização plena...');
+    const newColumns = [
+      // Columns from requests.json that may be missing in legacy T_ESTPLA or staging Requests
+      // Columns from requests.json that may be missing in legacy T_ESTPLA or staging Requests
+      ['NOME_CLIENTE', 'NVARCHAR(MAX)'],
+      ['MEMORANDO', 'NVARCHAR(255)'], ['MEMO_NUM', 'NVARCHAR(100)'], ['MEMO_DATA', 'NVARCHAR(100)'],
+      ['OPERADOR_M', 'NVARCHAR(100)'], ['DATA_M', 'NVARCHAR(100)'],
+      ['DAT_ENT_REA', 'DATETIME'], ['DAT_SA_SEP', 'DATETIME'],
+      ['PresSolMax', 'FLOAT'], ['PresSolMin', 'FLOAT'], ['PresSol', 'NVARCHAR(50)'],
+      ['HorOpeIni', 'NVARCHAR(50)'], ['HorOpeFin', 'NVARCHAR(50)'], ['DiaOpeMes', 'INT'],
+      ['ObsEstudSol', 'NVARCHAR(MAX)'],
+      ['PresClieMax', 'NVARCHAR(50)'], ['PresClieMin', 'NVARCHAR(50)'], ['PresClieGarant', 'NVARCHAR(50)'],
+      ['CODCARSEP', 'NVARCHAR(50)'], ['StatusEntrega', 'NVARCHAR(100)'],
+      ['ObservaResp', 'NVARCHAR(MAX)'], ['RegulardoSN', 'NVARCHAR(50)'], ['ReguladroVazao', 'INT'],
+      ['CriadorRegistro', 'NVARCHAR(100)'], ['DataCriaReg', 'NVARCHAR(100)'],
+      ['PressaoResposta', 'NVARCHAR(100)'], ['CustoRegulador', 'INT'],
+      ['PressaoEntrada', 'NVARCHAR(50)'], ['unidPresEnt', 'NVARCHAR(50)'],
+      ['PressaoSaida', 'INT'], ['unidPresSai', 'NVARCHAR(50)'],
+      ['VazaoFutura', 'INT'], ['PRESCALC', 'NVARCHAR(50)'],
+      ['fd', 'FLOAT'], ['fp', 'FLOAT'], ['vu', 'FLOAT'], ['Diversificar', 'FLOAT'],
+      ['carta_sepla', 'NVARCHAR(100)'], ['DAT_PREN_INI_OP', 'NVARCHAR(100)'], ['EMAIL_ENVIADO', 'NVARCHAR(100)'],
+      ['PRAZ_EST_CONST', 'NVARCHAR(50)'], ['CONSUMO_ESTIMADO', 'INT'],
+      ['PRESSAO_INICIAL', 'FLOAT'], ['PRESSAO_FINAL', 'INT'],
+      ['PRESSAO_ABSOLUTA', 'FLOAT'], ['PRESSAO_ATM', 'INT'], ['CODIGO_PASTA', 'NVARCHAR(50)'],
+      ['FK_MODELO', 'NVARCHAR(50)'], ['GRUPORED', 'INT'], ['SIGEP', 'NVARCHAR(100)'], ['BAIXA_SIGEP', 'NVARCHAR(100)'],
+      ['TIP_ES', 'INT'], ['GRUPO_EST', 'NVARCHAR(100)'], ['TIPO_EST', 'NVARCHAR(100)'],
+      ['GrauDificult', 'INT'],
+      ['Preparacion', 'FLOAT'], ['Simulacao', 'FLOAT'], ['Supervision', 'FLOAT'],
+      ['Tempo', 'FLOAT'], ['TempoEstimado', 'FLOAT'],
+      ['RedeExtTotal', 'INT'], ['OperadorConta', 'NVARCHAR(100)'],
+      ['IDSIGEPVINC', 'INT'], ['ESTRERERIDO', 'INT'],
+      ['NumEconomiasComIndEtc', 'INT'], ['VazaoSolComIndEtc', 'FLOAT'], ['UnidSolComIndEtc', 'NVARCHAR(50)'],
+      ['REGGNV', 'INT'],
+      // Existing technical columns
+      ['VazaoInsta', 'FLOAT'], ['QDC', 'INT'], ['HoraFunciona', 'INT'],
+      ['UF', 'NVARCHAR(50)'],
+      ['meta_data', 'NVARCHAR(MAX)'], ['user_id', 'VARCHAR(100)'],
+      ['EmailContato', 'NVARCHAR(255)'], ['TEL_SOL', 'NVARCHAR(50)'],
+      ['MEMO_RESPOSTA', 'NVARCHAR(MAX)'], ['NRO_EST_AN', 'NVARCHAR(50)'],
+      ['TPGASS', 'NVARCHAR(50)'], ['PRESGASS', 'NVARCHAR(50)'],
+      ['CROQUI', 'NVARCHAR(20)'], ['ESTUDO_RELEV', 'NVARCHAR(20)'],
+      ['DATA_SOLIC_OPER', 'DATETIME'],
+      ['VAZ_MEDIA', 'FLOAT'], ['VAZ_PICO', 'FLOAT']
+    ];
+
+    for (const [col, type] of newColumns) {
+      await sql.query(`
+        IF COL_LENGTH('Requests', '${col}') IS NULL
+            ALTER TABLE Requests ADD [${col}] ${type} NULL;
+        IF COL_LENGTH('T_ESTPLA', '${col}') IS NULL
+            ALTER TABLE T_ESTPLA ADD [${col}] ${type} NULL;
+      `);
+    }
+
+    // Fix existing undersized columns (UF was NVARCHAR(10), now needs NVARCHAR(50))
+    try {
+      await sql.query`ALTER TABLE Requests ALTER COLUMN [UF] NVARCHAR(50) NULL`;
+      await sql.query`ALTER TABLE T_ESTPLA ALTER COLUMN [UF] NVARCHAR(50) NULL`;
+    } catch (e) { /* Column may not exist yet or already correct size */ }
+
+    console.log('[Server] Populando colunas recém-criadas e corrigindo status de perfil...');
+    await sql.query`
+      -- 1. Marcar Analistas e Admins legados como perfil completo
+      UPDATE E_OPEMAN 
+      SET 
+        NATIVE_ROLE = CASE 
+                        WHEN RTRIM(LTRIM(EMAIL)) IN ('prgc@naturgy.com', 'solon@naturgy.com') THEN 'Administrador' 
+                        ELSE ISNULL(NATIVE_ROLE, 'Analista')
+                      END,
+        DEPARTMENT = ISNULL(DEPARTMENT, 'APR'),
+        PROFILE_COMPLETE = 1,
+        REQUIRES_PASSWORD_CHANGE = CASE 
+                                     WHEN [PASSWORD] IS NOT NULL AND [PASSWORD] LIKE '$2%' THEN 0 
+                                     ELSE 1 
+                                   END,
+        CREATED_AT = ISNULL(CREATED_AT, GETDATE())
+      WHERE EMAIL IS NOT NULL;
+
+      -- 2. Marcar Solicitantes com dados preenchidos como perfil completo
+      UPDATE Users_Solicitantes
+      SET profileComplete = 1
+      WHERE name IS NOT NULL AND area IS NOT NULL AND profileComplete = 0;
+    `;
+
+    // Migration logic for Password Encryption (Javascript side)
+    const userRes = await sql.query('SELECT EMAIL, SAP, [PASSWORD] FROM E_OPEMAN WHERE EMAIL IS NOT NULL');
+    for (const u of userRes.recordset) {
+      const email = u.EMAIL;
+      const sap = String(u.SAP || '').trim();
+      const pwd = u.PASSWORD;
+
+      const isHashed = pwd && (pwd.startsWith('$2a$') || pwd.startsWith('$2b$') || pwd.startsWith('$2y$'));
+      if (!isHashed) {
+        const passwordToHash = pwd || sap || '123456';
+        const hashedPassword = bcrypt.hashSync(passwordToHash, 10);
+        const updateReq = new sql.Request();
+        updateReq.input('email', sql.VarChar, email);
+        updateReq.input('hashed', sql.VarChar, hashedPassword);
+        await updateReq.query('UPDATE E_OPEMAN SET [PASSWORD] = @hashed WHERE EMAIL = @email');
+        console.log(`[Security] Migrated user ${email} to encrypted password.`);
+      }
+    }
+
+    // 2. Testing Route
+    app.get('/api/status', async (req, res) => {
+      try {
+        const result = await sql.query`SELECT 1 as isAlive, GETDATE() as systemDate`;
+        res.json({
+          status: 'online',
+          databaseAccess: 'success',
+          uptime: Math.floor(process.uptime()) + 's',
+          startedAt: serverStartTime.toLocaleString('pt-BR'),
+          data: result.recordset[0]
+        });
+      } catch (err) {
+        console.error('SQL test query error:', err);
+        res.status(500).json({ error: 'Database query failed' });
+      }
+    });
+
+    // 3. GET All Users (Híbrido: Users_Solicitantes + E_OPEMAN)
+    app.get('/api/users', async (req, res) => {
+      try {
+        const result = await sql.query`
+          SELECT 
+            [id], [email], [name], [role], [password], [department], [company], [roleDescription], [gb],
+            [phone], [area], [naturgyUnit],
+            [gb] as [sap],
+            CAST([profileComplete] as bit) as profileComplete, 
+            CAST([requiresPasswordChange] as bit) as requiresPasswordChange, 
+            CONVERT(VARCHAR(30), [createdAt], 120) as [createdAt],
+            NULL as [permissionsRaw]
+          FROM Users_Solicitantes
+          UNION ALL
+          SELECT 
+            RTRIM(LTRIM(CAST(EMAIL as varchar(100)))) as [id], 
+            RTRIM(LTRIM(EMAIL)) as [email], 
+            RTRIM(LTRIM(NOME)) as [name],  
+            RTRIM(LTRIM(NATIVE_ROLE)) as [role], 
+            ISNULL(RTRIM(LTRIM(CAST([PASSWORD] as varchar(255)))), RTRIM(LTRIM(CAST(SAP as varchar(255))))) as [password], 
+            RTRIM(LTRIM(DEPARTMENT)) as [department], 
+            RTRIM(LTRIM(EMPRESA)) as [company],
+            RTRIM(LTRIM(CARGO)) as [roleDescription],
+            RTRIM(LTRIM(USUARIO)) as [gb],
+            NULL as [phone],
+            RTRIM(LTRIM(DEPARTMENT)) as [area],
+            RTRIM(LTRIM(EMPRESA)) as [naturgyUnit],
+            RTRIM(LTRIM(SAP)) as [sap],
+            CAST(ISNULL(PROFILE_COMPLETE, 0) as bit) as profileComplete, 
+            CAST(CASE WHEN [PASSWORD] IS NULL OR [PASSWORD] = '' THEN 1 ELSE 0 END as bit) as requiresPasswordChange, 
+            CONVERT(VARCHAR(30), TRY_CAST(CREATED_AT AS DATETIME), 120) as [createdAt],
+            PERMISSOES as [permissionsRaw]
+          FROM E_OPEMAN
+          WHERE EMAIL IS NOT NULL AND LTRIM(RTRIM(EMAIL)) <> '' 
+          AND UPPER(LTRIM(RTRIM(CAST(FUNCIONARIO as varchar(50))))) IN ('1', 'S', 'SIM', 'V', 'VERDADEIRO', 'TRUE')
+        `;
+
+        const finalUsers = result.recordset.map(u => ({
+          ...u,
+          profileComplete: !!u.profileComplete,
+          requiresPasswordChange: !!u.requiresPasswordChange,
+          permissions: (u.permissionsRaw && typeof u.permissionsRaw === 'string') ? u.permissionsRaw.split(',').map(p => p.trim()) : []
+        }));
+
+        res.json(finalUsers);
+      } catch (err) {
+        console.error('Error fetching users:', err);
+        res.status(500).json({ error: 'Failed to fetch users' });
+      }
+    });
+
+    // 4. POST Upsert User
+    app.post('/api/users', async (req, res) => {
+      try {
+        const { id, email, name, role, password, department, profileComplete, requiresPasswordChange, permissions, company, roleDescription, gb, phone, area, naturgyUnit } = req.body;
+        
+        const request = new sql.Request();
+        request.input('id', sql.VarChar, id || '');
+        request.input('email', sql.VarChar, email || '');
+        request.input('name', sql.VarChar, name || '');
+        request.input('role', sql.VarChar, role || '');
+        request.input('department', sql.VarChar, department || '');
+        request.input('company', sql.VarChar, company || '');
+        request.input('roleDescription', sql.VarChar, roleDescription || '');
+        request.input('gb', sql.VarChar, gb || '');
+        request.input('phone', sql.VarChar, phone || '');
+        request.input('area', sql.VarChar, area || '');
+        request.input('naturgyUnit', sql.VarChar, naturgyUnit || '');
+        request.input('profileComplete', sql.Bit, profileComplete ? 1 : 0);
+        request.input('reqPassReset', sql.Bit, requiresPasswordChange ? 1 : 0);
+        request.input('permissions', sql.VarChar, permissions ? permissions.join(',') : '');
+
+        const isHashed = password && (password.startsWith('$2a$') || password.startsWith('$2b$') || password.startsWith('$2y$'));
+        const finalPwd = (password && !isHashed) ? bcrypt.hashSync(password, 10) : password;
+        request.input('finalPwd', sql.VarChar, finalPwd || '');
+
+        const r = role ? role.toLowerCase() : '';
+        if (r === 'analista' || r === 'adm' || r === 'administrador') {
+            await request.query`
+              UPDATE E_OPEMAN 
+              SET [PASSWORD] = @finalPwd,
+                  PERMISSOES = @permissions,
+                  DEPARTMENT = @department,
+                  EMPRESA = @company,
+                  CARGO = @roleDescription,
+                  SAP = @gb,
+                  PROFILE_COMPLETE = @profileComplete,
+                  REQUIRES_PASSWORD_CHANGE = @reqPassReset
+              WHERE EMAIL = @email
+            `;
+            return res.status(200).json(req.body); 
+        }
+
+        await request.query`
+          IF EXISTS (SELECT 1 FROM Users_Solicitantes WHERE id = @id)
+          BEGIN
+             UPDATE Users_Solicitantes SET 
+                email = @email, name = @name, role = @role, 
+                password = @finalPwd, department = @department,
+                company = @company, roleDescription = @roleDescription, gb = @gb,
+                phone = @phone, area = @area, naturgyUnit = @naturgyUnit,
+                profileComplete = @profileComplete, requiresPasswordChange = @reqPassReset
+             WHERE id = @id
+          END
+          ELSE
+          BEGIN
+             INSERT INTO Users_Solicitantes 
+                (id, email, name, role, password, department, company, roleDescription, gb, phone, area, naturgyUnit, profileComplete, requiresPasswordChange)
+             VALUES 
+                (@id, @email, @name, @role, @finalPwd, @department, @company, @roleDescription, @gb, @phone, @area, @naturgyUnit, @profileComplete, @reqPassReset)
+          END
+        `;
+
+        res.status(200).json(req.body);
+      } catch (err) {
+        console.error('Error saving user:', err);
+        res.status(500).json({ error: 'Failed to save user' });
+      }
+    });
+
+    // === Status Translation Mappings (Per User JSON) ===
+    const statusTextToCode = {
+      'Pendente': '330',              // Pré-Cadastro
+      'Em Análise': '100',            // Em Análise (Requests only)
+      'Validado': '200',              // Aberto
+      'Aguardando Execução': '200',    // Aberto
+      'Em Execução': '205',           // Em andamento
+      'Aguardando Informações': '240', // Aguardando Informações
+      'Controle de Qualidade': '280',  // Controle de Qualidade
+      'Aprovado pelo CQ': '215',       // Pronto (Estudo Pronto)
+      'Reprovado pelo CQ': '290',      // Rever Estudo CQ
+      'Enviado sem CQ': '215',         // Pronto
+      'Concluído': '210',              // Concluído (Enviado)
+      'Rejeitado': '220',              // Cancelado
+      'Cancelado': '220'               // Cancelado
+    };
+    
+    // === Study Group Mappings (GRUPO_EST) ===
+    const studyGroupToCode = {
+      'Expansão de Rede': '100',
+      'Renovação de Rede': '110',
+      'Operação de Rede': '120',
+      'Confiabilidade da Rede': '140',
+      'Conversão GN': '150',
+      'Outra': '160',
+      'Solicitação Gerencial': '170',
+      'Saturação': '180',
+      'Modelos de Cálculo': '190',
+      'Reforço': '200',
+      'Remanejamento': '210',
+      'Incremento de Vazão': '220',
+      'Definir': '0',
+      'GNNC': '230',
+      'Setorização ERDs': '240',
+      'Expansão GNV': '250'
+    };
+
+    const studySubTypeToCode = {
+      'Comercial': '300', 'Residencial': '310', 'Industrial': '315', 'Climatização': '320',
+      'Termogeração': '325', 'GNV': '330', 'MECOM': '335', 'Gaseificação Total': '340',
+      'Emergencial': '345', 'Programado': '350', 'Simulação': '355', 'Cogeração': '360',
+      'Mapas Temático': '365', 'Gaseificação Parcial': '370', 'Levantamento de Dados': '380',
+      'Consulta Avulsas': '390', 'Grande Comércio': '400', 'GNC': '410', 'Infra-estrutura': '420',
+      'Renovação': '430', 'GNV Frota': '440', 'Geração': '450', 'Geração de Emergência': '460',
+      'Reforço': '470', 'Remanejamento': '480', 'Residencial/Comercial': '490',
+      'Industrial/Geração Continua': '491', 'Definir': '0', 'Geração de Ponta': '492',
+      'Geração Contínua': '493', 'Análise de Pressões e Vazões': '500',
+      'Setorização ERDs': '510', 'Expansão GNV': '520', 'Estação de Liquefação - GNL': '530'
+    };
+
+    const gniTypeToCode = {
+      'Elaboração/Revisão de Modelos Matemáticos Winflow': '2',
+      'Grandes Clientes (IND/GNV/GER/ETC) - Estudo de Viabilidade Técnica': '3',
+      'Planificação de Novos municípios (Elaboração/Revisão)': '4',
+      'Planificação Reforços/Religamento MP/BP (Elaboração/Revisão)': '5',
+      'Planificação Reforços/Religamento AP (Elaboração/Revisão)': '6',
+      'Abastecimento Novos Municípios GNC': '7',
+      'Estudes Especiais (Propostas Expansão GNV, Levantamento de Dados, etc)': '8',
+      'Estudos GNNC / Manobras': '9',
+      'Residencial/Comercial - Estudo de Viabilidade Técnica': '1'
+    };
+
+    const statusCodeToText = {
+      '200': 'Aguardando Execução',
+      '205': 'Em Execução',
+      '210': 'Concluído',
+      '211': 'Errata de Estudo',
+      '215': 'Pronto',
+      '220': 'Cancelado',
+      '230': 'Adiado',
+      '240': 'Aguardando Informações',
+      '250': 'Concluído - Cliente Não Contratado',
+      '260': 'Substituido',
+      '270': 'Em Vigor',
+      '280': 'Controle de Qualidade',
+      '290': 'Rever Estudo CQ',
+      '300': 'Em Uso',
+      '310': 'Demada Solicitada',
+      '320': 'Vencido',
+      '325': 'Contratado',
+      '330': 'Pré-Cadastro'
+    };
+
+    const areaCodeToText = {
+      "230": "GGC-Gerência de Grandes Clientes", "921": "Delegação Leste", "922": "Delegação Oeste",
+      "923": "GENE - Gerência de Novas Edificações", "924": "GESET - Gerência de Serviços Técnicos Rio",
+      "925": "GERAT-Regulação e Aprovisionamento de Tarifas", "926": "GESET-LE - Gerência de Serviços Técnicos LESTE",
+      "927": "Delegação Sul Fluminense e Baixada", "928": "Delegação Comercial Lagos e Zona Fluminense",
+      "929": "Delegação Centro Sul", "930": "Delegação Norte",
+      "931": "Operacional - SPS", "932": "GNF/SPS - Vendas Industriais", "933": "Operações Centrais de Rede",
+      "934": "Delegação Norte Fluminense Litorânea", "935": "Delegação Leste Flitorânea",
+      "936": "Coordenação de Mercado Termoelétrico", "938": "Delegação Leste Fluminense Serrana",
+      "940": "Gerência de Gestão de Ativos", "941": "Grandes Clientes e Soluções Energéticas Sul",
+      "942": "ADR-Análise e Dimensionamento de Rede", "943": "CCAU - Centro de Controle e Atendimento a Urgência",
+      "944": "GGCSPS - Grandes Clientes", "945": "Soluções de Mobilidade",
+      "947": "CCR NovaDutra", "948": "Planificação da Expansão",
+      "950": "ST Zona Metropolitana RJ", "952": "CCOR-Centro de Controle e Operação da Rede",
+      "953": "Gestão de Energia", "954": "PMI – Planificação da Manutenção e Integridade",
+      "955": "BDG - Balanço de Gás", "829": "Gerência Comercial - GNSPS"
+    };
+
+    const unitCodeToText = {
+      "1": "Capital", "2": "Interior", "3": "SPS"
+    };
+
+    // 5. Helper to map database rows to Frontend FormData common structure
+    const mapStudyRow = (row, sapToNameMap, statusCodeToText, areaCodeToText, unitCodeToText) => {
+      let meta = {};
+      try {
+        meta = row.meta_data ? JSON.parse(row.meta_data) : {};
+      } catch (e) {
+        console.error('Error parsing meta_data for row:', row.id, e.message);
+      }
+
+      const trimmedStatus = String(row.status || '').trim();
+      let displayStatus = meta.status || statusCodeToText[trimmedStatus] || trimmedStatus;
+      if (!displayStatus || displayStatus === 'undefined') displayStatus = 'Em Análise';
+      
+      const sapCode = String(row.respSepla || '').trim().replace(/^0+/, '');
+      let analystName = sapToNameMap[sapCode] || sapCode || 'ADRSis - SISTEMA';
+      if (sapCode.toUpperCase() === 'ADRSIS') analystName = 'ADRSis - SISTEMA';
+
+      const numType = parseInt(row.formType) || 0;
+      const displayType = (numType > 0 && numType < 100) ? `PE.00492-FO.${String(numType).padStart(2, '0')}` : row.formType;
+
+      const getField = (rowKey, metaKey) => {
+        const val = row[rowKey];
+        return (val !== null && val !== undefined && val !== '') ? val : meta[metaKey || rowKey];
+      };
+
+      const rawArea = getField('requesterArea');
+      const displayArea = areaCodeToText[String(rawArea).trim()] || rawArea;
+
+      const rawUnit = row.RESP_UNID || meta.empresa || meta.naturgyUnit || '';
+      const displayUnit = unitCodeToText[String(rawUnit).trim()] || rawUnit;
+
+      return {
+        ...meta,
+        id: String(row.id),
+        user_id: row.user_id,
+        formType: displayType,
+        studyNumber: row.studyNumber,
+        assignedTo: sapCode || 'ADRSis - SISTEMA',
+        analystName: analystName, 
+        assignedToName: analystName, 
+        requesterName: getField('requesterName'),
+        requesterArea: displayArea,
+        naturgyUnit: displayUnit,
+        empresa: displayUnit,
+        studyTitle: getField('studyTitle'),
+        address: getField('address'),
+        city: toTitleCase(getField('city')),
+        email: getField('email'),
+        phone: getField('phone'),
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        requestDate: row.requestDate || meta.requestDate || meta.DAT_IN_SEP,
+        estimatedDeliveryDate: row.estimatedDeliveryDate || meta.estimatedDeliveryDate || meta.dtEntregaPrevista || meta.deliveryDeadline || null,
+        
+        rejectionReason: getField('MOTIVO_REJEICAO', 'rejectionReason'),
+        holdReason: getField('MOTIVO_PAUSA', 'holdReason'),
+        holdResponse: getField('RESPOSTA_PAUSA', 'holdResponse'),
+        mapLocation: getField('LINK_MAPA', 'mapLocation'),
+        fileType: getField('TIPO_ARQUIVO', 'fileType'),
+        state: getField('UF', 'state'),
+        gasificationType: getField('TIPO_GASIFICACAO', 'gasificationType'),
+        clientName: getField('NOME_CLIENTE', 'clientName'),
+        deliveryPoint: getField('PONTO_ENTREGA', 'deliveryPoint'),
+        consumptionIncrement: getField('INCREMENTO_CONSUMO', 'consumptionIncrement'),
+        workDaysPerWeek: getField('DIAS_TRABALHO_SEMANA', 'workDaysPerWeek'),
+        totalPredictedFlow: getField('VAZAO_TOTAL_PREVISTA', 'totalPredictedFlow'),
+        minPressure: getField('PRESSAO_MINIMA', 'minPressure'),
+        sapIsuCode: getField('CODIGO_SAP_ISU', 'sapIsuCode'),
+        industryName: getField('NOME_INDUSTRIA', 'industryName'),
+        currentConsumption: getField('CONSUMO_ATUAL', 'currentConsumption'),
+        contractualPressure: getField('PRESSAO_CONTRATUAL', 'contractualPressure'),
+        currentPressureRange: getField('FAIXA_PRESSAO_ATUAL', 'currentPressureRange'),
+        uteName: getField('NOME_UTE', 'uteName') || getField('TITULO', 'studyTitle'),
+
+        pressMaxUTE: getField('PRESS_MAX_UTE', 'pressMaxUTE'),
+        pressMinUTE: getField('PRESS_MIN_UTE', 'pressMinUTE'),
+        pressMaxUPGN: getField('PRESS_MAX_UPGN', 'pressMaxUPGN'),
+        pressMinUPGN: getField('PRESS_MIN_UPGN', 'pressMinUPGN'),
+        responseMaxPo: getField('RESP_MAX_PO', 'responseMaxPo'),
+        responseMin: getField('RESP_MIN', 'responseMin'),
+        responseGarantia: getField('RESP_GARANTIA', 'responseGarantia'),
+        analystCompany: getField('ANALISTA_EMPRESA', 'analystCompany'),
+        analystRole: getField('ANALISTA_CARGO', 'analystRole'),
+        analystGB: getField('ANALISTA_GB', 'analystGB'),
+        responseMemo: getField('MEMO_RESPOSTA', 'responseMemo'),
+        marketCategory: getField('CATEGORIA_MERCADO', 'marketCategory'),
+        responseUnit: getField('RESP_UNID', 'responseUnit'),
+        instantFlow: getField('VazaoInsta', 'instantFlow'),
+        VazaoInsta: getField('VazaoInsta'),
+        qdc: getField('QDC', 'qdc'),
+        QDC: getField('QDC'),
+        workHours: getField('HoraFunciona', 'workHours'),
+        HoraFunciona: getField('HoraFunciona'),
+        
+        gasPressureLevel: getField('PRESSAO', 'gasPressureLevel'),
+        operationStartDate: getField('DATA_SOLIC_OPER', 'operationStartDate'),
+        averageFlow: getField('VAZ_MEDIA', 'averageFlow'),
+        peakFlow: getField('VAZ_PICO', 'peakFlow'),
+        neighborhood: getField('BAIRRO', 'neighborhood')
+      };
+    };
+
+    // 6. GET All Requests (Hybrid: Requests + T_ESTPLA) - Sequential queries
+    app.get('/api/requests', async (req, res) => {
+      try {
+        const { userId, area, role } = req.query;
+
+
+        // Resolve area name for fallback query in Requests table
+        let areaName = area;
+        if (area && !isNaN(parseInt(area))) {
+          areaName = areaCodeToText[area] || area;
+        }
+
+        // --- Query 1: Active Requests (status is APP text) ---
+        const sqlReq1 = new sql.Request();
+        let wherePart1 = '';
+        if (role === 'Solicitante') {
+          sqlReq1.input('uid', sql.VarChar, userId || '');
+          sqlReq1.input('areaCode', sql.VarChar, area || '');
+          sqlReq1.input('areaName', sql.VarChar, areaName || '');
+          wherePart1 = ` WHERE (user_id = @uid OR UPPER(LTRIM(RTRIM(SOL_ORGAO))) = UPPER(@areaCode) OR UPPER(LTRIM(RTRIM(SOL_ORGAO))) = UPPER(@areaName)) `;
+        }
+        const resReq = await sqlReq1.query(`
+          SELECT 
+            id, user_id, formType, meta_data,
+            NRO_ESTUDO as studyNumber, STATUS as status, SOL_RESPON as requesterName, SOL_ORGAO as requesterArea,
+            TITULO as studyTitle, LOCALIZ as address, Municipio as city, EmailContato as email, TEL_SOL as phone,
+            createdAt, updatedAt, ISNULL(requestDate, createdAt) as requestDate,
+            dtEntregaPrevista as estimatedDeliveryDate,
+            MOTIVO_REJEICAO, MOTIVO_PAUSA, RESPOSTA_PAUSA, LINK_MAPA, TIPO_ARQUIVO, UF, TIPO_GASIFICACAO,
+            NOME_CLIENTE, PONTO_ENTREGA, INCREMENTO_CONSUMO, DIAS_TRABALHO_SEMANA, VAZAO_TOTAL_PREVISTA,
+            PRESSAO_MINIMA, CODIGO_SAP_ISU, NOME_INDUSTRIA, CONSUMO_ATUAL, PRESSAO_CONTRATUAL, FAIXA_PRESSAO_ATUAL,
+            NOME_UTE, PRESS_MAX_UTE, PRESS_MIN_UTE, PRESS_MAX_UPGN, PRESS_MIN_UPGN,
+            RESP_MAX_PO, RESP_MIN, RESP_GARANTIA, ANALISTA_EMPRESA, ANALISTA_CARGO, ANALISTA_GB, MEMO_RESPOSTA,
+            VazaoInsta, QDC, HoraFunciona, CATEGORIA_MERCADO, RESP_UNID
+          FROM Requests
+          ${wherePart1}
+          ORDER BY createdAt DESC
+        `);
+
+        // --- Query 2: Legacy T_ESTPLA (status is numeric code) ---
+        const sqlReq2 = new sql.Request();
+        let wherePart2 = '';
+        if (role === 'Solicitante') {
+          sqlReq2.input('uid', sql.VarChar, userId || '');
+          sqlReq2.input('areaCode', sql.VarChar, area || '');
+          sqlReq2.input('areaName', sql.VarChar, areaName || '');
+          wherePart2 = ` WHERE (user_id = @uid OR UPPER(LTRIM(RTRIM(SOL_ORGAO))) = UPPER(@areaCode) OR UPPER(LTRIM(RTRIM(SOL_ORGAO))) = UPPER(@areaName)) `;
+        }
+        // Pre-fetch users for name mapping
+        const sapToNameMap = await getSapToNameMap();
+
+        const resLeg = await sqlReq2.query(`
+          SELECT TOP 50000
+            CAST(T.id as varchar(100)) as id, T.user_id, T.FK_MODELO as formType, T.meta_data,
+            LTRIM(RTRIM(ISNULL(CAST(T.NRO_ESTUDO as varchar(100)), CAST(T.IDSIGEP as varchar(100))))) as studyNumber, 
+            CAST(T.STATUS as varchar(50)) as status,
+            T.SOL_RESPON as requesterName, LTRIM(RTRIM(CAST(T.SOL_ORGAO as varchar(50)))) as requesterArea,
+            T.TITULO as studyTitle, T.LOCALIZ as address, T.Municipio as city, T.EmailContato as email, T.TEL_SOL as phone,
+            ISNULL((SELECT TOP 1 createdAt FROM Requests WHERE id = CAST(T.id as varchar(100))), T.DataCriaReg) as createdAt, 
+            T.DataCriaReg as updatedAt, LTRIM(RTRIM(CAST(T.RESP_SEPLA as varchar(50)))) as respSepla,
+            T.DAT_IN_SEP as requestDate, T.dtEntregaPrevista as estimatedDeliveryDate,
+            NULL as MOTIVO_REJEICAO, NULL as MOTIVO_PAUSA, NULL as RESPOSTA_PAUSA, NULL as LINK_MAPA, NULL as TIPO_ARQUIVO, T.UF, NULL as TIPO_GASIFICACAO,
+            T.NOME_CLIENTE, NULL as PONTO_ENTREGA, NULL as INCREMENTO_CONSUMO, NULL as DIAS_TRABALHO_SEMANA, NULL as VAZAO_TOTAL_PREVISTA,
+            NULL as PRESSAO_MINIMA, NULL as CODIGO_SAP_ISU, NULL as NOME_INDUSTRIA, NULL as CONSUMO_ATUAL, NULL as PRESSAO_CONTRATUAL, NULL as FAIXA_PRESSAO_ATUAL,
+            NULL as NOME_UTE, NULL as PRESS_MAX_UTE, NULL as PRESS_MIN_UTE, NULL as PRESS_MAX_UPGN, NULL as PRESS_MIN_UPGN,
+            NULL as RESP_MAX_PO, NULL as RESP_MIN, NULL as RESP_GARANTIA, NULL as ANALISTA_EMPRESA, NULL as ANALISTA_CARGO, NULL as ANALISTA_GB, NULL as MEMO_RESPOSTA,
+            T.VazaoInsta, T.QDC, T.HoraFunciona, NULL as CATEGORIA_MERCADO, NULL as RESP_UNID
+          FROM T_ESTPLA T
+          ${wherePart2}
+          ORDER BY T.IDSIGEP DESC
+        `);
+
+        const combinedMap = new Map();
+         
+        // 1. First Pass: Legacy T_ESTPLA (Official studies)
+        resLeg.recordset.forEach(row => {
+          combinedMap.set(String(row.id), row);
+        });
+
+        // 2. Second Pass: Requests Staging (Only if ID not already in map)
+        resReq.recordset.forEach(row => {
+          const id = String(row.id);
+          if (!combinedMap.has(id)) {
+            combinedMap.set(id, row);
+          }
+        });
+
+        const combined = Array.from(combinedMap.values()).map(row => 
+          mapStudyRow(row, sapToNameMap, statusCodeToText, areaCodeToText, unitCodeToText)
+        );
+
+
+        // Sort by studyNumber descending (highest to lowest)
+        combined.sort((a, b) => {
+          const numA = a.studyNumber || '';
+          const numB = b.studyNumber || '';
+          return numB.localeCompare(numA, undefined, { numeric: true, sensitivity: 'base' });
+        });
+        
+        res.json(combined);
+      } catch (err) {
+        console.error('[Server] Fatal Error fetching requests:', err.message);
+        res.status(500).json({ error: 'Failed to fetch requests', details: err.message });
+      }
+    });
+
+    // 7b. GET Full Study Details by Number
+    app.get('/api/requests/study/:studyNumber', async (req, res) => {
+      try {
+        const { studyNumber } = req.params;
+        const sqlReq = new sql.Request();
+        sqlReq.input('studyNumber', sql.VarChar, studyNumber);
+
+        // Fetch from both tables (Requests and Legacy T_ESTPLA)
+        // Requests uses NRO_ESTUDO (aliased to studyNumber in lists)
+        const r1 = await sqlReq.query`
+          SELECT *, NRO_ESTUDO as studyNumber 
+          FROM Requests 
+          WHERE NRO_ESTUDO = @studyNumber
+        `;
+        
+        // T_ESTPLA uses NRO_ESTUDO or IDSIGEP
+        const r2 = await sqlReq.query`
+          SELECT *, 
+            LTRIM(RTRIM(ISNULL(CAST(NRO_ESTUDO as varchar(100)), CAST(IDSIGEP as varchar(100))))) as studyNumber 
+          FROM T_ESTPLA 
+          WHERE NRO_ESTUDO = @studyNumber 
+             OR CAST(IDSIGEP as varchar(100)) = @studyNumber
+             OR NRO_EST_AN = @studyNumber
+        `;
+
+        const row = r1.recordset[0] || r2.recordset[0];
+
+        if (!row) {
+          return res.status(404).json({ error: 'Study not found' });
+        }
+
+        // We need the maps for the helper
+        const sapToNameMap = await getSapToNameMap();
+        const mapped = mapStudyRow(row, sapToNameMap, statusCodeToText, areaCodeToText, unitCodeToText);
+
+        res.json(mapped);
+      } catch (err) {
+        console.error('Error fetching full study:', err);
+        res.status(500).json({ error: 'Failed' });
+      }
+    });
+
+    // 8. GET Next Study Number / Duplicate CheckID (matching T_ESTPLA numeric pattern)
+    app.get('/api/requests/next-id', async (req, res) => {
+      try {
+        const r1 = await sql.query`SELECT MAX(CAST(id as int)) as maxId FROM T_ESTPLA WHERE ISNUMERIC(id) = 1`;
+        const r2 = await sql.query`SELECT MAX(CAST(id as int)) as maxId FROM Requests WHERE ISNUMERIC(id) = 1`;
+        const max1 = r1.recordset[0]?.maxId || 0;
+        const max2 = r2.recordset[0]?.maxId || 0;
+        const nextId = Math.max(max1, max2) + 1;
+        res.json({ nextId: String(nextId) });
+      } catch (err) {
+        console.error('Error generating next ID:', err.message);
+        res.status(500).json({ error: 'Failed to generate ID' });
+      }
+    });
+
+    // 6. POST Upsert Request with Move logic + Full T_ESTPLA mapping
+    const textToStatusCode = {
+      'Pendente': 240,                // 240 = Aguardando Informações
+      'Rascunho': 330,                // 330 = Pré-Cadastro
+      'Em Análise': 330,              // 330 = Pré-Cadastro
+      'Validado': 200,                // 200 = Aberto
+      'Aguardando Execução': 200,     // 200 = Aberto
+      'Aberto': 200,
+      'Em Execução': 205,             // 205 = Em andamento
+      'Aguardando Informações': 240,  // 240 = Aguardando Informações
+      'Controle de Qualidade': 280,   // 280 = Controle de Qualidade
+      'Aprovado pelo CQ': 215,        // 215 = Pronto
+      'Reprovado pelo CQ': 290,       // 290 = Rever Estudo CQ
+      'Enviado sem CQ': 215,          // 215 = Pronto
+      'Concluído': 210,               // 210 = Concluído
+      'Rejeitado': 220,               // 220 = Cancelado
+      'Cancelado': 220,               // 220 = Cancelado
+    };
+
+  app.post('/api/requests', async (req, res) => {
+    console.log(`[Server] 📥 Received POST /api/requests - ID: ${req.body?.id}, Status: ${req.body?.status}`);
+    const data = req.body;
+    
+    if (!data || Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'Dados ausentes' });
+    }
+
+    if (!data.user_id && !data.userId) {
+      return res.status(400).json({ error: 'Usuário não identificado' });
+    }
+
+    let numericStatus = 100; // Default: Em Análise
+    try {
+      numericStatus = textToStatusCode[data.status] !== undefined ? textToStatusCode[data.status] : 330;
+      // Explicit override for "Em Análise" to ensure 330
+      if (data.status === 'Em Análise' || data.status === 'Em Analise' || data.status === 'Pendente') numericStatus = 330;
+    } catch (e) {
+      console.error('Error mapping status text to code:', data.status, e.message);
+    }
+    
+    // Rule: Move to T_ESTPLA if status is validated (2xx) OR if it ALREADY exists there (Sync corrections)
+    let shouldMoveToT_ESTPLA = numericStatus >= 200 && numericStatus < 300;
+    
+    // Check if it already exists in T_ESTPLA to ensure status sync for corrections (Status 330)
+    if (!shouldMoveToT_ESTPLA && data.id) {
+       try {
+         const checkRes = await sql.query`SELECT 1 FROM T_ESTPLA WHERE id = ${String(data.id)}`;
+         if (checkRes.recordset.length > 0) {
+           console.log(`[StatusSync] 🔄 ID ${data.id} existing in T_ESTPLA. Enabling sync for status ${numericStatus}.`);
+           shouldMoveToT_ESTPLA = true;
+         }
+       } catch (err) {
+         console.warn('[StatusSync] Error checking T_ESTPLA existence', err.message);
+       }
+    }
+
+    console.log(`[StatusSync] 🔄 Incoming: "${data.status}" -> Code: ${numericStatus} (Moved to T_ESTPLA: ${shouldMoveToT_ESTPLA})`);
+
+    const statusVal = numericStatus;
+    const now = new Date();
+    // Always use current date for submissions/edits as requested by the user
+    const effectiveRequestDate = now; 
+
+    // Formatting Helpers
+    const toTitleCase = (str) => {
+      if (!str) return '';
+      return String(str)
+        .toLowerCase()
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    };
+
+    // Field Mappings for Legacy T_ESTPLA persistence
+    const areaMapping = {
+      "ADR-Análise e Dimensionamento de Rede": "942",
+      "BDG - Balanço de Gás": "955",
+      "CCAU - Centro de Controle e Atendimento a Urgência": "943",
+      "CCOR-Centro de Controle e Operação da Rede": "952",
+      "CCR NovaDutra": "947",
+      "Coordenação de Mercado Termoelétrico": "936",
+      "Delegação Centro Sul": "929",
+      "Delegação Comercial Lagos e Zona Fluminense": "928",
+      "Delegação Leste": "921",
+      "Delegação Leste Fluminense Litorânea": "935",
+      "Delegação Leste Fluminense Serrana": "938",
+      "Delegação Norte": "930",
+      "Delegação Norte Fluminense Litorânea": "934",
+      "Delegação Oeste": "922",
+      "Delegação Sul Fluminense e Baixada": "927",
+      "GENE - Gerência de Novas Edificações": "923",
+      "GERAT-Regulação e Aprovisionamento de Tarifas": "925",
+      "Gerência Comercial - GNSPS": "829",
+      "Gerência de Gestão de Ativos": "940",
+      "GESET - Gerência de Serviços Técnicos Rio": "924",
+      "GESET-LE - Gerência de Serviços Técnicos LESTE": "926",
+      "Gestão de Energia": "953",
+      "GGC-Gerência de Grandes Clientes": "230",
+      "GGCSPS - Grandes Clientes": "944",
+      "GNF/SPS - Vendas Industriais": "932",
+      "Grandes Clientes e Soluções Energéticas Sul": "941",
+      "Operacional - SPS": "931",
+      "Operacional - SPS": "931",
+      "Operações Centrais de Rede": "933",
+      "PMI – Planificação da Manutenção e Integridade": "954",
+      "Planificação da Expansão": "948",
+      "ST Zona Metropolitana RJ": "950",
+      "Soluções de Mobilidade": "945"
+    };
+
+    const difficultyMapping = {
+      "FACIL": 1, "Fácil": 1, "Facil": 1,
+      "MEDIO": 2, "Médio": 2, "Medio": 2,
+      "DIFICIL": 3, "Difícil": 3, "Dificil": 3
+    };
+
+    const studyGroupMapping = {
+      "Expansão de Rede": "100", "Expansão": "100",
+      "Renovação de Rede": "110", "Renovação": "110",
+      "Operação de Rede": "120",
+      "Confiabilidade da Rede": "140",
+      "Conversão GN": "150",
+      "Solicitação Gerencial": "170",
+      "Saturação": "180",
+      "Modelos de Cálculo": "190",
+      "Reforço": "200",
+      "Remanejamento": "210",
+      "Incremento de Vazão": "220",
+      "GNNC": "230",
+      "Setorização ERDs": "240",
+      "Expansão GNV": "250",
+      "Outra": "160"
+    };
+
+    const studySubTypeMapping = {
+      "Comercial": "300",
+      "Residencial": "310",
+      "Industrial": "315",
+      "Climatização": "320",
+      "Termogeração": "325",
+      "GNV": "330",
+      "MECOM": "335",
+      "Gaseificação Total": "340",
+      "Gaseificação Parcial": "370",
+      "Emergencial": "345",
+      "Programado": "350",
+      "Simulação": "355",
+      "Cogeração": "360",
+      "Levantamento de Dados": "380",
+      "Consulta Avulsas": "390",
+      "Grande Comércio": "400",
+      "GNC": "410",
+      "Infra-estrutura": "420",
+      "Renovação": "430",
+      "GNV Frota": "440",
+      "Geração": "450",
+      "Geração de Emergência": "460",
+      "Reforço": "470",
+      "Remanejamento": "480",
+      "Residencial/Comercial": "490",
+      "Industrial/Geração Continua": "491",
+      "Geração de Ponta": "492",
+      "Geração Contínua": "493"
+    };
+
+    const gasTypeMapping = {
+      "GN": "GN", "Gás Natural": "GN",
+      "GLP": "GP", "GP": "GP",
+      "GNL": "GL",
+      "GNC": "GC"
+    };
+
+    const gniTypeMapping = {
+       "Residencial/Comercial - Estudo de Viabilidade Técnica": 1,
+       "Winflow": 2, "Actualización Red y consumos": 2,
+       "Grandes Clientes (IND/GNV/GER/ETC) - Estudo de Viabilidade Técnica": 3,
+       "Planificação de Novos municípios": 4,
+       "Planificação Reforços/Religamento MP/BP": 5,
+       "Planificação Reforços/Religamento AP": 6,
+       "Abastecimento Novos Municípios GNC": 7,
+       "Estudos Especiais": 8,
+       "Estudos GNNC / Manobras": 9
+    };
+
+    const formMapping = {
+      'PE.00492-FO.01': 1,
+      'PE.00492-FO.02': 2,
+      'PE.00492-FO.03': 3,
+      'PE.00492-FO.04': 4
+    };
+
+    const unitMapping = {
+      "CEG": 1, "Capital": 1,
+      "CEG RIO": 2, "Interior": 2,
+      "SPS": 3, "CEG SPS": 3
+    };
+
+    const mappedArea = areaMapping[data.requesterArea] || data.requesterArea || '';
+    const mappedForm = formMapping[data.formType] || data.formType || '';
+    const mappedUnit = unitMapping[data.empresa || data.naturgyUnit] || data.empresa || data.naturgyUnit || '';
+    const mappedCity = data.city ? toTitleCase(data.city).trim() : '';
+
+    try {
+      // Helper to handle legacy FLOAT dates (OADate format)
+      const dateToOADate = (dateObj) => {
+        if (!dateObj || isNaN(dateObj.getTime())) return null;
+        const epoch = new Date(1899, 11, 30);
+        return (dateObj.getTime() - epoch.getTime()) / (1000 * 60 * 60 * 24);
+      };
+
+      // Robust Numeric Parsing Helpers
+      const safeParseFloat = (val) => {
+        if (val === null || val === undefined || val === '') return null;
+        if (typeof val === 'number') return val;
+        const clean = String(val).replace(',', '.').trim();
+        const p = parseFloat(clean);
+        return isNaN(p) ? null : p;
+      };
+
+      const safeParseInt = (val) => {
+        if (val === null || val === undefined || val === '') return 0;
+        if (typeof val === 'number') return Math.floor(val);
+        const clean = String(val).replace(/[^0-9]/g, '').trim();
+        const p = parseInt(clean);
+        return isNaN(p) ? 0 : p;
+      };
+      
+      const safeFloat = safeParseFloat;
+      const safeInt = safeParseInt;
+
+      if (shouldMoveToT_ESTPLA) {
+        // Migration to Technical System (T_ESTPLA)
+        // ============================================================
+        const sqlReq = new sql.Request();
+        const requestId = String(data.id);
+        const effectiveUserId = data.user_id || data.userId || '';
+        const effectiveFormType = String(mappedForm);
+        const rawNro = data.studyNumber || data.nro || '';
+        let effectiveNro = String(rawNro);
+        if (typeof rawNro === 'object' && rawNro !== null) {
+          effectiveNro = String(rawNro.nextNumber || rawNro.studyNumber || rawNro.nro || '');
+        }
+        if (effectiveNro === '[object Object]') effectiveNro = '';
+
+        sqlReq.input('id', sql.VarChar, requestId);
+        sqlReq.input('user_id', sql.VarChar, effectiveUserId);
+        sqlReq.input('formType', sql.VarChar, String(effectiveFormType));
+        sqlReq.input('nro', sql.VarChar, effectiveNro);
+        sqlReq.input('status', sql.VarChar, String(statusVal));
+        sqlReq.input('meta', sql.NVarChar, JSON.stringify(data));
+        sqlReq.input('now', sql.DateTime, now);
+
+        // Technical fields (FO.01 - FO.04 mapping)
+        sqlReq.input('emp', sql.VarChar, String(mappedUnit));
+        sqlReq.input('org', sql.VarChar, String(mappedArea));
+        sqlReq.input('resp', sql.VarChar, data.requesterName || '');
+        sqlReq.input('tit', sql.VarChar, data.studyTitle || data.clientName || data.uteName || '');
+        sqlReq.input('pres', sql.Float, safeFloat(data.pressure || data.gasPressureLevel || data.suggestedPressureRange));
+        sqlReq.input('obs', sql.VarChar, (data.comments || '') + (data.validatorObservations ? `\n--- Validação: ${data.validatorObservations}` : ''));
+        sqlReq.input('bairro', sql.VarChar, data.neighborhood || data.bairro || '');
+        sqlReq.input('muni', sql.VarChar, mappedCity);
+        sqlReq.input('numE', sql.Int, safeInt(data.numClientsRes || 0));
+        const effectiveVazS = (mappedForm == 2) ? (data.totalFlowRes || 0) : (data.totalFlow || data.peakFlow || data.averageFlow || 0);
+        sqlReq.input('vazS', sql.Float, safeFloat(effectiveVazS));
+        sqlReq.input('vazI', sql.Float, safeFloat(data.instantFlow || 0));
+        sqlReq.input('cons', sql.Float, safeFloat(data.monthlyConsumption || 0));
+
+        sqlReq.input('pMax', sql.Float, safeFloat(data.presSolMax || 0));
+        sqlReq.input('pMin', sql.Float, safeFloat(data.presSolMin || 0));
+        sqlReq.input('hIn', sql.VarChar, String(data.horOpeIni || ''));
+        sqlReq.input('hFin', sql.VarChar, String(data.horOpeFin || ''));
+        sqlReq.input('dMes', sql.Int, safeInt(data.workDaysPerWeek || 0) * 4);
+        sqlReq.input('mail', sql.VarChar, data.email || '');
+        sqlReq.input('numE2', sql.Int, safeInt(data.numClientsCom || 0));
+        sqlReq.input('vazS2', sql.Float, safeFloat(data.totalFlowCom || 0));
+        
+        // Technical Technical Response fields (from executers)
+        let respSeplaValue = data.assignedTo || '';
+        if (respSeplaValue) {
+          try {
+            // Search by Email, NomeCompleto, or NOME to get SAP
+            const userSapResult = await sql.query`
+              SELECT TOP 1 RTRIM(LTRIM(SAP)) as SAP 
+              FROM E_OPEMAN 
+              WHERE email = ${respSeplaValue.trim()} 
+                 OR NomeCompleto = ${respSeplaValue.trim()}
+                 OR NOME = ${respSeplaValue.trim()}
+            `;
+            if (userSapResult.recordset.length > 0 && userSapResult.recordset[0].SAP) {
+              respSeplaValue = userSapResult.recordset[0].SAP;
+            }
+          } catch (sapErr) {
+            console.error(`[SAP Lookup] Error resolving SAP for ${respSeplaValue}:`, sapErr);
+          }
+        }
+        sqlReq.input('respSepla', sql.VarChar, respSeplaValue);
+        sqlReq.input('localiz', sql.VarChar, (data.address || '') + (data.number ? ' ' + data.number : ''));
+        sqlReq.input('tel', sql.VarChar, data.phone || '');
+        sqlReq.input('entradaReal', sql.Float, data.validationDate ? dateToOADate(new Date(data.validationDate)) : null);
+        sqlReq.input('datEnSep', sql.Float, data.createdAt ? dateToOADate(new Date(data.createdAt)) : dateToOADate(effectiveRequestDate));
+        sqlReq.input('datInSep', sql.Float, data.startedAt ? dateToOADate(new Date(data.startedAt)) : null);
+        sqlReq.input('datSaSep', sql.Float, data.completedAt ? dateToOADate(new Date(data.completedAt)) : null);
+        const numericIDSIGEP = parseInt((data.studyNumber || '').replace(/[^0-9]/g, '')) || 0;
+        sqlReq.input('idsigep', sql.BigInt, numericIDSIGEP);
+        
+        const isRevision = data.studyType === 'Revisão Técnica';
+        sqlReq.input('nroAn', sql.VarChar, isRevision ? (data.previousStudy || '') : '');
+        
+        const pressureToNormalize = data.suggestedPressureRange || data.pressure || '';
+        const normalizedPressure = pressureToNormalize.substring(0, 2).toUpperCase();
+        
+        sqlReq.input('grupoEst', sql.VarChar, studyGroupMapping[data.studyType] || studyGroupMapping[data.studyGroup] || data.studyGroup || '0');
+        sqlReq.input('tipoEst', sql.VarChar, studySubTypeMapping[data.studySubType] || data.tipoEst || data.studySubType || '0');
+        sqlReq.input('tipEs', sql.Int, gniTypeMapping[data.gniName] || gniTypeMapping[data.studySubType] || safeInt(data.gniType || '0'));
+        sqlReq.input('grauDif', sql.Int, difficultyMapping[data.difficulty] || safeInt(data.difficultyLevel || '0'));
+        sqlReq.input('tpgass', sql.VarChar, gasTypeMapping[data.gasType] || data.gasType || '');
+        sqlReq.input('presSolOrig', sql.VarChar, normalizedPressure);
+        sqlReq.input('croqui', sql.VarChar, data.mapReceived ? 'VERDADEIRO' : 'FALSO');
+        sqlReq.input('estudoRelev', sql.VarChar, data.relevantStudy ? 'VERDADEIRO' : 'FALSO');
+        sqlReq.input('dataOper', sql.DateTime, data.operationStartDate ? new Date(data.operationStartDate) : null);
+        sqlReq.input('vazMedia', sql.Float, safeFloat(data.averageFlow || 0));
+        sqlReq.input('vazPico', sql.Float, safeFloat(data.peakFlow || 0));
+        
+        // Technical mappings updated per user specification
+        sqlReq.input('presGas', sql.VarChar, data.responsePressureBase || ''); 
+        sqlReq.input('presClieMax', sql.Float, safeFloat(data.responseMaxPo || data.responseMaxPressure || 0));
+        sqlReq.input('presClieMin', sql.Float, safeFloat(data.responseMin || data.responseMinPressure || 0));
+        sqlReq.input('presClieGarant', sql.Float, safeFloat(data.responseGarantia || data.responseGarantiaPressure || 0));
+        sqlReq.input('observaResp', sql.NVarChar, data.responseObservations || '');
+        sqlReq.input('numEconomias', sql.Int, safeInt(data.totalClients || data.numClientsRes || 0));
+        sqlReq.input('vu', sql.Float, safeFloat(data.unitFlow || 0));
+        sqlReq.input('fp', sql.Float, safeFloat(data.penetrationFactor || data.penetration || 0));
+        sqlReq.input('fd', sql.Float, safeFloat(data.diversificationFactor || data.diversification || 0));
+        sqlReq.input('diversificar', sql.Float, safeFloat(data.totalFlowRes || data.totalFlow || 0));
+        
+        // Detailed technical response parameters
+        sqlReq.input('statusEntrega', sql.VarChar, data.deliveryStatus || '');
+        sqlReq.input('regulardoSN', sql.VarChar, data.regSizingActive ? 'VERDADEIRO' : 'FALSO');
+        sqlReq.input('reguladroVazao', sql.Int, safeInt(data.regSizingFlow || 0));
+        sqlReq.input('horaFunciona', sql.Int, safeInt(data.workHours || 0));
+        
+        // Additional sizing info
+        sqlReq.input('pressaoResposta', sql.VarChar, data.responsePressureBase || '');
+        sqlReq.input('custoRegulador', sql.Int, safeInt(data.regSizingCost || 0));
+        sqlReq.input('pressaoEntrada', sql.VarChar, String(data.regSizingInPress || ''));
+        sqlReq.input('unidPresEnt', sql.VarChar, data.unidPresEnt || 'bar');
+        sqlReq.input('pressaoSaida', sql.Int, safeInt(data.regSizingOutPress || 0));
+        sqlReq.input('unidPresSai', sql.VarChar, data.unidPresSai || 'mbar');
+        sqlReq.input('vazaoFutura', sql.Int, safeInt(data.regSizingFutureFlow || 0));
+        sqlReq.input('presSol', sql.VarChar, data.pressureUnit || '');
+        sqlReq.input('unidSol', sql.VarChar, data.flowUnit || 'm³/h');
+        sqlReq.input('qdc', sql.Int, safeInt(data.qdc || 0));
+        sqlReq.input('emailEnviado', sql.VarChar, data.emailSent ? 'VERDADEIRO' : 'FALSO');
+        
+        // Memo fields
+        sqlReq.input('memoResposta', sql.NVarChar, data.responseMemo || '');
+        // User requested to leave calculated pressure in meta_data, so we stop mapping it to PRESCALC column
+        sqlReq.input('prescalc', sql.NVarChar, null); 
+        sqlReq.input('grupored', sql.Int, safeInt(data.networkGroup || '0'));
+        sqlReq.input('prazEstConst', sql.VarChar, String(data.prazEstConst || ''));
+        sqlReq.input('consumoEstimado', sql.Int, safeInt(data.consumoEstimado || 0));
+        sqlReq.input('pressaoInicial', sql.Float, safeFloat(data.pressaoInicial || 0));
+        sqlReq.input('pressaoFinal', sql.Int, safeInt(data.pressaoFinal || 0));
+        sqlReq.input('pressaoAbsoluta', sql.Float, safeFloat(data.pressaoAbsoluta || 0));
+        sqlReq.input('pressaoAtm', sql.Int, safeInt(data.pressaoAtm || 0));
+        sqlReq.input('codigoPasta', sql.VarChar, String(data.codigoPasta || ''));
+        
+        sqlReq.input('simulacao', sql.Float, safeFloat(data.simulacao || 0));
+        sqlReq.input('supervision', sql.Float, safeFloat(data.supervision || 0));
+        sqlReq.input('tempo', sql.Float, safeFloat(data.tempo || 0));
+        sqlReq.input('tempoEstimado', sql.Float, safeFloat(data.tempoEstimado || 0));
+        sqlReq.input('preparacion', sql.Float, safeFloat(data.preparacion || 0));
+        
+        // Network extensions
+        sqlReq.input('redeExtTotal', sql.Int, safeInt(data.totalNetworkExtension || 0));
+        
+        // Priority / Dates
+        const dStr = data.deliveryDeadline || data.dtEntregaPrevista || '';
+        sqlReq.input('dtEntregaPrevista', sql.Float, dStr ? dateToOADate(new Date(dStr)) : null);
+
+        // UPSERT Query with correct ID handling (Direct string comparison)
+        try {
+          await sqlReq.query(`
+            IF EXISTS (SELECT 1 FROM T_ESTPLA WHERE id = @id)
+            BEGIN
+              UPDATE T_ESTPLA SET 
+                user_id = @user_id, FK_MODELO = @formType, NRO_ESTUDO = @nro, STATUS = @status, meta_data = @meta,
+                EMPRESA = @emp, SOL_ORGAO = @org, SOL_RESPON = @resp, TITULO = @tit, PRESSAO = @pres, OBSERVS = @obs,
+                BAIRRO = @bairro, MUNICIPIO = @muni, NUMECONOMIAS = @numEconomias, VAZAOSOL = @vazS, VAZAOINSTA = @vazI, CONSMENS = @cons,
+                PresSolMax = @pMax, PresSolMin = @pMin, HorOpeIni = @hIn, HorOpeFin = @hFin, DiaOpeMes = @dMes, EmailContato = @mail,
+                NumEconomiasComIndEtc = @numE2, VazaoSolComIndEtc = @vazS2, 
+                RESP_SEPLA = @respSepla, LOCALIZ = @localiz, TEL_SOL = @tel, EntradaReal = @entradaReal, DAT_EN_SEP = @datEnSep, DAT_IN_SEP = @datInSep, DAT_SA_SEP = @datSaSep,
+                NRO_EST_AN = @nroAn, GRUPO_EST = @grupoEst, TIPO_EST = @tipoEst, TIP_ES = @tipEs, GrauDificult = @grauDif, TPGASS = @tpgass, PRESGASS = @presGas, PRESGAS = @presGas,
+                CROQUI = @croqui, EstudoRelevante = @estudoRelev, ObservaResp = @observaResp,
+                PresClieMax = @presClieMax, PresClieMin = @presClieMin, PresClieGarant = @presClieGarant,
+                StatusEntrega = @statusEntrega, RegulardoSN = @regulardoSN, ReguladroVazao = @reguladroVazao, HoraFunciona = @horaFunciona,
+                PressaoResposta = @pressaoResposta, CustoRegulador = @custoRegulador, PressaoEntrada = @pressaoEntrada, unidPresEnt = @unidPresEnt,
+                PressaoSaida = @pressaoSaida, unidPresSai = @unidPresSai, VazaoFutura = @vazaoFutura, PresSol = @presSol, UnidSol = @unidSol,
+                QDC = @qdc, fd = @fd, fp = @fp, vu = @vu, Diversificar = @diversificar, EMAIL_ENVIADO = @emailEnviado,
+                PRESCALC = @prescalc, GRUPORED = @grupored, PRAZ_EST_CONST = @prazEstConst, CONSUMO_ESTIMADO = @consumoEstimado,
+                PRESSAO_INICIAL = @pressaoInicial, PRESSAO_FINAL = @pressaoFinal, PRESSAO_ABSOLUTA = @pressaoAbsoluta, PRESSAO_ATM = @pressaoAtm, CODIGO_PASTA = @codigoPasta,
+                Simulacao = @simulacao, Supervision = @supervision, Tempo = @tempo, TempoEstimado = @tempoEstimado, Preparacion = @preparacion,
+                RedeExtTotal = @redeExtTotal, dtEntregaPrevista = @dtEntregaPrevista,
+                MEMO_RESPOSTA = @memoResposta,
+                VAZ_MEDIA = @vazMedia,
+                VAZ_PICO = @vazPico,
+                IDSIGEP = @idsigep
+              WHERE id = @id
+            END
+            ELSE
+            BEGIN
+              INSERT INTO T_ESTPLA (
+                id, user_id, FK_MODELO, NRO_ESTUDO, STATUS, meta_data,
+                EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, PRESSAO, OBSERVS,
+                BAIRRO, MUNICIPIO, NUMECONOMIAS, VAZAOSOL, VAZAOINSTA, CONSMENS,
+                PresSolMax, PresSolMin, HorOpeIni, HorOpeFin, DiaOpeMes, EmailContato,
+                NumEconomiasComIndEtc, VazaoSolComIndEtc,
+                RESP_SEPLA, LOCALIZ, TEL_SOL, EntradaReal, DAT_EN_SEP, DAT_IN_SEP, DAT_SA_SEP,
+                NRO_EST_AN, GRUPO_EST, TIPO_EST, TIP_ES, GrauDificult, TPGASS, PRESGASS, PRESGAS,
+                CROQUI, EstudoRelevante, ObservaResp,
+                PresClieMax, PresClieMin, PresClieGarant,
+                StatusEntrega, RegulardoSN, ReguladroVazao, HoraFunciona,
+                PressaoResposta, CustoRegulador, PressaoEntrada, unidPresEnt,
+                PressaoSaida, unidPresSai, VazaoFutura, PresSol, UnidSol,
+                QDC, fd, fp, vu, Diversificar, EMAIL_ENVIADO,
+                PRESCALC, GRUPORED, PRAZ_EST_CONST, CONSUMO_ESTIMADO,
+                PRESSAO_INICIAL, PRESSAO_FINAL, PRESSAO_ABSOLUTA, PRESSAO_ATM, CODIGO_PASTA,
+                Simulacao, Supervision, Tempo, TempoEstimado, Preparacion,
+                RedeExtTotal, dtEntregaPrevista,
+                MEMO_RESPOSTA,
+                DATA_SOLIC_OPER,
+                VAZ_MEDIA,
+                VAZ_PICO,
+                IDSIGEP
+              )
+              VALUES (
+                @id, @user_id, @formType, @nro, @status, @meta,
+                @emp, @org, @resp, @tit, @pres, @obs,
+                @bairro, @muni, @numEconomias, @vazS, @vazI, @cons,
+                @pMax, @pMin, @hIn, @hFin, @dMes, @mail,
+                @numE2, @vazS2,
+                @respSepla, @localiz, @tel, @entradaReal, @datEnSep, @datInSep, @datSaSep,
+                @nroAn, @grupoEst, @tipoEst, @tipEs, @grauDif, @tpgass, @presGas, @presGas,
+                @croqui, @estudoRelev, @observaResp,
+                @presClieMax, @presClieMin, @presClieGarant,
+                @statusEntrega, @regulardoSN, @reguladroVazao, @horaFunciona,
+                @pressaoResposta, @custoRegulador, @pressaoEntrada, @unidPresEnt,
+                @pressaoSaida, @unidPresSai, @vazaoFutura, @presSol, @unidSol,
+                @qdc, @fd, @fp, @vu, @diversificar, @emailEnviado,
+                @prescalc, @grupored, @prazEstConst, @consumoEstimado,
+                @pressaoInicial, @pressaoFinal, @pressaoAbsoluta, @pressaoAtm, @codigoPasta,
+                @simulacao, @supervision, @tempo, @tempoEstimado, @preparacion,
+                @redeExtTotal, @dtEntregaPrevista,
+                @memoResposta,
+                @dataOper,
+                @vazMedia,
+                @vazPico,
+                @idsigep
+              )
+            END
+          `);
+
+          // Sync Child Tables (I_ESTPLA and G_PRTRER)
+        if (numericIDSIGEP) {
+          console.log(`[StatusSync] 🔄 Syncing child tables for IDSIGEP: ${numericIDSIGEP}`);
+          // 1. Sync I_ESTPLA (Interconnections)
+          await sql.query`DELETE FROM I_ESTPLA WHERE IDSIGEP = ${numericIDSIGEP}`;
+          const interconnections = data.interconnectionPoints || [];
+          
+          if (interconnections.length > 0) {
+            // Get next OID (legacy manual increment)
+            const maxOidRes = await sql.query`SELECT ISNULL(MAX(OID), 0) as maxOid FROM I_ESTPLA`;
+            let nextOid = (maxOidRes.recordset[0].maxOid || 0) + 1;
+            console.log(`[StatusSync] ℹ️ Next I_ESTPLA OID: ${nextOid}`);
+
+            for (const point of interconnections) {
+              const ptSql = new sql.Request();
+              ptSql.input('oid', sql.Int, nextOid++);
+              ptSql.input('idsigep', sql.Int, numericIDSIGEP);
+              ptSql.input('nro', sql.Int, numericIDSIGEP); // Use same for NRO_ESTUDO for legacy support
+              ptSql.input('pres', sql.VarChar, point.pressure || '');
+              ptSql.input('mat', sql.VarChar, point.material || '');
+              ptSql.input('dia', sql.VarChar, point.diameter || '');
+              ptSql.input('logradouro', sql.VarChar, point.location || point.address || '');
+              ptSql.input('indicacao', sql.VarChar, point.comment || '');
+              await ptSql.query(`
+                INSERT INTO I_ESTPLA (OID, IDSIGEP, NRO_ESTUDO, PRESSAO, MATERIAL, DIAMETRO, LOGRADOURO, INDICACAO)
+                VALUES (@oid, @idsigep, @nro, @pres, @mat, @dia, @logradouro, @indicacao)
+              `);
+            }
+          }
+
+          // 2. Sync G_PRTRER (Planned Extensions)
+          await sql.query`DELETE FROM G_PRTRER WHERE IDSIGEP = ${numericIDSIGEP}`;
+          const extensions = data.plannedExtensions || [];
+          
+            if (extensions.length > 0) {
+              // Get next OBJECTID (legacy manual increment)
+              const maxObjRes = await sql.query`SELECT ISNULL(MAX(OBJECTID), 0) as maxObj FROM G_PRTRER`;
+              let nextObj = (maxObjRes.recordset[0].maxObj || 0) + 1;
+              console.log(`[StatusSync] ℹ️ Next G_PRTRER OBJECTID: ${nextObj}`);
+
+            // Code mappings for G_PRTRER
+            const extensionTypeMap = { 'DESCONHECIDO': 1, 'REDE EXTERNA': 2, 'REDE INTERNA': 3, 'RAMAL': 4 };
+            const extensionStatusMap = { 'EM SERVIÇO': 2, 'ESTUDO (ABANDONAR)': 9, 'ESTUDO (CONSTRUIR)': 5, 'ENERGIZADO': 8 };
+
+            for (const ext of extensions) {
+              const extSql = new sql.Request();
+              extSql.input('object', sql.Int, nextObj++);
+              extSql.input('idsigep', sql.Int, numericIDSIGEP);
+              extSql.input('nro', sql.Int, numericIDSIGEP);
+              extSql.input('mat', sql.VarChar, ext.material || '');
+              // Extract numeric diameter (e.g., "63mm" -> 63)
+              const numDiameter = parseInt(String(ext.diameter).replace(/[^0-9]/g, '')) || 0;
+              extSql.input('dia', sql.Int, numDiameter);
+              extSql.input('extensao', sql.Int, safeInt(ext.extension || 0));
+              extSql.input('tipred', sql.Int, extensionTypeMap[(ext.networkType || ext.type)?.toUpperCase()] || 1);
+              extSql.input('valvulas', sql.Int, safeInt(ext.valves || 0));
+              extSql.input('pres', sql.VarChar, ext.pressure || '');
+              extSql.input('gas', sql.VarChar, ext.gasType || 'GN');
+              extSql.input('status', sql.Int, extensionStatusMap[String(ext.status).toUpperCase()] || 5); // Default to "Estudo construir"
+
+              await extSql.query(`
+                INSERT INTO G_PRTRER (OBJECTID, IDSIGEP, NRO_ESTUDO, MATERIAL, DIAMETRO, Extensao, TIPRED, QT_VALVULAS, Pressao, TipGas, status)
+                VALUES (@object, @idsigep, @nro, @mat, @dia, @extensao, @tipred, @valvulas, @pres, @gas, @status)
+              `);
+            }
+          }
+
+          console.log(`[StatusSync] 🚀 Record ${requestId} synced in T_ESTPLA: ${interconnections.length} pts, ${extensions.length} exts`);
+        }
+      } catch (dbErr) {
+        console.error(`[StatusSync] ❌ Error saving to T_ESTPLA (ID: ${requestId}):`, dbErr.message);
+        throw dbErr; // Propagate to outer catch
+      }
+    }
+
+    // REGARDLESS of T_ESTPLA move, always update/insert the Requests table
+      // This ensures the status is identical in both locations and prevents UI sync issues.
+      {
+        const sqlReq = new sql.Request();
+        const requestId = String(data.id);
+        const effectiveUserId = data.user_id || data.userId || '';
+        const rawNro = data.studyNumber || data.nro || '';
+        let effectiveNro = String(rawNro);
+        if (typeof rawNro === 'object' && rawNro !== null) {
+          effectiveNro = String(rawNro.nextNumber || rawNro.studyNumber || rawNro.nro || '');
+        }
+        if (effectiveNro === '[object Object]') effectiveNro = '';
+
+        sqlReq.input('id', sql.VarChar, requestId);
+        sqlReq.input('user_id', sql.VarChar, effectiveUserId);
+        sqlReq.input('formType', sql.VarChar, String(mappedForm));
+        sqlReq.input('nro', sql.VarChar, effectiveNro);
+        sqlReq.input('status', sql.VarChar, String(statusVal));
+        sqlReq.input('meta', sql.NVarChar, JSON.stringify(data));
+        sqlReq.input('now', sql.DateTime, now);
+        sqlReq.input('datEnSep', sql.DateTime, effectiveRequestDate);
+
+        // Additional columns for Requests (mirroring T_ESTPLA)
+        sqlReq.input('emp', sql.VarChar, String(mappedUnit));
+        sqlReq.input('org', sql.VarChar, String(mappedArea));
+        sqlReq.input('resp', sql.VarChar, data.requesterName || '');
+        sqlReq.input('tit', sql.VarChar, data.studyTitle || data.clientName || data.uteName || '');
+        sqlReq.input('bairro', sql.VarChar, data.neighborhood || data.bairro || '');
+        sqlReq.input('muni', sql.VarChar, mappedCity);
+        sqlReq.input('localiz', sql.VarChar, (data.address || '') + (data.number ? ' ' + data.number : ''));
+
+        await sqlReq.query(`
+          IF EXISTS (SELECT 1 FROM Requests WHERE id = @id)
+          BEGIN
+            UPDATE Requests SET
+              user_id = @user_id, formType = @formType, NRO_ESTUDO = @nro, STATUS = @status,
+              meta_data = @meta, updatedAt = @now, requestDate = @datEnSep,
+              EMPRESA = @emp, SOL_ORGAO = @org, SOL_RESPON = @resp, TITULO = @tit, 
+              BAIRRO = @bairro, MUNICIPIO = @muni, LOCALIZ = @localiz
+            WHERE id = @id
+          END
+          ELSE
+          BEGIN
+            INSERT INTO Requests (
+              id, user_id, formType, NRO_ESTUDO, STATUS,
+              meta_data, createdAt, updatedAt, requestDate,
+              EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, BAIRRO, MUNICIPIO, LOCALIZ
+            )
+            VALUES (
+              @id, @user_id, @formType, @nro, @status,
+              @meta, @now, @now, @datEnSep,
+              @emp, @org, @resp, @tit, @bairro, @muni, @localiz
+            )
+          END
+        `);
+
+        console.log(`[StatusSync] ✅ Record ${requestId} synchronized in Requests with STATUS=${statusVal}`);
+      }
+      
+      res.status(200).json(data);
+    } catch (err) {
+      const errorDetails = {
+        timestamp: new Date().toISOString(),
+        message: err.message,
+        id: data?.id,
+        studyNumber: data?.studyNumber || data?.nro,
+        status: data?.status,
+        numericStatus: numericStatus,
+        stack: err.stack?.split('\n').slice(0, 5).join('\n')
+      };
+      console.error('Error saving/moving request:', errorDetails);
+      
+      // Error logging
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const logFile = path.join(__dirname, 'error_log.txt');
+        const logEntry = JSON.stringify(errorDetails, null, 2) + '\n---\n';
+        fs.appendFileSync(logFile, logEntry);
+      } catch (logErr) {}
+
+      res.status(500).json({ error: 'Erro ao salvar/mover solicitação', message: err.message, details: errorDetails });
+    }
+  });
+
+    app.get('/api/requests/next-number', async (req, res) => {
+      try {
+        const { type, baseStudyNumber, city, address, title, neighborhood } = req.query;
+        const currentYear = new Date().getFullYear();
+        const yearPrefix = String(currentYear);
+
+        // 1. Auto-detection of existing study for Revision (Duplicate Check)
+        // Always perform duplicate detection regardless of type
+        // Use consistent normalization (remove spaces, dots, commas, hyphens)
+        const normalizedAddr = (address || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const normalizedTitle = (title || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const normalizedNeighborhood = (neighborhood || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+        if (normalizedAddr.length > 8 || normalizedTitle.length > 5) {
+           const checkResult = await sql.query`
+             SELECT TOP 1 NRO_ESTUDO, STATUS, Municipio, LOCALIZ, TITULO, BAIRRO
+             FROM (
+               SELECT NRO_ESTUDO, STATUS, Municipio, LOCALIZ, TITULO, BAIRRO 
+               FROM Requests 
+               WHERE (
+                 (REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOCALIZ, ' ', ''), '.', ''), ',', ''), '-', ''), '/', '') LIKE ${'%' + normalizedAddr + '%'})
+                 AND Municipio = ${city}
+                 AND (REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(BAIRRO, ' ', ''), '.', ''), ',', ''), '-', ''), '/', '') LIKE ${'%' + normalizedNeighborhood + '%'})
+                 AND (
+                   TITULO = ${title} 
+                   OR (REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TITULO, ' ', ''), '.', ''), ',', ''), '-', ''), '/', '') LIKE ${'%' + normalizedTitle + '%'})
+                 )
+               )
+               UNION ALL
+               SELECT 
+                 LTRIM(RTRIM(ISNULL(CAST(NRO_ESTUDO as varchar(100)), CAST(IDSIGEP as varchar(100))))) as NRO_ESTUDO, 
+                 STATUS, Municipio, LOCALIZ, TITULO, BAIRRO
+               FROM T_ESTPLA 
+               WHERE (
+                 (REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOCALIZ, ' ', ''), '.', ''), ',', ''), '-', ''), '/', '') LIKE ${'%' + normalizedAddr + '%'})
+                 AND Municipio = ${city}
+                 AND (REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(BAIRRO, ' ', ''), '.', ''), ',', ''), '-', ''), '/', '') LIKE ${'%' + normalizedNeighborhood + '%'})
+                 AND (
+                   TITULO = ${title} 
+                   OR (REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TITULO, ' ', ''), '.', ''), ',', ''), '-', ''), '/', '') LIKE ${'%' + normalizedTitle + '%'})
+                 )
+               )
+             ) AS Combined
+             ORDER BY NRO_ESTUDO DESC
+           `;
+           
+           if (checkResult.recordset[0]) {
+             const existingNro = String(checkResult.recordset[0].NRO_ESTUDO);
+             const matchedAddr = checkResult.recordset[0].LOCALIZ;
+             const matchedTitle = checkResult.recordset[0].TITULO;
+             
+             const base8 = existingNro.replace(/^PROV-/, '').substring(0, 8);
+             const lastRev = parseInt(existingNro.substring(8, 10)) || 0;
+             const nextRev = String(lastRev + 1).padStart(2, '0');
+             
+             console.log(`[DuplicateCheck] 🔍 Match found: ${existingNro} for ${matchedAddr} / ${matchedTitle}`);
+             
+             // Convert numeric status code to readable text
+             const statusCodeToText = {
+               '100': 'Em Análise',
+               '200': 'Aguardando Execução',
+               '205': 'Em Execução',
+               '210': 'Concluído',
+               '215': 'Aprovado pelo CQ',
+               '220': 'Cancelado',
+               '240': 'Aguardando Informações',
+               '280': 'Controle de Qualidade',
+               '290': 'Reprovado pelo CQ',
+               '330': 'Em Análise'
+             };
+             const rawStatus = String(checkResult.recordset[0].STATUS || '');
+             const statusText = statusCodeToText[rawStatus] || rawStatus;
+
+             return res.json({ 
+                nextNumber: `PROV-${base8}${nextRev}`,
+                isRevision: true,
+                previousStudy: existingNro,
+                matchedAddress: matchedAddr,
+                matchedTitle: matchedTitle,
+                status: statusText,
+                city: checkResult.recordset[0].Municipio
+             });
+           }
+        }
+
+        
+        // 2. Manual Revision logic
+        if (type === 'revision' && baseStudyNumber) {
+          const base8 = String(baseStudyNumber).replace('PROV-', '').substring(0, 8);
+          const result = await sql.query`
+            SELECT MAX(CAST(IDSIGEP as bigint)) as maxNro FROM (
+              SELECT IDSIGEP FROM T_ESTPLA WHERE CAST(IDSIGEP as varchar) LIKE ${base8 + '%'} AND IDSIGEP IS NOT NULL AND IDSIGEP > 0
+              UNION ALL
+              SELECT CAST(REPLACE(NRO_ESTUDO, 'PROV-', '') as bigint) as IDSIGEP FROM Requests WHERE REPLACE(NRO_ESTUDO, 'PROV-', '') LIKE ${base8 + '%'}
+            ) t
+          `;
+          const currentMax = result.recordset[0]?.maxNro;
+          const next = currentMax ? BigInt(currentMax) + 1n : BigInt(base8 + '01');
+          return res.json({ nextNumber: `PROV-${next.toString()}` });
+        }
+
+        // 3. New study sequence with YYYYXXXXRR format (Starting at 0001 for Seq, 01 for Rev)
+        const sequenceResult = await sql.query`
+          SELECT MAX(CAST(SUBSTRING(nro, 5, 4) as int)) as maxYearSeq FROM (
+            SELECT CAST(IDSIGEP as varchar) as nro FROM T_ESTPLA 
+            WHERE CAST(IDSIGEP as varchar) LIKE ${yearPrefix + '%'}
+            UNION ALL
+            SELECT REPLACE(NRO_ESTUDO, 'PROV-', '') as nro FROM Requests 
+            WHERE REPLACE(NRO_ESTUDO, 'PROV-', '') LIKE ${yearPrefix + '%'}
+          ) t
+          WHERE ISNUMERIC(SUBSTRING(nro, 5, 4)) = 1
+        `;
+        
+        const maxYearSeq = sequenceResult.recordset[0]?.maxYearSeq || 0;
+        const nextSeq = String(maxYearSeq + 1).padStart(4, '0');
+        const initialRev = '01';
+        
+        // Final format: PROV-YYYYXXXXRR (10 digits after PROV-)
+        const nextNumber = `PROV-${yearPrefix}${nextSeq}${initialRev}`;
+        res.json({ nextNumber });
+      } catch (err) {
+        console.error('Error calculating next study number:', err.message);
+        res.status(500).json({ error: 'Failed' });
+      }
+    });
+
+    // 8. DELETE Request
+    app.delete('/api/requests/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const sqlReq = new sql.Request();
+        sqlReq.input('id', sql.VarChar, id);
+        await sqlReq.query`DELETE FROM Requests WHERE id = @id`;
+        await sqlReq.query`DELETE FROM T_ESTPLA WHERE id = @id`;
+        res.status(200).json({ success: true });
+      } catch (err) {
+        console.error('Error deleting request:', err);
+        res.status(500).json({ error: 'Failed to delete request' });
+      }
+    });
+
+    const server = app.listen(port, () => {
+      console.log(`[Server] API running on http://localhost:${port}`);
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`[Server] ERRO: Porta ${port} já está em uso! Encerrando...`);
+      } else {
+        console.error('[Server] Server error:', err);
+      }
+      process.exit(1);
+    });
+
+  } catch (err) {
+    console.error('[Server] Database error:', err);
+    process.exit(1);
+  }
+}
+
+// Global error handlers to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  console.error('[Server] Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server] Unhandled Rejection:', reason);
+});
+
+startServer();

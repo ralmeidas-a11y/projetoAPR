@@ -22,8 +22,9 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
     }
 
     if (name === 'uteName') {
-      onChange({ [name]: processedValue, studyTitle: value });
+      onChange({ uteName: String(processedValue), studyTitle: String(processedValue) });
     } else {
+
       onChange({ [name]: processedValue });
     }
   };
@@ -147,7 +148,7 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
         {readOnly ? (
           <div className="p-5 flex flex-col gap-6 bg-[#f8fbff]/50">
             <div className="grid grid-cols-12 gap-4">
-              <ReadOnlyField label="Nome da UTE" value={data.uteName} colSpan={8} />
+              <ReadOnlyField label="Título / Cliente" value={data.uteName} colSpan={8} />
               <ReadOnlyField label="Mercado" value="Termogeração" colSpan={4} />
               <ReadOnlyField label="Endereço" value={data.address} colSpan={12} />
               <ReadOnlyField label="Cidade" value={data.city} colSpan={4} />
@@ -158,18 +159,18 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
             <div className="border-t border-slate-100 pt-4">
               <h5 className="text-[9px] font-black text-[#004080] uppercase tracking-widest mb-4">DADOS TÉCNICOS</h5>
               <div className="grid grid-cols-12 gap-4">
-                <ReadOnlyField label="Nível Pressão" value={(data as any).gasPressureLevel} colSpan={4} suffix=" bar" />
-                <ReadOnlyField label="Vazão Média" value={(data as any).averageFlow} colSpan={4} suffix=" Nm³/h" />
-                <ReadOnlyField label="Vazão Pico" value={(data as any).peakFlow} colSpan={4} suffix=" Nm³/h" />
+                <ReadOnlyField label="Nível Pressão" value={data.gasPressureLevel} colSpan={4} suffix=" bar" />
+                <ReadOnlyField label="Vazão Média" value={data.averageFlow} colSpan={4} suffix=" Nm³/h" />
+                <ReadOnlyField label="Vazão Pico" value={data.peakFlow} colSpan={4} suffix=" Nm³/h" />
                 <ReadOnlyField label="Prazo dias" value="até 5 dias úteis" colSpan={6} />
-                <ReadOnlyField label="Data Inicial Operação" value={formatDate((data as any).operationStartDate)} colSpan={6} />
+                <ReadOnlyField label="Data Inicial Operação" value={formatDate(data.operationStartDate)} colSpan={6} />
               </div>
             </div>
           </div>
         ) : (
           <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
             <div className="col-span-12 md:col-span-8 flex flex-col gap-1">
-              <label className={requiredLabelClass}>Nome da UTE:</label>
+              <label className={requiredLabelClass}>Título / Cliente:</label>
               <input name="uteName" value={data.uteName || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`} />
             </div>
             <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
@@ -204,21 +205,21 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
               <div className="flex flex-col gap-1">
                 <label className={requiredLabelClass}>Nível de Pressão Solicitado:</label>
                 <div className="flex items-center gap-2">
-                  <input type="number" name="gasPressureLevel" value={(data as any).gasPressureLevel ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
+                  <input type="number" name="gasPressureLevel" value={data.gasPressureLevel ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
                   <span className="text-[8px] font-bold text-slate-400">bar</span>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
                 <label className={requiredLabelClass}>Vazão Média (24h) :</label>
                 <div className="flex items-center gap-2">
-                  <input type="number" name="averageFlow" value={(data as any).averageFlow ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
+                  <input type="number" name="averageFlow" value={data.averageFlow ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
                   <span className="text-[8px] font-bold text-slate-400">Nm³/h</span>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
                 <label className={requiredLabelClass}>Vazão de Pico :</label>
                 <div className="flex items-center gap-2">
-                  <input type="number" name="peakFlow" value={(data as any).peakFlow ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
+                  <input type="number" name="peakFlow" value={data.peakFlow ?? ''} onChange={handleInputChange} className="w-full h-8 p-1 border border-slate-200 rounded text-center bg-white" />
                   <span className="text-[8px] font-bold text-slate-400">Nm³/h</span>
                 </div>
               </div>
@@ -275,7 +276,7 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
           <table style={tableStyle}>
             <tbody>
               <tr><th style={thStyle}>Prazo dias</th><td style={tdStyle}>até 5 dias úteis</td></tr>
-              <tr><th style={thStyle}>Data Inicial de Operação Estimada</th><td style={tdStyle}>{formatDate((data as any).operationStartDate) || '-'}</td></tr>
+              <tr><th style={thStyle}>Data Inicial de Operação Estimada</th><td style={tdStyle}>{formatDate(data.operationStartDate) || '-'}</td></tr>
             </tbody>
           </table>
         ) : (
@@ -286,7 +287,7 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
             </div>
             <div className="flex items-center gap-4">
               <label className="text-[9px] text-slate-500 uppercase tracking-tight font-normal">Data Inicial de Operação Estimada:</label>
-              <input type="date" name="operationStartDate" value={(data as any).operationStartDate || ''} onChange={handleInputChange} className="flex-grow p-2 border border-slate-200 rounded bg-white text-[#004080] font-bold text-center" />
+              <input type="date" name="operationStartDate" value={data.operationStartDate || ''} onChange={handleInputChange} className="flex-grow p-2 border border-slate-200 rounded bg-white text-[#004080] font-bold text-center" />
             </div>
           </div>
         )}

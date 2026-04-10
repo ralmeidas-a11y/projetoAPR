@@ -32,8 +32,9 @@ export const FormMirrorView: React.FC<FormMirrorViewProps> = ({
     switch (data.formType) {
       case FormType.RESIDENTIAL_COMMERCIAL: return <FormFO01 {...commonProps} />;
       case FormType.EXPANSION_AREAS: return <FormFO02 {...commonProps} />;
-      case FormType.THERMO_GENERATION: return <FormFO03 {...commonProps} />;
-      case FormType.LARGE_CLIENTS: return <FormFO04 {...commonProps} />;
+      case FormType.THERMO_GENERATION: return <FormFO04 {...commonProps} />;
+      case FormType.LARGE_CLIENTS: return <FormFO03 {...commonProps} />;
+
       default: return null;
     }
   };

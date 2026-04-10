@@ -57,8 +57,11 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
       processedValue = value === '' ? '' : (name.includes('numClients') ? (parseInt(value, 10) || 0) : (parseFloat(value) || 0));
     }
     
-    if (name === 'studyTitle') {
-      onChange({ [name]: processedValue, studyTitle: value });
+    // Dual sync for flow unit fields
+    if (name === 'flowUnitRes') {
+      onChange({ flowUnitRes: processedValue as number | "", unitFlow: processedValue as number | "" });
+    } else if (name === 'unitFlow') {
+      onChange({ flowUnitRes: processedValue as number | "", unitFlow: processedValue as number | "" });
     } else {
       onChange({ [name]: processedValue });
     }

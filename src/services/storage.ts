@@ -1,6 +1,5 @@
 import { User, FormData } from '../types/types';
 import { StorageProvider } from '../types/storage';
-import { SupabaseProvider } from './supabaseProvider';
 import { SQLServerProvider } from './sqlServerProvider';
 
 /**
@@ -37,16 +36,14 @@ export const getRequestPath = (studyNumber: string, category?: string) => {
 
 /**
  * StorageService acts as a singleton manager that delegates operations 
- * to the active StorageProvider (Supabase or SQL Server).
+ * to the active StorageProvider (SQL Server).
  */
 class StorageManager {
   private provider: StorageProvider;
 
   constructor() {
-    const useSQLServer = import.meta.env.VITE_USE_SQL_SERVER === 'true';
-    this.provider = useSQLServer ? new SQLServerProvider() : new SupabaseProvider();
-    
-    console.log(`[StorageService] Active Provider: ${useSQLServer ? 'SQL Server' : 'Supabase'}`);
+    this.provider = new SQLServerProvider();
+    console.log('[StorageService] Active Provider: SQL Server (Ready for integration)');
   }
 
   // --- Profile Operations ---
@@ -67,10 +64,14 @@ class StorageManager {
     return this.provider.getUserByEmail(email);
   }
 
+  async deleteUser(id: string): Promise<void> {
+    return this.provider.deleteUser(id);
+  }
+
   // --- Request Operations ---
 
-  async getRequests(userId?: string): Promise<FormData[]> {
-    return this.provider.getRequests(userId);
+  async getRequests(userId?: string, role?: string, area?: string): Promise<FormData[]> {
+    return this.provider.getRequests(userId, role, area);
   }
 
   async addRequest(request: FormData): Promise<FormData> {
@@ -95,10 +96,74 @@ class StorageManager {
     return this.provider.getRequestFiles(studyNumber, folder);
   }
 
+  async uploadFile(studyNumber: string, folder: string, file: File): Promise<string> {
+    return this.provider.uploadFile(studyNumber, folder, file);
+  }
+
+  async getFileUrl(path: string): Promise<string | null> {
+    return this.provider.getFileUrl(path);
+  }
+
+  async deleteFile(path: string): Promise<void> {
+    return this.provider.deleteFile(path);
+  }
+
+  async syncFilesFromStorage(studyNumber: string): Promise<void> {
+    return this.provider.syncFilesFromStorage(studyNumber);
+  }
+
+  async deleteCartaResposta(studyNumber: string): Promise<void> {
+    return this.provider.deleteCartaResposta(studyNumber);
+  }
+
+  async moveStorageFolder(oldStudyNumber: string, newStudyNumber: string): Promise<void> {
+    return this.provider.moveStorageFolder(oldStudyNumber, newStudyNumber);
+  }
+
+  async migrateRequestsToStorage(onProgress?: (status: string) => void): Promise<void> {
+    return this.provider.migrateRequestsToStorage(onProgress);
+  }
+
   // --- Utility Operations ---
 
   async getRequestsCountByStatus(status: string): Promise<number> {
     return this.provider.getRequestsCountByStatus(status);
+  }
+
+  async getNextStudyNumber(
+    type?: 'new' | 'revision', 
+    baseStudyNumber?: string,
+    city?: string,
+    address?: string,
+    title?: string,
+    neighborhood?: string
+  ): Promise<{ 
+    nextNumber: string; 
+    isRevision?: boolean; 
+    previousStudy?: string;
+    matchedAddress?: string;
+    matchedTitle?: string;
+    status?: string;
+    city?: string;
+  }> {
+    return this.provider.getNextStudyNumber(type, baseStudyNumber, city, address, title, neighborhood);
+  }
+
+  async getStudyByNumber(studyNumber: string): Promise<FormData | null> {
+    return this.provider.getStudyByNumber(studyNumber);
+  }
+
+
+  async getNextId(): Promise<string> {
+    const provider = (this.provider as any);
+    if (provider.getNextId) {
+      return provider.getNextId();
+    }
+    return `sol-${Date.now()}`;
+  }
+
+  async updateUserPassword(email: string, hash: string): Promise<void> {
+    return this.provider.updateUserPassword(email, hash);
   }
 
   setProvider(provider: StorageProvider) {

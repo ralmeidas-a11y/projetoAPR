@@ -27,25 +27,35 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
   const isStaff = user.role === UserRole.ADM || user.role === UserRole.ANALISTA;
 
   // Identificar estudo base para mostrar revisões
-  const cleanCode = (request.studyNumber || '').replace('PROV-', '');
-  const baseCode = cleanCode.split('-REV')[0];
+  const getBaseCode = useCallback((nro: string | undefined) => {
+    if (!nro) return '';
+    const norm = nro.replace('PROV-', '');
+    const revSuffixMatch = norm.match(/(.+)-REV(\d+)$/i);
+    if (revSuffixMatch) return revSuffixMatch[1];
+    if (norm.length === 10 && /^\d+$/.test(norm)) return norm.substring(0, 8);
+    return norm;
+  }, []);
+
+  const baseCode = useMemo(() => getBaseCode(request.studyNumber), [request.studyNumber, getBaseCode]);
 
   const availableRevisions = useMemo(() => {
     if (!allRequests || allRequests.length === 0) return [request.studyNumber];
     
     return allRequests
-      .filter(r => {
-        const rClean = (r.studyNumber || '').replace('PROV-', '');
-        const rBase = rClean.split('-REV')[0];
-        return rBase === baseCode;
-      })
+      .filter(r => getBaseCode(r.studyNumber) === baseCode)
       .map(r => r.studyNumber)
       .sort((a, b) => {
-        const aRev = a.includes('-REV') ? parseInt(a.split('-REV')[1]) : 0;
-        const bRev = b.includes('-REV') ? parseInt(b.split('-REV')[1]) : 0;
-        return aRev - bRev;
+        const getRev = (nro: string | undefined) => {
+          if (!nro) return 0;
+          const norm = nro.replace('PROV-', '');
+          const m = norm.match(/-REV(\d+)$/i);
+          if (m) return parseInt(m[1]);
+          if (norm.length === 10 && /^\d+$/.test(norm)) return parseInt(norm.substring(8, 10));
+          return 0;
+        };
+        return getRev(a) - getRev(b);
       });
-  }, [allRequests, baseCode, request.studyNumber]);
+  }, [allRequests, baseCode, request.studyNumber, getBaseCode]);
 
   const [activeRevision, setActiveRevision] = useState(request.studyNumber);
 
@@ -139,8 +149,8 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
             : (request.categorizedFiles?.[activeCategory] || []))
         : [];
       
-      const supabaseNames = new Set(list.map(f => f.name));
-      const uniqueLocalFiles = localFiles.filter((f: any) => !supabaseNames.has(f.name));
+      const remoteNames = new Set(list.map(f => f.name));
+      const uniqueLocalFiles = localFiles.filter((f: any) => !remoteNames.has(f.name));
 
       setFiles([...list, ...uniqueLocalFiles]);
     } catch (error) {
@@ -225,7 +235,16 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                       : 'bg-white text-slate-500 border-slate-200 hover:border-orange-300 hover:text-orange-500'
                     }`}
                   >
-                    REV{revNum} {rev === request.studyNumber ? '(Origem)' : ''}
+                    {(() => {
+                      const norm = rev.replace('PROV-', '');
+                      const revMatch = norm.match(/-REV(\d+)$/i);
+                      if (revMatch) return `REV${revMatch[1]}`;
+                      if (norm.length === 10 && /^\d+$/.test(norm)) {
+                        const rnum = norm.substring(8, 10);
+                        return rnum === '01' ? 'ORIG.' : `REV${rnum}`;
+                      }
+                      return 'ORIG.';
+                    })()} {rev === request.studyNumber ? '(Atual)' : ''}
                   </button>
                 );
               })}
