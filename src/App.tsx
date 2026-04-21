@@ -7,6 +7,7 @@ import { Onboarding } from './pages/Onboarding';
 import { Dashboard } from './pages/Dashboard';
 import { MyRequests } from './pages/MyRequests';
 import { UserManagement } from './pages/UserManagement';
+import { AuditLog } from './pages/AuditLog';
 import { TechnicalExecutionPanel } from './pages/TechnicalExecutionPanel';
 import { PasswordChange } from './pages/PasswordChange';
 // EmailPreviewModal removed <!-- id: 11 -->
@@ -14,7 +15,7 @@ import { FormType, User, UserRole, FormData, StudyStatus } from './types/types';
 import { NaturgyLogo, HeaderTitle, REVERSE_AREA_MAPPING } from './constants/constants';
 import { StorageService } from './services/storage';
 import { EmailService, EmailNotificationData } from './services/emailService';
-import { getGMT3ISOString, normalizeArea, isAssignedToMe, isSystemAssigned } from './utils/utils';
+import { getGMT3ISOString, normalizeArea, isAssignedToMe, isSystemAssigned, formatDate } from './utils/utils';
 import { useDialog } from './components/AppDialog';
 
 const App: React.FC = () => {
@@ -24,27 +25,78 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
   const [editingRequest, setEditingRequest] = useState<FormData | null>(null);
-  const [view, setView] = useState<'login' | 'onboarding' | 'password-change' | 'menu' | 'form' | 'dashboard' | 'my-requests' | 'analyst-view' | 'users' | 'execution'>('login');
+  const [view, setView] = useState<'login' | 'onboarding' | 'password-change' | 'menu' | 'form' | 'dashboard' | 'my-requests' | 'analyst-view' | 'users' | 'audit' | 'execution'>('login');
   const [notification, setNotification] = useState<{ message: string; subtext?: string; type?: 'success' | 'info' } | null>(null);
 
   const [allRequests, setAllRequests] = useState<FormData[]>([]);
   const allRequestsRef = useRef<FormData[]>([]);
   const isUpdatingRef = useRef(false);
-  const pendingUpdatesRef = useRef<Record<string, { status: StudyStatus; timestamp: number }>>({});
+  const pendingUpdatesRef = useRef<Record<string, { status: StudyStatus; assignedTo?: string; timestamp: number }>>({});
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const notifiedHoldIdsRef = useRef<Set<string>>(new Set());
   const [autoOpenRequestId, setAutoOpenRequestId] = useState<string | null>(null);
   const [isEmailLoading, setIsEmailLoading] = useState(false);
 
+  // --- Central de Notificações ---
+  const [adminNotifications, setAdminNotifications] = useState<{ req: FormData; type: string; analyst?: string; deadline: string }[]>([]);
+  const [showNotifBox, setShowNotifBox] = useState(false);
+  const [hasNewNotifications, setHasNewNotifications] = useState(false);
+  const [historyModalAlert, setHistoryModalAlert] = useState<{ type: string; analyst?: string; acks: { name: string; time: string; status: string }[] } | null>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const dialogVisibleRef = useRef(false);
+  const lastCheckTimestamp = useRef<number>(0);
+
+  // Fechar ao clicar fora - Central de Alertas
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      // FIX: Ignorar fechar se o histórico de leitura estiver aberto, para manter conforme solicitado
+      if (notifRef.current && !notifRef.current.contains(event.target as Node) && !historyModalAlert) {
+        setShowNotifBox(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [historyModalAlert]);
+
   useEffect(() => {
     const initData = async () => {
-      if (isUpdatingRef.current) return;
+      if (isUpdatingRef.current) {
+        console.log('[Sync] Skipping - currently updating');
+        return;
+      }
       const [requests, users] = await Promise.all([
         StorageService.getRequests(),
         StorageService.getUsers()
       ]);
+      console.log('[Sync] Fetched from server, status values:', requests.filter(r => r.id === '3').map(r => ({ id: r.id, status: r.status, studyNumber: r.studyNumber })));
       if (!isUpdatingRef.current) {
-        setAllRequests(requests);
+        // Apply pending updates to the fresh requests from server
+        // This prevents "reversion" while the server is still processing/syncing
+        const now = Date.now();
+        const mergedRequests = requests.map(req => {
+          const pending = pendingUpdatesRef.current[req.id];
+          const currentLocal = allRequests.find(r => r.id === req.id);
+          // Protection window: 30 seconds (increased to prevent sync reversion during status transitions)
+          // Also check if local status is different from server status and is more recent
+          if (pending && (now - pending.timestamp < 30000)) {
+            console.log(`[SyncProtection] Preserving pending status for ${req.id}: ${pending.status} (server has ${req.status})`);
+            return {
+              ...req,
+              status: pending.status,
+              assignedTo: pending.assignedTo !== undefined ? pending.assignedTo : req.assignedTo
+            };
+          }
+          // Additional protection: if local status was recently changed and is different from server, keep local
+          if (currentLocal && currentLocal.status !== req.status) {
+            const localUpdateTime = new Date(currentLocal.updatedAt).getTime();
+            if (now - localUpdateTime < 30000) {
+              console.log(`[SyncProtection] Keeping local status for ${req.id}: local=${currentLocal.status}, server=${req.status}`);
+              return currentLocal;
+            }
+          }
+          return req;
+        });
+        setAllRequests(mergedRequests);
         setAllUsers(users);
       }
     };
@@ -143,8 +195,11 @@ const App: React.FC = () => {
     }
 
     try {
+      // Atualizar lastAccess para hoje
+      const userWithAccess = { ...loggedUser, lastAccess: new Date().toISOString() };
+
       // Salvar/Atualizar no Banco de Dados Local
-      const savedUser = await StorageService.saveUser(loggedUser);
+      const savedUser = await StorageService.saveUser(userWithAccess);
       setUser(savedUser);
 
       // Atualizar lista local
@@ -196,7 +251,7 @@ const App: React.FC = () => {
         setAllRequests(prev => {
           const serverIds = new Set(serverRequests.map(r => String(r.id)));
           const now = Date.now();
-          
+
           // Cleanup expired pending updates (older than 10s)
           Object.keys(pendingUpdatesRef.current).forEach(id => {
             if (now - pendingUpdatesRef.current[id].timestamp > 10000) {
@@ -219,7 +274,11 @@ const App: React.FC = () => {
           const merged = serverRequests.map(sReq => {
             const pending = pendingUpdatesRef.current[String(sReq.id)];
             if (pending) {
-              return { ...sReq, status: pending.status };
+              return {
+                ...sReq,
+                status: pending.status !== undefined ? pending.status : sReq.status,
+                assignedTo: pending.assignedTo !== undefined ? pending.assignedTo : sReq.assignedTo
+              };
             }
             return sReq;
           });
@@ -231,7 +290,7 @@ const App: React.FC = () => {
               finalResult.push(loc);
             }
           });
-          
+
           // Global Sort: Most recent first (using requestDate, createdAt or updatedAt)
           return finalResult.sort((a, b) => {
             const dateA = new Date(a.requestDate || a.createdAt || a.updatedAt || 0).getTime();
@@ -249,6 +308,192 @@ const App: React.FC = () => {
       clearInterval(intervalId);
     };
   }, [user]);
+
+  // --- Sistema de Alertas de Expiração com Recorrência de 5 min ---
+  useEffect(() => {
+    if (!user) return;
+    if (!allRequests || allRequests.length === 0) return;
+
+    const checkExpirations = async () => {
+      const nowTs = Date.now();
+      const elapsed = nowTs - lastCheckTimestamp.current;
+
+      console.log(`[AlertCheck] Attempting check... (Elapsed: ${Math.round(elapsed / 1000)}s)`);
+
+      if (lastCheckTimestamp.current !== 0 && elapsed < 300000) {
+        console.log("[AlertCheck] ⏳ Skipping check (interval < 5min)");
+        return;
+      }
+
+      lastCheckTimestamp.current = nowTs;
+      console.log("[AlertCheck] 🚀 Starting expiration verification...");
+
+      const getTodayISO = () => {
+        const d = new Date();
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'America/Sao_Paulo',
+          year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(d);
+        const day = parts.find(p => p.type === 'day')?.value;
+        const month = parts.find(p => p.type === 'month')?.value;
+        const year = parts.find(p => p.type === 'year')?.value;
+        return `${year}-${month}-${day}`;
+      };
+
+      const normalizeDate = (ds: any) => {
+        if (!ds) return '';
+        const str = String(ds).trim();
+        if (!isNaN(Number(str)) && !str.includes('-') && !str.includes('/')) {
+          const excelDate = Number(str);
+          if (excelDate > 40000) {
+            try {
+              const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
+              return jsDate.toISOString().split('T')[0];
+            } catch (e) { return str; }
+          }
+        }
+        if (str.includes('/')) {
+          const [d, m, y] = str.split('/');
+          return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        }
+        return str.split('T')[0];
+      };
+
+      const getAlertThresholdDate = () => {
+        const d = new Date();
+        const ahead = new Date(d.getTime() + (365 * 24 * 60 * 60 * 1000)); // 365 dias - mostrar todos os estudos
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'America/Sao_Paulo',
+          year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(ahead);
+        const day = parts.find(p => p.type === 'day')?.value;
+        const month = parts.find(p => p.type === 'month')?.value;
+        const year = parts.find(p => p.type === 'year')?.value;
+        return `${year}-${month}-${day}`;
+      };
+
+      const resolveNameLocal = (id: string | undefined | null, fallbackName?: string) => {
+        // Prioridade: assignedToName (do banco) > busca em allUsers > fallback > id
+        if (fallbackName && fallbackName !== id) return fallbackName;
+        if (!id) return 'Sistema';
+        if (isSystemAssigned(id)) return 'ADRSIS - Sistema';
+        const found = allUsers.find(u =>
+          u.id === id || u.email === id || (u.sap && id.replace(/^0+/, '') === u.sap.replace(/^0+/, ''))
+        );
+        if (found) return found.name;
+        return id;
+      };
+
+      const today = getTodayISO();
+      const threshold = getAlertThresholdDate();
+
+      // Verificar se é o primeiro acesso do dia para mostrar pop-up de alerta
+      const lastAccessDate = user.lastAccess ? user.lastAccess.split('T')[0] : null;
+      const isFirstAccessToday = lastAccessDate !== today;
+
+      const expiringMyRequests: { req: FormData; deadline: string }[] = [];
+      const expiringCommonQueue: { req: FormData; deadline: string }[] = [];
+      const expiringAdminReport: { req: FormData; analyst: string; deadline: string }[] = [];
+
+      allRequests.forEach(r => {
+        const deadline = normalizeDate(r.estimatedDeliveryDate);
+        if ([StudyStatus.CONCLUIDO, StudyStatus.CANCELADO, StudyStatus.REJEITADO].includes(r.status)) return;
+        if (['Concluído', 'Cancelado', 'Rejeitado'].includes(String(r.status))) return;
+        
+        // Debug: Log para entender o que está acontecendo com cada estudo
+        console.log(`[Debug] Study ${r.id} (${r.studyNumber}): deadline=${deadline}, threshold=${threshold}, status=${r.status}, assignedTo=${r.assignedTo}`);
+        
+        if (!deadline) return;
+
+        if (deadline <= threshold) {
+          const isMe = isAssignedToMe(r.assignedTo, user);
+          const isSystem = isSystemAssigned(r.assignedTo);
+          console.log(`[Debug] Study ${r.id}: isMe=${isMe}, isSystem=${isSystem}, user.role=${user.role}`);
+          
+          if (isMe) expiringMyRequests.push({ req: r, deadline });
+          else if (isSystem) expiringCommonQueue.push({ req: r, deadline });
+          else if (user.role === UserRole.ADM) {
+            expiringAdminReport.push({ req: r, analyst: resolveNameLocal(r.assignedTo, r.assignedToName), deadline });
+          }
+        }
+      });
+
+      console.log('[Debug] Expiring counts - Minha:', expiringMyRequests.length, 'Comum:', expiringCommonQueue.length, 'Admin:', expiringAdminReport.length);
+
+      if (expiringMyRequests.length > 0 || expiringCommonQueue.length > 0 || expiringAdminReport.length > 0) {
+        const newNotifs = [
+          ...expiringMyRequests.map(i => ({ ...i, type: 'Minha' })),
+          ...expiringCommonQueue.map(i => ({ ...i, type: 'Comum' })),
+          ...expiringAdminReport.map(i => ({ ...i, type: 'Relatório' }))
+        ];
+        setAdminNotifications(newNotifs);
+        setHasNewNotifications(true);
+
+        // Mostrar pop-up de alerta para analistas SEMPRE que houver estudos (não apenas no primeiro acesso)
+        if (user.role === UserRole.ANALISTA && view !== 'execution' && view !== 'analyst-view') {
+          if (dialogVisibleRef.current) return;
+
+          dialogVisibleRef.current = true;
+          const itemsToAlert = [...expiringMyRequests, ...expiringCommonQueue];
+
+          const getStatusMessage = (status: string) => {
+            const messages: { [key: string]: string } = {
+              'Pendente': 'Estudo aguarda validação. Prazo está próximo - verifique com o validando.',
+              'Em Análise': 'Estudo em análise. Verifique o andamento com o responsável.',
+              'Aguardando Execução': 'Estudo liberado para execução. Inicie os trabalhos imediatamente.',
+              'Em Execução': 'Estudo em andamento. O prazo está próximo - finalize urgente.',
+              'Aguardando Informações': 'Estudo parado aguardando informações. Resolva as pendências.',
+              'Controle de Qualidade': 'Estudo enviado ao CQ. Aguarde validação ou corrija falhas.',
+              'Reprovado pelo CQ': 'Estudo reprovado. Correções necessárias - reabra a execução.',
+              'Enviado sem CQ': 'Estudo enviado ao cliente. Falta finalizar a conclusão.',
+              'Aprovado pelo CQ': 'Estudo aprovado. Falta apenas finalizar e enviar ao solicitante.',
+              'Aberto': 'Estudo aberto aguardando atribuição. Execute ou reassigne.'
+            };
+            return messages[status] || 'Estudo requer atenção urgente.';
+          };
+
+          for (const item of itemsToAlert) {
+            const isMeItem = expiringMyRequests.some(m => m.req.id === item.req.id);
+            const label = isMeItem ? "⚠️ Minha Solicitação" : "📋 Fila Comum";
+            const color = isMeItem ? "text-orange-600" : "text-blue-600";
+            const statusMsg = getStatusMessage(String(item.req.status));
+
+            const message = `
+              <div class="space-y-3 pt-1">
+                <strong class="${color} block mb-1 uppercase text-xs">${label}:</strong>
+                <p class="text-sm font-semibold">Estudo: ${item.req.studyNumber}</p>
+                <p class="text-sm">Status: <span class="text-purple-600 font-semibold">${item.req.status}</span></p>
+                <p class="text-sm">Prazo: <span class="text-red-600 font-semibold">${formatDate(item.deadline)}</span></p>
+                <p class="mt-3 text-xs text-blue-600 font-medium bg-blue-50 p-2 rounded">
+                  <i class="fa-solid fa-circle-info mr-1"></i>
+                  ${statusMsg}
+                </p>
+                <p class="mt-2 text-[10px] text-slate-400 italic border-t pt-2">Sua confirmação de leitura será registrada para este estudo ao clicar em OK.</p>
+              </div>
+            `;
+
+            await showAlert(message, 'Alerta de Prazo de Expiração', 'warning');
+
+            // Registrar cada alerta com o status atual da solicitação
+            // Assim o ADM pode ver todo o histórico de alertas e em qual status cada um foi gerado
+            const r = item.req;
+            const ackTimestamp = new Date().toISOString();
+            const updateData: Partial<FormData> = {
+              user_id: r.user_id || user.id,
+              alertConfirmations: [...(r.alertConfirmations || []), `${user.name}|${ackTimestamp}|${item.req.status}`],
+              lastAnalystAlertDate: today
+            };
+            await updateRequestStatus(r.id, r.status, undefined, r.assignedTo, updateData);
+          }
+          dialogVisibleRef.current = false;
+        }
+      }
+    };
+
+    checkExpirations();
+    const intervalId = setInterval(checkExpirations, 300000); // 5 minutos exatos
+    return () => clearInterval(intervalId);
+  }, [allRequests, user, allUsers]);
 
   // Monitoramento Global de Notificações (Pausa / Resposta)
   useEffect(() => {
@@ -356,7 +601,6 @@ const App: React.FC = () => {
       try {
         await StorageService.migrateRequestsToStorage((msg: string) => setSyncStatus(msg));
         showToast('Sincronização concluída!', 'success');
-        // Recarregar os dados para refletir as mudanças (base64 removido)
         const updatedRequests = await StorageService.getRequests();
         setAllRequests(updatedRequests);
       } catch (err) {
@@ -365,6 +609,69 @@ const App: React.FC = () => {
         setIsSyncing(false);
         setSyncStatus('');
       }
+    }
+  };
+
+  const handleRefreshData = async () => {
+    console.log('[Refresh] Starting data refresh...');
+    setIsSyncing(true);
+    setSyncStatus('Atualizando...');
+    try {
+      isUpdatingRef.current = true;
+
+      // Primeiro sincroniza os arquivos/pastas
+      setSyncStatus('Sincronizando arquivos...');
+      console.log('[Refresh] Calling migrateRequestsToStorage...');
+      await StorageService.migrateRequestsToStorage((msg: string) => {
+        console.log('[Refresh] Migration progress:', msg);
+        setSyncStatus(msg);
+      });
+
+      // Depois atualiza os dados do banco
+      setSyncStatus('Atualizando dados...');
+      console.log('[Refresh] Fetching users...');
+      const users = await StorageService.getUsers();
+      console.log('[Refresh] Users fetched:', users.length);
+      
+      console.log('[Refresh] Fetching requests, user:', user?.id, 'role:', user?.role, 'area:', user?.area);
+      const requests = await StorageService.getRequests(user?.id, user?.role, user?.area);
+      console.log('[Refresh] Requests fetched from API:', requests.length, 'samples:', requests.slice(0, 3).map(r => ({ id: r.id, studyNumber: r.studyNumber, status: r.status })));
+      
+      console.log('[Refresh] All current requests in state:', allRequests.length, 'samples:', allRequests.slice(0, 3).map(r => ({ id: r.id, studyNumber: r.studyNumber, status: r.status })));
+
+      const mergedRequests = requests.map(req => {
+        const pending = pendingUpdatesRef.current[req.id];
+        const currentLocal = allRequests.find(r => r.id === req.id);
+        if (pending && (Date.now() - pending.timestamp < 30000)) {
+          return {
+            ...req,
+            status: pending.status,
+            assignedTo: pending.assignedTo !== undefined ? pending.assignedTo : req.assignedTo
+          };
+        }
+        if (currentLocal && currentLocal.status !== req.status) {
+          const localUpdateTime = new Date(currentLocal.updatedAt).getTime();
+          if (Date.now() - localUpdateTime < 30000) {
+            return currentLocal;
+          }
+        }
+        return req;
+      });
+
+      console.log('[Refresh] Setting merged requests:', mergedRequests.length);
+      console.log('[Refresh] First 3 requests to set:', mergedRequests.slice(0, 3).map(r => ({ id: r.id, studyNumber: r.studyNumber, status: r.status })));
+      setAllRequests(mergedRequests);
+      setAllUsers(users);
+      console.log('[Refresh] setAllRequests called with', mergedRequests.length, 'items');
+      showToast('Dados atualizados com sucesso!', 'success');
+    } catch (err) {
+      console.error('[Refresh] Erro ao atualizar dados:', err);
+      showToast('Erro ao atualizar dados.', 'error');
+    } finally {
+      isUpdatingRef.current = false;
+      setIsSyncing(false);
+      setSyncStatus('');
+      console.log('[Refresh] Done');
     }
   };
 
@@ -410,10 +717,18 @@ const App: React.FC = () => {
             completedAt: status === StudyStatus.CONCLUIDO ? (req.completedAt || new Date().toISOString()) : req.completedAt,
             qcRequestDate: status === StudyStatus.CONTROLE_QUALIDADE ? (req.qcRequestDate || new Date().toISOString()) : req.qcRequestDate,
             updatedAt: new Date().toISOString(),
-            // DEADLINE: Never recalculate estimatedDeliveryDate during status transitions.
-            // It must remain fixed based on the original Request Date (SLA requirement).
-            estimatedDeliveryDate: req.estimatedDeliveryDate 
+            estimatedDeliveryDate: req.estimatedDeliveryDate
           };
+
+          // Limpar dados de QC da revisão anterior quando enviando para nova revisão de CQ
+          if (status === StudyStatus.CONTROLE_QUALIDADE && req.status !== StudyStatus.CONTROLE_QUALIDADE) {
+            updated.qcData = {
+              qcCriticalFailures: {},
+              qcSecondaryFailures: {},
+              qcStatusCQ: undefined,
+              qcComments: '',
+            };
+          }
 
           if ((status === StudyStatus.VALIDADO || status === StudyStatus.AGUARDANDO_EXECUCAO) && req.status !== status) {
             updatedRequestForEmail.type = 'approval';
@@ -430,7 +745,17 @@ const App: React.FC = () => {
             updatedRequestForEmail.request = updated;
           } else if (status === StudyStatus.CONTROLE_QUALIDADE && req.status !== StudyStatus.CONTROLE_QUALIDADE) {
             updatedRequestForEmail.type = 'qc_request';
-            updatedRequestForEmail.request = updated;
+            updatedRequestForEmail.request = {
+              ...updated,
+              // Limpar dados de QC da revisão anterior para nova avaliação
+              qcData: {
+                ...updated.qcData,
+                qcCriticalFailures: {},
+                qcSecondaryFailures: {},
+                qcStatusCQ: undefined,
+                qcComments: '',
+              }
+            };
           } else if (status === StudyStatus.ENVIADO_SEM_CQ && req.status !== StudyStatus.ENVIADO_SEM_CQ) {
             updatedRequestForEmail.type = 'pre_qc_response';
             updatedRequestForEmail.request = updated;
@@ -456,9 +781,13 @@ const App: React.FC = () => {
       });
 
       setAllRequests(updatedList);
-      
+
       // Track this update as "pending" for 10s to prevent sync reversion
-      pendingUpdatesRef.current[id] = { status, timestamp: Date.now() };
+      pendingUpdatesRef.current[id] = {
+        status,
+        assignedTo: assignedTo !== undefined ? assignedTo : originalRequest?.assignedTo,
+        timestamp: Date.now()
+      };
 
       const updatedReq = updatedList.find(r => r.id === id);
       const needsRename = (status === StudyStatus.AGUARDANDO_EXECUCAO || status === StudyStatus.VALIDADO) && updatedReq?.previousStudy?.startsWith('PROV-');
@@ -475,6 +804,33 @@ const App: React.FC = () => {
 
           // Await to ensure it's saved before any auto-sync overwrites it
           await StorageService.addRequest(updatedReq);
+
+          // NEW: Upload any NEW files attached during status update (e.g. from Execution)
+          // CONFORME SOLICITADO: Pular upload se status for Em Análise (100/330), Pendente (240) ou Rejeitado (290)
+          const skipUploadStatus = ['100', '330', '240', '290'];
+          const currentStatus = String(updatedReq.status);
+
+          if (!skipUploadStatus.includes(currentStatus)) {
+            if (updatedReq.selectedFiles && updatedReq.selectedFiles.length > 0) {
+              for (const f of updatedReq.selectedFiles) {
+                if (f instanceof File) {
+                  await StorageService.uploadFile(updatedReq.id, 'Solicitacao', f);
+                }
+              }
+            }
+            if (updatedReq.categorizedFiles) {
+              for (const category of Object.keys(updatedReq.categorizedFiles)) {
+                const catFiles = updatedReq.categorizedFiles[category];
+                if (catFiles && catFiles.length > 0) {
+                  for (const f of catFiles) {
+                    if (f instanceof File) {
+                      await StorageService.uploadFile(updatedReq.id, category, f);
+                    }
+                  }
+                }
+              }
+            }
+          }
         } catch (err) {
           console.warn('Falha ao salvar request ou mover arquivos no servidor:', err);
         }
@@ -494,26 +850,70 @@ const App: React.FC = () => {
             } else if (updatedRequestForEmail.type === 'completion') {
               handleSendEmail(EmailService.generateCompletionEmail(updatedRequestForEmail.request));
             } else if (updatedRequestForEmail.type === 'qc_request') {
-              // Analyst -> PRGC system: study finished execution
+              // Analyst -> QC Users: study finished execution
               const analystId = updatedRequestForEmail.request.assignedTo;
-              const analyst = allUsers.find(u => u.id === analystId);
-              if (analyst) {
-                handleSendEmail(EmailService.generateQCRequestEmail(
-                  updatedRequestForEmail.request,
-                  analyst.email,
-                  analyst.name
-                ));
+              let analyst = allUsers.find(u => u.id === analystId);
+
+              // Fallback: usar usuário atual se não encontrar analista
+              if (!analyst && user) {
+                analyst = user;
+              }
+
+              if (analyst && analyst.email) {
+                console.log('[QC Email] Analyst:', analyst.name, analyst.email);
+                const qcUsers = allUsers.filter(u =>
+                  (u.role === UserRole.ADM || u.permissions?.includes('controle_qualidade')) &&
+                  u.email && u.email !== analyst.email
+                );
+                console.log('[QC Email] QC Users found:', qcUsers.map(u => ({ name: u.name, email: u.email })));
+
+                // Se há usuários de QC, enviar para todos em cópia
+                if (qcUsers.length > 0) {
+                  // Pegar o primeiro destinatário principal e incluir os outros em CC
+                  const primaryRecipient = qcUsers[0].email;
+                  const ccRecipients = qcUsers.slice(1).map(u => u.email).join(',');
+
+                  console.log('[QC Email] Sending to:', primaryRecipient, 'CC:', ccRecipients);
+
+                  // Gerar email com CC
+                  const emailData = EmailService.generateQCRequestEmail(
+                    updatedRequestForEmail.request,
+                    analyst.email,
+                    analyst.name,
+                    primaryRecipient
+                  );
+
+                  // Adicionar CC se houver mais destinatários
+                  if (ccRecipients) {
+                    emailData.ccEmail = ccRecipients;
+                  }
+
+                  handleSendEmail(emailData);
+                }
+              } else {
+                console.log('[QC Email] Analyst not found! analystId:', analystId, 'user:', user?.email);
               }
             } else if (updatedRequestForEmail.type === 'pre_qc_response') {
               const analystId = updatedRequestForEmail.request.assignedTo;
-              const analyst = allUsers.find(u => u.id === analystId);
-              if (analyst) {
+              let analyst = allUsers.find(u => u.id === analystId);
+
+              // Fallback: usar usuário atual se não encontrar analista
+              if (!analyst && user) {
+                analyst = user;
+              }
+
+              console.log('[PreQC] Analyst:', analyst?.name, analyst?.email);
+
+              if (analyst && analyst.email) {
+                console.log('[PreQC] Sending pre-QC response to requester...');
                 // 1. Send response to requester
                 handleSendEmail(EmailService.generatePreQCResponseEmail(
                   updatedRequestForEmail.request,
                   analyst.email,
                   analyst.name
                 ));
+
+                console.log('[PreQC] Sending pre-QC system justification...');
                 // 2. Send justification to PRGC system (delayed)
                 setTimeout(() => {
                   if (updatedRequestForEmail.request && analyst) {
@@ -524,10 +924,20 @@ const App: React.FC = () => {
                     ));
                   }
                 }, 600);
-
-                // Important: After sending without QC, it immediately enters the QC queue
-                updateRequestStatus(updatedRequestForEmail.request.id, StudyStatus.CONTROLE_QUALIDADE);
+              } else {
+                console.log('[PreQC] Analyst not found, using user as fallback');
+                // Try with current user
+                if (user && user.email) {
+                  handleSendEmail(EmailService.generatePreQCResponseEmail(
+                    updatedRequestForEmail.request,
+                    user.email,
+                    user.name || 'Analista'
+                  ));
+                }
               }
+
+              // Important: After sending without QC, it immediately enters the QC queue
+              updateRequestStatus(updatedRequestForEmail.request.id, StudyStatus.CONTROLE_QUALIDADE);
             } else if ((updatedRequestForEmail.type === 'qc_approval' || updatedRequestForEmail.type === 'qc_rejection') && updatedRequestForEmail.request) {
               const analystId = updatedRequestForEmail.request.assignedTo;
               const analyst = allUsers.find(u => u.id === analystId);
@@ -722,10 +1132,10 @@ const App: React.FC = () => {
         startedAt: needsStatusUpdate ? now : request.startedAt
       };
       setEditingRequest(updatedReq);
-      updateRequestStatus(request.id, newStatus, undefined, newAssignedTo, { 
+      updateRequestStatus(request.id, newStatus, undefined, newAssignedTo, {
         ...specializedMapping,
         studyNumber: updatedStudyNumber,
-        startedAt: needsStatusUpdate ? now : request.startedAt 
+        startedAt: needsStatusUpdate ? now : request.startedAt
       });
     } else {
       setEditingRequest(request);
@@ -758,6 +1168,12 @@ const App: React.FC = () => {
   };
 
   const handleStartForm = async (formId: FormType) => {
+    // Se for ADM ou Analista E está vindo do Dashboard (não do Menu), redirecionar para o menu de seleção
+    // Se já está no menu, permitir criar o formulário normalmente
+    if ((user?.role === UserRole.ADM || user?.role === UserRole.ANALISTA) && view !== 'menu') {
+      setView('menu');
+      return;
+    }
     try {
       const nextId = await StorageService.getNextId();
       setEditingRequest({ id: nextId } as any);
@@ -909,7 +1325,14 @@ const App: React.FC = () => {
   const handleViewRequest = (request: FormData) => {
     setEditingRequest(request);
     setSelectedForm(request.formType);
-    setView('analyst-view');
+    // Abrir painel técnico em modo read-only ao invés do formulário
+    setView('execution');
+  };
+
+  const handleViewExecution = (request: FormData) => {
+    setEditingRequest(request);
+    setSelectedForm(request.formType);
+    setView('execution');
   };
 
   const handleBackToMenu = () => {
@@ -923,7 +1346,7 @@ const App: React.FC = () => {
 
   const handleRequestSubmit = async (newRequest: FormData, pdfFile?: File) => {
     if (isUpdatingRef.current) return;
-    
+
     // Helper for normalization
     const normalize = (s: string) => s?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() || "";
 
@@ -934,7 +1357,7 @@ const App: React.FC = () => {
     let finalRequest = { ...newRequest };
 
     isUpdatingRef.current = true;
-    
+
     try {
       if (existingRequest) {
         const prevStatus = existingRequest.status;
@@ -954,13 +1377,13 @@ const App: React.FC = () => {
         let isRevision = !!newRequest.previousStudy;
 
         let studyNumber = '';
-        
+
         if (isRevision) {
           // É uma revisão - Pedir próxima revisão ao servidor
           const baseRef = newRequest.previousStudy!;
           const nextNumResult = await StorageService.getNextStudyNumber('revision', baseRef);
           studyNumber = nextNumResult.nextNumber;
-          
+
           finalRequest = {
             ...newRequest,
             studyNumber,
@@ -972,7 +1395,7 @@ const App: React.FC = () => {
           // Novo estudo - Pedir próximo número global ao servidor
           const nextNumResult = await StorageService.getNextStudyNumber('new');
           studyNumber = nextNumResult.nextNumber;
-          
+
           finalRequest = {
             ...newRequest,
             studyNumber,
@@ -1006,6 +1429,20 @@ const App: React.FC = () => {
           });
           setView('my-requests');
           setEditingRequest(null);
+
+          // NEW: Upload attachments and generated PDF
+          if (finalRequest.selectedFiles && finalRequest.selectedFiles.length > 0) {
+            for (const f of finalRequest.selectedFiles) {
+              if (f instanceof File) {
+                await StorageService.uploadFile(finalRequest.id, 'Solicitacao', f);
+              }
+            }
+          }
+          if (pdfFile) {
+            // Renomear conforme solicitado: Formulário [CÓDIGO].pdf
+            const renamedFile = new File([pdfFile], `Formulário ${finalRequest.studyNumber}.pdf`, { type: 'application/pdf' });
+            await StorageService.uploadFile(finalRequest.id, 'Solicitacao', renamedFile);
+          }
 
           // Automated email trigger on submit
           setTimeout(() => {
@@ -1113,13 +1550,13 @@ const App: React.FC = () => {
   if (view === 'login') return <Login onLogin={handleLogin} onCreateAccount={(presetEmail, presetPassword) => {
     // Gerar um ID único para o novo solicitante para não sobrescrever outros com ID vazio
     const newId = `sol-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const newUser: User = { 
-      id: newId, 
-      name: '', 
-      role: UserRole.SOLICITANTE, 
-      email: presetEmail || '', 
-      password: presetPassword || '', 
-      profileComplete: false 
+    const newUser: User = {
+      id: newId,
+      name: '',
+      role: UserRole.SOLICITANTE,
+      email: presetEmail || '',
+      password: presetPassword || '',
+      profileComplete: false
     };
     setUser(newUser);
     setView('onboarding');
@@ -1136,8 +1573,8 @@ const App: React.FC = () => {
               <i className={`fa-solid ${notification.type === 'success' ? 'fa-circle-check' : 'fa-envelope-circle-check'} text-2xl`}></i>
             </div>
             <div className="flex-grow">
-              <h4 className="text-sm font-black text-[#004080] uppercase tracking-tight">{notification.message}</h4>
-              <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 leading-relaxed">{notification.subtext}</p>
+              <h4 className="text-sm font-semibold text-[#004080]">{notification.message}</h4>
+              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{notification.subtext}</p>
             </div>
             <button onClick={() => setNotification(null)} className="text-slate-300 hover:text-slate-500 transition-colors">
               <i className="fa-solid fa-xmark"></i>
@@ -1157,33 +1594,59 @@ const App: React.FC = () => {
             {isSyncing && (
               <div className="flex items-center gap-3 px-4 py-2 bg-orange-50 border border-orange-100 rounded-xl animate-pulse">
                 <i className="fa-solid fa-sync fa-spin text-orange-500 text-[10px]"></i>
-                <span className="text-[10px] font-black text-orange-800 uppercase tracking-widest">{syncStatus}</span>
+                <span className="text-[10px] font-semibold text-orange-800">{syncStatus}</span>
               </div>
             )}
-            <nav className="flex items-center gap-2 mr-4 pr-4 border-r border-slate-200">
+<nav className="flex items-center gap-2 mr-4 pr-4 border-r border-slate-200">
               <button
-                onClick={handleSyncStorage}
+                onClick={handleRefreshData}
                 disabled={isSyncing}
-                className="px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider text-indigo-500 hover:bg-slate-100 flex items-center gap-2"
-                title="Sincronizar arquivos e pastas com o banco"
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide text-green-600 hover:bg-green-50 flex items-center gap-2"
+                title="Atualizar dados do banco de dados em tempo real"
               >
                 <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'fa-spin' : ''}`}></i>
-                Sincronizar
+                Atualizar
               </button>
               {user?.role === UserRole.SOLICITANTE && (
-                <button onClick={() => setView('my-requests')} className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'my-requests' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Minhas Solicitações</button>
+                <button onClick={() => setView('my-requests')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'my-requests' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Minhas Solicitações</button>
               )}
               {(user?.role === UserRole.ADM || user?.role === UserRole.ANALISTA) && (
-                <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'dashboard' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Estudos</button>
-              )}
-              {user?.role === UserRole.ADM && (
-                <button onClick={() => setView('users')} className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${view === 'users' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Usuários</button>
+                <>
+                  <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'dashboard' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Estudos</button>
+                  {user?.role === UserRole.ADM && (
+                    <>
+                      <button onClick={() => setView('users')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'users' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Usuários</button>
+                      <button onClick={() => setView('audit')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'audit' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Auditoria</button>
+                    </>
+                  )}
+                </>
               )}
             </nav>
             <div className="flex items-center gap-3">
+              {user?.role === UserRole.ADM && (
+                <div className="relative mr-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowNotifBox(!showNotifBox);
+                      setHasNewNotifications(false);
+                    }}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm border border-slate-200 ${showNotifBox ? 'bg-[#004080] text-white' : 'bg-white text-[#004080] hover:bg-slate-50'
+                      }`}
+                    title="Central de Alertas de Expiração"
+                  >
+                    <i className={`fa-solid ${showNotifBox ? 'fa-bell-slash' : 'fa-bell'} text-sm`}></i>
+                    {hasNewNotifications && adminNotifications.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white flex items-center justify-center text-[8px] text-white font-bold animate-bounce">
+                        {adminNotifications.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
               <div className="text-right hidden sm:block">
-                <p className="text-xs font-black text-[#004080] leading-none uppercase">{user?.name}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{user?.role}</p>
+<p className="text-xs font-semibold text-[#004080] leading-none">{user?.name}</p>
+              <p className="text-[10px] text-slate-400 mt-1">{user?.role}</p>
               </div>
               <button onClick={handleLogout} className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center" title="Logout">
                 <i className="fa-solid fa-power-off"></i>
@@ -1233,6 +1696,8 @@ const App: React.FC = () => {
               onAnalyze={handleAnalyzeRequest}
               onExecute={handleStartExecution}
               onStatusUpdate={updateRequestStatus}
+              onViewRequest={handleViewExecution}
+              onCreateRequest={handleStartForm}
               autoOpenRequestId={autoOpenRequestId}
               onModalOpened={() => setAutoOpenRequestId(null)}
             />
@@ -1261,14 +1726,248 @@ const App: React.FC = () => {
               onResetUsers={handleResetUsers}
             />
           )}
+          {view === 'audit' && user?.role === UserRole.ADM && (
+            <AuditLog currentUser={user} />
+          )}
         </div>
       </main>
 
       {/* Email Preview Modal Removed */}
 
-      <footer className="bg-white border-t border-slate-200 p-6 text-center text-slate-400 text-[10px] uppercase font-bold tracking-widest mt-auto">
+      <footer className="bg-white border-t border-slate-200 p-6 text-center text-slate-400 text-[10px] font-semibold tracking-wide mt-auto">
         <p>&copy; {new Date().getFullYear()} Naturgy - Portal Técnico.</p>
       </footer>
+
+      {/* ========== MODAIS GLOBAIS DE ALERTAS (Migrados do Dashboard) ========== */}
+      {showNotifBox && (
+        <div className="fixed inset-0 z-[10000] overflow-y-auto bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="min-h-full flex items-start justify-center p-4 pt-8 pb-8">
+            <div
+              ref={notifRef}
+              className="bg-white rounded-2xl shadow-[0_30px_100px_rgba(0,0,0,0.4)] w-full max-w-5xl flex flex-col border border-slate-100 animate-in zoom-in-95 duration-300"
+            >
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl shrink-0">
+                <div className="flex items-center gap-3 text-[#004080]">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-base">
+                    <i className="fa-solid fa-bell animate-pulse"></i>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black uppercase tracking-tight">Central de Alertas de Prazo</h3>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Gestão administrativa de expirações e visualizações</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowNotifBox(false)}
+                    className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:text-[#004080] hover:bg-slate-100 transition-all flex items-center justify-center text-sm active:scale-90"
+                  >
+                    <i className="fa-solid fa-times"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto bg-slate-50/30 p-6" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+                {adminNotifications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-12 text-center">
+                    <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center text-3xl text-green-500 mb-4">
+                      <i className="fa-solid fa-check-double"></i>
+                    </div>
+                    <h4 className="text-lg font-black text-slate-800 uppercase">Tudo em conformidade!</h4>
+                    <p className="text-xs text-slate-400 mt-1 font-medium max-w-sm">Não há alertas de expiração pendentes.</p>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/30">
+                          <th className="px-4 py-3 text-[10px] font-semibold uppercase text-slate-500 tracking-wider">Estudo</th>
+                          <th className="px-4 py-3 text-[10px] font-semibold uppercase text-slate-500 tracking-wider">Responsável</th>
+                          <th className="px-4 py-3 text-[10px] font-semibold uppercase text-slate-500 tracking-wider">Status</th>
+                          <th className="px-4 py-3 text-[10px] font-semibold uppercase text-slate-500 tracking-wider">Prazo</th>
+                          <th className="px-4 py-3 text-[10px] font-semibold uppercase text-slate-500 tracking-wider">Visualização</th>
+                          <th className="px-4 py-3 text-[10px] font-semibold uppercase text-slate-500 tracking-wider text-center">Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminNotifications.map((n, idx) => {
+                          const acks = (n.req.alertConfirmations || []).map(ack => {
+                            const parts = ack.includes('|') ? ack.split('|') : [n.analyst || 'Analista', ack];
+                            const name = parts[0] || 'Analista';
+                            const time = parts[1] || '';
+                            const status = parts[2] || '';
+                            return { name, time, status };
+                          });
+
+                          return (
+                            <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/30 transition-colors duration-200">
+                              <td className="px-4 py-3">
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-semibold text-[#004080]">{n.req.studyNumber}</span>
+                                  <span className="text-[10px] text-slate-400 truncate max-w-[180px] mt-0.5">{n.req.clientName || n.req.studyTitle || 'Sem título'}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 border-b border-slate-50">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] ${n.type === 'Minha' ? 'bg-orange-100 text-orange-600' :
+                                    n.type === 'Comum' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
+                                    }`}>
+                                    <i className={n.type === 'Relatório' ? 'fa-solid fa-user-tie' : 'fa-solid fa-inbox'}></i>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-black text-slate-700 uppercase">{n.analyst || (n.type === 'Minha' ? 'EU' : 'Fila Comum')}</p>
+                                    <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">{n.type === 'Relatório' ? 'Alerta de Analista' : `Fila: ${n.type}`}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 border-b border-slate-50">
+                                <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-lg border border-purple-100">
+                                  {n.req.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 border-b border-slate-50 font-mono text-[10px]">
+                                <span className="text-red-500 font-black bg-red-50 px-2 py-1 rounded-lg border border-red-100 flex items-center justify-center w-fit gap-1">
+                                  <i className="fa-solid fa-clock-rotate-left text-[9px]"></i>
+                                  {formatDate(n.deadline)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 border-b border-slate-50">
+                                {acks.length === 0 ? (
+                                  <div className="flex items-center gap-2 text-orange-400 animate-pulse">
+                                    <i className="fa-solid fa-circle-exclamation text-xs"></i>
+                                    <span className="text-[9px] font-semibold">{n.type === 'Comum' ? 'Ninguém viu' : 'Pendente'}</span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setHistoryModalAlert({ type: n.type, analyst: n.analyst, acks })}
+                                    className="flex items-center gap-2 px-2 py-1 rounded-lg bg-green-50 border border-green-100 text-green-600 hover:bg-green-100 transition-all active:scale-95"
+                                  >
+                                    <i className="fa-solid fa-clock-rotate-left text-xs"></i>
+                                    <span className="text-[9px] font-semibold text-left">
+                                      {n.type === 'Comum' 
+                                        ? `${new Set(acks.map(a => a.name?.trim() || 'Sistema')).size} Viram` 
+                                        : 'Visto'} · <span className="text-green-600">Histórico</span>
+                                    </span>
+                                  </button>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 border-b border-slate-50 text-center">
+                                <button
+                                  onClick={() => {
+                                    setAutoOpenRequestId(n.req.id);
+                                    setView('dashboard');
+                                    setShowNotifBox(false);
+                                  }}
+                                  className="h-8 w-8 rounded-lg bg-[#004080] text-white hover:bg-blue-600 transition-all shadow-sm active:scale-90"
+                                  title="Localizar Estudo"
+                                >
+                                  <i className="fa-solid fa-magnifying-glass-location text-xs"></i>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-slate-400 rounded-b-2xl shrink-0">
+                <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1">
+                  <i className="fa-solid fa-info-circle"></i> Confirmações de leitura em tempo real.
+                </p>
+                <p className="text-[9px] font-bold uppercase tracking-widest">Total: <span className="text-[#004080] ml-1">{adminNotifications.length}</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Histórico de Visualizações */}
+      {historyModalAlert && (
+        <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-blue-50/30">
+              <div className="flex items-center gap-3 text-[#004080]">
+                <i className="fa-solid fa-clock-rotate-left text-lg"></i>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-tight">Histórico de Leitura</h3>
+                  <p className="text-[8px] text-slate-400 font-bold uppercase">
+                    {historyModalAlert.type === 'Comum' ? 'Fila Comum — agrupado por analista' : `Responsável: ${historyModalAlert.analyst || 'A definir'}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setHistoryModalAlert(null)}
+                className="w-8 h-8 rounded-lg bg-white text-slate-400 hover:text-red-500 shadow-sm transition-all flex items-center justify-center"
+              >
+                <i className="fa-solid fa-times text-sm"></i>
+              </button>
+            </div>
+            <div className="p-4 max-h-[60vh] overflow-y-auto space-y-3 bg-slate-50/50">
+              {historyModalAlert.type === 'Comum' ? (
+                (() => {
+                  const grouped = new Map<string, { time: string; status: string }[]>();
+                  historyModalAlert.acks.forEach(a => {
+                    // Normalizar nome para evitar duplicatas (trim + lowercase para key)
+                    const normalizedName = a.name ? a.name.trim() : 'Sistema';
+                    const existing = grouped.get(normalizedName) || [];
+                    existing.push({ time: a.time, status: a.status });
+                    grouped.set(normalizedName, existing);
+                  });
+                  return Array.from(grouped.entries()).map(([analystName, entries], gIdx) => (
+                    <div key={gIdx} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border-b border-slate-100">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                          <i className="fa-solid fa-user text-xs"></i>
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-[10px] font-semibold text-slate-700">{analystName}</span>
+                          <span className="text-[8px] text-slate-400 ml-2">({entries.length} visualização{entries.length > 1 ? 'ões' : ''})</span>
+                        </div>
+                      </div>
+                      <div className="divide-y divide-slate-50">
+                        {entries.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).map((entry, tIdx) => (
+                          <div key={tIdx} className="flex items-center justify-between gap-2 px-4 py-2">
+                            <div className="flex items-center gap-2">
+                              <i className="fa-solid fa-eye text-[9px] text-green-500"></i>
+                              <span className="text-[9px] text-slate-600">
+                                {new Date(entry.time).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            {entry.status && (
+                              <span className="text-[7px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 font-medium border border-purple-100">
+                                {entry.status}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()
+              ) : (
+                historyModalAlert.acks
+                  .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+                  .map((a, aIdx) => (
+                    <div key={aIdx} className="flex items-center justify-between gap-2 bg-white p-3 rounded-xl shadow-sm border border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <i className="fa-solid fa-eye text-[9px] text-green-500"></i>
+                        <span className="text-[9px] text-slate-600">
+                          {new Date(a.time).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {a.status && (
+                        <span className="text-[7px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 font-medium border border-purple-100">
+                          {a.status}
+                        </span>
+                      )}
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

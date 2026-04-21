@@ -126,11 +126,13 @@ export const isAssignedToMe = (assignedToId: string | undefined | null, currentU
   const userIdLower = currentUser.id.toLowerCase();
   const userEmailLower = currentUser.email?.toLowerCase().trim();
   const userSapLower = currentUser.sap?.toLowerCase().trim().replace(/^0+/, '');
+  const userGbLower = currentUser.gb?.toLowerCase().trim();
   const idSapClean = idLower.replace(/^0+/, '');
 
   if (idLower === userIdLower) return true;
   if (userEmailLower && idLower === userEmailLower) return true;
   if (userSapLower && idSapClean === userSapLower) return true;
+  if (userGbLower && idLower === userGbLower) return true;
   
   return false;
 };
@@ -198,3 +200,75 @@ export const isSystemAssigned = (id: string | undefined | null) => {
          clean === 'ADRSIS- SISTEMA';
 };
 
+/**
+ * Converte uma string para Title Case (primeira letra maiúscula de cada palavra),
+ * tratando corretamente acentos e eliminando excessos de espaços.
+ */
+export function toTitleCase(str: string | undefined): string {
+  if (!str) return '';
+  const exceptions = ['de', 'da', 'do', 'das', 'dos', 'em', 'com', 'para', 'a', 'o'];
+  
+  return str
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word, index) => {
+      if (word.length === 0) return '';
+      // Support for Unicode letters (matching accents correctly)
+      if (index === 0 || !exceptions.includes(word)) {
+        return word.replace(/^./u, (match) => match.toUpperCase());
+      }
+      return word;
+    })
+    .join(' ');
+}
+
+export function normalizeString(str: string | undefined | null): string {
+  if (!str) return '';
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+/**
+ * Verifica se um prazo (deadline) está vencido ou vence hoje.
+ */
+export const isExpiringOrOverdue = (deadlineStr: string | undefined | null) => {
+  if (!deadlineStr) return false;
+  
+  try {
+    let dStr = String(deadlineStr).trim();
+    
+    // Suporte para datas em formato Excel
+    if (!isNaN(Number(dStr)) && !dStr.includes('-') && !dStr.includes('/')) {
+      const excelDate = Number(dStr);
+      if (excelDate > 40000) {
+        const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
+        dStr = jsDate.toISOString().split('T')[0];
+      }
+    }
+
+    let deadline: Date;
+    if (dStr.includes('/')) {
+      const [d, m, y] = dStr.split('/').map(Number);
+      deadline = new Date(y, m - 1, d);
+    } else {
+      deadline = new Date(dStr);
+      // Ajustar para o fuso local se a string for apenas YYYY-MM-DD (evita problemas de timezone)
+      if (dStr.length === 10) {
+        const [y, m, d] = dStr.split('-').map(Number);
+        deadline = new Date(y, m - 1, d);
+      }
+    }
+    
+    if (isNaN(deadline.getTime())) return false;
+    
+    deadline.setHours(0, 0, 0, 0);
+    
+    // Data atual em SP
+    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    today.setHours(0, 0, 0, 0);
+    
+    return deadline <= today;
+  } catch {
+    return false;
+  }
+};

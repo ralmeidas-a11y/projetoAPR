@@ -121,9 +121,12 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               </div>
               <div className="flex-1 min-w-0">
                 {dialog.title && (
-                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-1">{dialog.title}</h3>
+                  <h3 className="text-sm font-black text-slate-800 tracking-tight mb-1">{dialog.title}</h3>
                 )}
-                <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{dialog.message}</p>
+                <div 
+                  className="text-sm text-slate-700 leading-relaxed font-medium"
+                  dangerouslySetInnerHTML={{ __html: dialog.message }}
+                />
               </div>
             </div>
 
@@ -132,14 +135,14 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               {dialog.type === 'confirm' && (
                 <button
                   onClick={() => handleClose(false)}
-                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-500 font-bold text-xs uppercase tracking-wide hover:bg-slate-50 transition-all active:scale-95"
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-500 font-bold text-xs tracking-wide hover:bg-slate-50 transition-all active:scale-95"
                 >
                   {dialog.cancelLabel || 'Cancelar'}
                 </button>
               )}
               <button
                 onClick={() => handleClose(true)}
-                className={`px-6 py-2.5 rounded-xl text-white font-black text-xs uppercase tracking-wide shadow transition-all active:scale-95 ${cfg.btnClass}`}
+                className={`px-6 py-2.5 rounded-xl text-white font-black text-xs tracking-wide shadow transition-all active:scale-95 ${cfg.btnClass}`}
               >
                 {dialog.confirmLabel || (dialog.type === 'confirm' ? 'Confirmar' : 'OK')}
               </button>
@@ -160,7 +163,7 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 <i className={`fa-solid ${tc.icon} text-sm`}></i>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="leading-tight uppercase tracking-tight text-white text-[9px]">{toast.message}</p>
+                <p className="leading-tight tracking-tight text-white text-[9px]">{toast.message}</p>
               </div>
               
               {toast.onAction && (
@@ -170,7 +173,7 @@ export const DialogProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     toast.onClose?.();
                     setToasts(prev => prev.filter(t => t.id !== toast.id));
                   }}
-                  className="px-4 py-2 bg-white text-slate-900 rounded-lg text-[10px] uppercase font-black hover:bg-slate-100 transition-all active:scale-95 shadow-sm shrink-0"
+                  className="px-4 py-2 bg-white text-slate-900 rounded-lg text-[10px] font-black hover:bg-slate-100 transition-all active:scale-95 shadow-sm shrink-0"
                 >
                   {toast.actionLabel}
                 </button>

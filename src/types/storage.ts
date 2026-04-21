@@ -19,7 +19,7 @@ export interface StorageProvider {
   deleteCartaResposta(studyNumber: string): Promise<void>;
   getRequestFiles(studyNumber: string, folder: string): Promise<any[]>;
   uploadFile(studyNumber: string, folder: string, file: File): Promise<string>;
-  getFileUrl(path: string): Promise<string | null>;
+  getFileUrl(path: string, download?: boolean): Promise<string | null>;
   deleteFile(path: string): Promise<void>;
   syncFilesFromStorage(studyNumber: string): Promise<void>;
   moveStorageFolder(oldStudyNumber: string, newStudyNumber: string): Promise<void>;

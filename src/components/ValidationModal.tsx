@@ -23,43 +23,50 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
 }) => {
   const { showAlert } = useDialog();
   const [assignedAnalyst, setAssignedAnalyst] = useState(initialData?.assignedTo || 'ADRSis - SISTEMA');
+  const [hasInteractedWithAnalyst, setHasInteractedWithAnalyst] = useState(false);
 
-  // Sincroniza o analista selecionado com a lista de executores (resolvendo SAP/Email para ID interno)
+  // Sincroniza o analista selecionado com a lista de executores (resolvendo SAP/Email para ID interno ou SAP)
+  // APENAS se o usuário ainda não tiver interagido manualmente com o seletor.
   useEffect(() => {
-    if (initialData?.assignedTo && !isSystemAssigned(initialData.assignedTo)) {
+    if (!hasInteractedWithAnalyst && initialData?.assignedTo && !isSystemAssigned(initialData.assignedTo)) {
       const idClean = initialData.assignedTo.trim().toLowerCase();
       const idSapClean = idClean.replace(/^0+/, '');
-      
-      const found = executors.find(e => 
-        e.id.toLowerCase() === idClean || 
-        e.email?.toLowerCase() === idClean || 
+
+      const found = executors.find(e =>
+        e.id.toLowerCase() === idClean ||
+        e.email?.toLowerCase() === idClean ||
         e.sap?.trim().replace(/^0+/, '') === idSapClean
       );
-      
-      if (found && found.id !== assignedAnalyst) {
-        setAssignedAnalyst(found.id);
+
+      if (found) {
+        const valueToSet = found.sap || found.id;
+        if (valueToSet !== assignedAnalyst) {
+          setAssignedAnalyst(valueToSet);
+        }
       }
     }
-  }, [initialData?.assignedTo, executors]);
+  }, [initialData?.assignedTo, executors, hasInteractedWithAnalyst]);
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const isPendingValidation = String(initialData?.status) === '330' || initialData?.status === StudyStatus.EM_ANALISE || initialData?.status === StudyStatus.PENDENTE;
   const isReadOnly = !isPendingValidation && (initialData?.status !== undefined && (initialData?.status as any) !== 'Aberto');
 
-  const resolveUserName = (id: string | undefined | null) => {
+  const resolveUserName = (id: string | undefined | null, fallbackName?: string) => {
     if (!id || isSystemAssigned(id)) return 'Sistema';
-    
+
     // Procura por ID, Email ou SAP (limpando zeros à esquerda)
     const idClean = id.trim().toLowerCase();
     const idSapClean = idClean.replace(/^0+/, '');
-    
-    const found = executors.find(e => 
-      e.id.toLowerCase() === idClean || 
-      e.email?.toLowerCase() === idClean || 
+
+    const found = executors.find(e =>
+      e.id.toLowerCase() === idClean ||
+      e.email?.toLowerCase() === idClean ||
       e.sap?.trim().replace(/^0+/, '') === idSapClean
     );
-    
-    return found ? found.name : id;
+
+    if (found) return found.name;
+    if (fallbackName && fallbackName !== id) return fallbackName;
+    return id;
   };
 
   // Demanda e Parâmetros Técnicos
@@ -82,13 +89,13 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
   const [difficulty, setDifficulty] = useState(initialData?.difficulty || '');
   const [validatorObservations, setValidatorObservations] = useState(initialData?.validatorObservations || '');
   const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState(
-    initialData?.estimatedDeliveryDate || 
+    initialData?.estimatedDeliveryDate ||
     calculateDeadline(initialData?.requestDate, initialData?.formType || '')
   );
 
   const handleConfirm = () => {
     const today = new Date().toISOString();
-    
+
     // If we're validating for the first time or changing validation, 
     // we use "now" as validationDate unless it already exists.
     const validationDate = initialData?.validationDate || today;
@@ -133,8 +140,8 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-3">
             <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight">
-              {initialData?.assignedTo && initialData.assignedTo !== 'ADRSis - SISTEMA' 
-                ? `Atribuição: ${resolveUserName(initialData.assignedTo)}` 
+              {initialData?.assignedTo && initialData.assignedTo !== 'ADRSis - SISTEMA'
+                ? `Atribuição: ${resolveUserName(initialData.assignedTo, initialData.assignedToName)}`
                 : 'Validar e Atribuir Estudo'}
             </h3>
             {onOpenFiles && (
@@ -234,22 +241,25 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Responsável pela Execução</label>
               <select
                 value={assignedAnalyst}
-                onChange={(e) => setAssignedAnalyst(e.target.value)}
+                onChange={(e) => {
+                  setAssignedAnalyst(e.target.value);
+                  setHasInteractedWithAnalyst(true);
+                }}
                 className="w-full p-3 border border-slate-200 rounded-2xl outline-none focus:border-[#004080] bg-slate-50 text-sm font-bold text-[#004080]"
               >
-                <option value="ADRSis - SISTEMA">Fila Comum (ADRSIS - Sistema)</option>
+                <option value="ADRSis - SISTEMA">ADRSIS - Sistema</option>
                 {executors
-                  .filter(exec => 
-                    exec.name !== 'ADRSis - SISTEMA' && 
-                    exec.name !== 'ADRSis - Sistema' && 
+                  .filter(exec =>
+                    exec.name !== 'ADRSis - SISTEMA' &&
+                    exec.name !== 'ADRSis - Sistema' &&
                     exec.name !== 'ADRSIS - SISTEMA' &&
                     exec.role !== 'Solicitante'
                   )
                   .map(exec => (
-                    <option key={exec.id} value={exec.id}>{exec.name}</option>
+                    <option key={exec.id} value={exec.sap || exec.id}>{exec.name}</option>
                   ))}
               </select>
-              </div>
+            </div>
 
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 mt-4">
               <label className="block text-[10px] font-black text-[#004080] uppercase tracking-widest mb-2">
@@ -413,8 +423,8 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                 onClick={handleConfirm}
                 className="w-full md:w-auto px-10 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-black uppercase text-xs shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2 active:scale-95"
               >
-                <i className={`fa-solid ${ isPendingValidation ? 'fa-paper-plane' : 'fa-floppy-disk' }`}></i>
-                { isPendingValidation ? 'Enviar para Execução' : 'Salvar Alterações' }
+                <i className={`fa-solid ${isPendingValidation ? 'fa-paper-plane' : 'fa-floppy-disk'}`}></i>
+                {isPendingValidation ? 'Enviar para Execução' : 'Salvar Alterações'}
               </button>
             )}
           </div>

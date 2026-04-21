@@ -1,28 +1,27 @@
 const sql = require('mssql');
-require('dotenv').config();
-
 const config = {
-  user: process.env.DB_USER || 'sa',
-  password: process.env.DB_PASSWORD || 'Naturgy2024!',
-  server: process.env.DB_SERVER || 'localhost',
-  database: process.env.DB_NAME || 'ProjetoAPR',
-  options: {
-    encrypt: true,
-    trustServerCertificate: true
-  }
+  user: 'sa',
+  password: 'Amovoces7@',
+  server: 'localhost',
+  database: 'ProjetoAPR',
+  options: { encrypt: true, trustServerCertificate: true }
 };
 
-async function checkColumns() {
+async function check() {
   try {
     await sql.connect(config);
-    const result = await sql.query`SELECT TOP 1 * FROM E_OPEMAN`;
-    console.log('Columns in E_OPEMAN:', Object.keys(result.recordset.columns));
-    console.log('Sample Data:', result.recordset[0]);
+    const r = await sql.query(`SELECT USUARIO, SAP, EMAIL FROM E_OPEMAN WHERE EMAIL LIKE '%ralmeida%'`);
+    console.log("E_OPEMAN:", r.recordset);
+    
+    // Check what we have for Analistas generally
+    const r2 = await sql.query(`SELECT TOP 5 USUARIO, SAP, EMAIL, NATIVE_ROLE FROM E_OPEMAN WHERE NATIVE_ROLE = 'Analista'`);
+    console.log("Other Analistas in E_OPEMAN:", r2.recordset);
+
+    await sql.close();
   } catch (err) {
     console.error(err);
-  } finally {
-    await sql.close();
+    process.exit(1);
   }
 }
 
-checkColumns();
+check();

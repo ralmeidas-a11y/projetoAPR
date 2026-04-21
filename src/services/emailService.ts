@@ -1,6 +1,6 @@
 import { FormData, User, UserRole, StudyStatus } from "../types/types";
 import mjml2html from "mjml-browser";
-import { formatDate } from "../utils/utils";
+import { formatDate, toTitleCase, normalizeString } from "../utils/utils";
 
 export interface EmailNotificationData {
   recipientEmail: string;
@@ -12,9 +12,21 @@ export interface EmailNotificationData {
   htmlBody?: string;
   attachments?: string[];
   attachmentPaths?: string[];
+  ccEmail?: string;
 }
 
 const SYSTEM_EMAIL = "prgc@naturgy.com";
+
+const safeCompare = (a: string, b: string): boolean => {
+  const normA = normalizeString(a);
+  const normB = normalizeString(b);
+  return normA === normB;
+};
+
+const safeName = (name: string | undefined | null): string => {
+  if (!name) return '';
+  return toTitleCase(name);
+};
 
 const escapeHtml = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -294,16 +306,17 @@ Data:   ${safeFormatDate(request.requestDate)}
 
 👤 INFORMAÇÕES DO SOLICITANTE
 ───────────────────────────────────────────────────────────
-Nome:     ${request.requesterName || "Não informado"}
+Nome:     ${safeName(request.requesterName) || "Não informado"}
 E-mail:   ${request.email}
 Área:     ${request.requesterArea || "Não informada"}
+Unidade:  ${request.naturgyUnit || "Não informada"}
 Telefone: ${request.phone || "Não informado"}
 
 📍 LOCALIZAÇÃO
 ───────────────────────────────────────────────────────────
-Endereço: ${request.address || "Não informado"}
-Cidade:   ${request.city || "Não informada"}
-Unidade:  ${request.naturgyUnit || "Não informada"}
+Endereço: ${toTitleCase(request.address) || "Não informado"}
+Cidade:   ${toTitleCase(request.city) || "Não informada"}
+Unidade:  ${request.empresa || "Não informada"}
 
 📝 TIPO DE SOLICITAÇÃO
 ───────────────────────────────────────────────────────────
@@ -315,7 +328,7 @@ Tipo de Estudo: ${request.studyType || "Novo Estudo"}
 ${attachmentList}
 
 Atenciosamente,
-${request.requesterName || "Solicitante"}
+${safeName(request.requesterName) || "Solicitante"}
 ${request.requesterArea || ""}
 Naturgy - Portal Técnico APR`,
       htmlBody: buildRefinedHtmlTemplate(
@@ -341,12 +354,16 @@ Naturgy - Portal Técnico APR`,
             items: [
               {
                 label: "Nome",
-                value: request.requesterName || "Não informado",
+                value: safeName(request.requesterName) || "Não informado",
               },
               { label: "E-mail", value: request.email },
               {
                 label: "Área",
                 value: request.requesterArea || "Não informada",
+              },
+              {
+                label: "Unidade",
+                value: request.naturgyUnit || "Não informada",
               },
               { label: "Telefone", value: request.phone || "Não informado" },
             ],
@@ -358,7 +375,7 @@ Naturgy - Portal Técnico APR`,
               { label: "Cidade", value: request.city || "Não informada" },
               {
                 label: "Unidade",
-                value: request.naturgyUnit || "Não informada",
+                value: request.empresa || "Não informada",
               },
             ],
           },
@@ -378,7 +395,7 @@ Naturgy - Portal Técnico APR`,
         ],
         [
           "Atenciosamente,",
-          "<strong>" + (request.requesterName || "Solicitante") + "</strong>",
+          "<strong>" + (safeName(request.requesterName) || "Solicitante") + "</strong>",
           request.requesterArea || "",
           "<strong>Naturgy - Portal Técnico APR</strong>",
         ],
@@ -388,7 +405,7 @@ Naturgy - Portal Técnico APR`,
       attachments: attachmentNames,
       attachmentPaths: attachmentPaths,
       senderEmail: request.email,
-      senderName: request.requesterName,
+      senderName: safeName(request.requesterName),
     };
   },
 
@@ -404,11 +421,11 @@ Naturgy - Portal Técnico APR`,
     const studyRef = request.studyNumber?.trim();
     return {
       recipientEmail: request.email,
-      recipientName: request.requesterName,
+      recipientName: safeName(request.requesterName),
       subject: `Solicitação de Estudo Nº ${studyRef || request.id}`,
       body: `✅ SUA SOLICITAÇÃO FOI APROVADA!
 ───────────────────────────────────────────────────────────
-Prezado(a) ${request.requesterName},
+Prezado(a) ${safeName(request.requesterName)},
 Temos o prazer de informar que sua solicitação de Análise de Planificação de Rede foi APROVADA!
 Sua solicitação foi validada com sucesso e será encaminhada para execução técnica.
 Um analista especializado iniciará o processamento do seu estudo em breve.
@@ -428,7 +445,7 @@ ${signerName}
 Naturgy - Portal Técnico APR`,
       htmlBody: buildRefinedHtmlTemplate(
         "✅ Sua Solicitação foi APROVADA!",
-        `Prezado(a) ${request.requesterName},\nTemos o prazer de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #107C10; font-weight: bold;">APROVADA</span>!\n\nSua solicitação foi validada com sucesso e será encaminhada para <strong>execução técnica</strong>.\nUm analista especializado iniciará o processamento do seu estudo em breve.\n\n<strong>Para acompanhar o progresso:</strong> acesse o Portal Técnico APR.`,
+        `Prezado(a) ${safeName(request.requesterName)},\nTemos o prazer de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #107C10; font-weight: bold;">APROVADA</span>!\n\nSua solicitação foi validada com sucesso e será encaminhada para <strong>execução técnica</strong>.\nUm analista especializado iniciará o processamento do seu estudo em breve.\n\n<strong>Para acompanhar o progresso:</strong> acesse o Portal Técnico APR.`,
         [
           {
             title: "📋 DETALHES",
@@ -475,11 +492,11 @@ Naturgy - Portal Técnico APR`,
     const studyRef = request.studyNumber?.trim();
     return {
       recipientEmail: request.email,
-      recipientName: request.requesterName,
+      recipientName: safeName(request.requesterName),
       subject: `Solicitação de Estudo Nº ${studyRef || request.id}`,
       body: `⚠️ SOLICITAÇÃO DE REVISÃO
 ───────────────────────────────────────────────────────────
-Prezado(a) ${request.requesterName},
+Prezado(a) ${safeName(request.requesterName)},
 Sua solicitação passou pela análise inicial. Porém, foi identificada a necessidade de ajustes antes de procedermos.
 
 📋 DADOS DA SOLICITAÇÃO
@@ -508,7 +525,7 @@ ${signerName}
 Naturgy - Portal Técnico APR`,
       htmlBody: buildRefinedHtmlTemplate(
         "⚠️ SOLICITAÇÃO DE REVISÃO",
-        `Prezado(a) ${request.requesterName},\n<strong>Esta é uma SOLICITAÇÃO DE REVISÃO.</strong>\nSua solicitação de <strong>Análise de Planificação de Rede</strong> passou pela análise inicial. Porém, foi identificada a necessidade de ajustes.`,
+        `Prezado(a) ${safeName(request.requesterName)},\n<strong>Esta é uma SOLICITAÇÃO DE REVISÃO.</strong>\nSua solicitação de <strong>Análise de Planificação de Rede</strong> passou pela análise inicial. Porém, foi identificada a necessidade de ajustes.`,
         [
           {
             title: "📋 DADOS",
@@ -567,11 +584,11 @@ Naturgy - Portal Técnico APR`,
     const studyRef = request.studyNumber?.trim();
     return {
       recipientEmail: request.email,
-      recipientName: request.requesterName,
+      recipientName: safeName(request.requesterName),
       subject: `Solicitação de Estudo Nº ${studyRef || request.id}`,
       body: `✅ SEU ESTUDO FOI CONCLUÍDO!
 ───────────────────────────────────────────────────────────
-Prezado(a) ${request.requesterName},
+Prezado(a) ${safeName(request.requesterName)},
 Temos o prazer de informar que sua solicitação de Análise de Planificação de Rede foi CONCLUÍDA!
 
 📋 DETALHES
@@ -600,7 +617,7 @@ ${signerName}
 Naturgy - Portal Técnico APR`,
       htmlBody: buildRefinedHtmlTemplate(
         "✅ Seu Estudo foi CONCLUÍDO!",
-        `Prezado(a) ${request.requesterName},\nTemos o prazer de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #107C10; font-weight: bold;">CONCLUÍDA</span>!\n\n<strong>📂 Acesso aos Resultados</strong>\nOs arquivos com os resultados técnicos da Análise de Planificação de Rede estão disponíveis na pasta de resposta do seu estudo. Você pode acessá-los através do Portal Técnico APR.`,
+        `Prezado(a) ${safeName(request.requesterName)},\nTemos o prazer de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #107C10; font-weight: bold;">CONCLUÍDA</span>!\n\n<strong>📂 Acesso aos Resultados</strong>\nOs arquivos com os resultados técnicos da Análise de Planificação de Rede estão disponíveis na pasta de resposta do seu estudo. Você pode acessá-los através do Portal Técnico APR.`,
         [
           {
             title: "📋 DETALHES",
@@ -653,18 +670,19 @@ Naturgy - Portal Técnico APR`,
     };
   },
 
-  /**
-   * Email enviado quando o analista conclui a execução e envia para Controle de Qualidade
+/**
+   * Email enviado quando o analista conclude a execução e envia para Controle de Qualidade
    * (analista → prgc sistema)
    */
   generateQCRequestEmail: (
     request: FormData,
     analystEmail: string,
     analystName: string,
+    recipientEmail?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
     return {
-      recipientEmail: SYSTEM_EMAIL,
+      recipientEmail: recipientEmail || SYSTEM_EMAIL,
       recipientName: 'Controle de Qualidade APR',
       senderEmail: analystEmail,
       senderName: analystName,
@@ -732,13 +750,13 @@ Naturgy - Portal Técnico APR`,
     const studyRef = request.studyNumber?.trim();
     return {
       recipientEmail: request.email,
-      recipientName: request.requesterName,
+      recipientName: safeName(request.requesterName),
       senderEmail: analystEmail,
       senderName: analystName,
       subject: `Resposta Antecipada do Estudo Nº ${studyRef || request.id}`,
       body: `📋 RESPOSTA ANTECIPADA DO ESTUDO
 ───────────────────────────────────────────────────────────
-Prezado(a) ${request.requesterName},
+Prezado(a) ${safeName(request.requesterName)},
 
 Informamos que o estudo ${request.studyNumber} está sendo encaminhado em caráter antecipado, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.
 
@@ -760,7 +778,7 @@ ${analystName}
 Naturgy - Portal Técnico APR`,
       htmlBody: buildRefinedHtmlTemplate(
         '📋 Resposta Antecipada do Estudo',
-        `Prezado(a) <strong>${request.requesterName}</strong>,<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> está sendo encaminhado em caráter <strong>antecipado</strong>, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.<br/><br/>O estudo passará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, <strong>uma versão revisada será emitida e encaminhada</strong>.`,
+        `Prezado(a) <strong>${safeName(request.requesterName)}</strong>,<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> está sendo encaminhado em caráter <strong>antecipado</strong>, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.<br/><br/>O estudo passará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, <strong>uma versão revisada será emitida e encaminhada</strong>.`,
         [
           {
             title: '📋 DADOS DO ESTUDO',
@@ -1080,6 +1098,9 @@ ${emailData.body}
     // Header do EML
     let eml = `From: ${emailData.senderName ? `"${emailData.senderName}" <${emailData.senderEmail || SYSTEM_EMAIL}>` : emailData.senderEmail || SYSTEM_EMAIL}\r\n`;
     eml += `To: ${emailData.recipientName ? `"${emailData.recipientName}" <${emailData.recipientEmail}>` : emailData.recipientEmail}\r\n`;
+    if (emailData.ccEmail) {
+      eml += `Cc: ${emailData.ccEmail}\r\n`;
+    }
     eml += `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(emailData.subject)))}?=\r\n`;
     eml += `Date: ${date}\r\n`;
     eml += `MIME-Version: 1.0\r\n`;

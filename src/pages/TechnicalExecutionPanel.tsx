@@ -332,7 +332,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
       showToast('Carta Resposta salva com sucesso!', 'success');
       if (activeFolder === 'Resposta') {
-        const files = await StorageService.getRequestFiles(data.studyNumber, 'Resposta');
+        const files = await StorageService.getRequestFiles(data.id, 'Resposta');
         setStudyFiles(files.filter((f: any) => f.name !== '.keep'));
       } else {
         setActiveFolder('Resposta');
@@ -363,10 +363,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       }).join(' ');
     };
 
-    const analystName = toTitleCase(assignedUser?.name || data.analystName || 'Responsável Técnico').trim();
+    const analystName = toTitleCase(assignedUser?.name || data.assignedToName || data.analystName || 'Responsável Técnico').trim();
     const analystCompany = toTitleCase(assignedUser?.company || data.analystCompany || 'Empresa').trim();
     const analystRole = toTitleCase(assignedUser?.roleDescription || data.analystRole || 'Cargo').trim();
-    const analystGB = (assignedUser?.gb || data.analystGB || assignedUser?.sap || 'SISTEMA').trim();
+    const analystGB = (assignedUser?.gb || data.analystGB || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
 
     const validUntilDate = (() => {
       const d = new Date(docDate);
@@ -750,12 +750,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   useEffect(() => {
     let isMounted = true;
     const fetchFiles = async () => {
-      if (!data.studyNumber) return;
+      // Use numeric id for database retrieval instead of human-readable studyNumber
+      if (!data.id) return;
       setIsLoadingFiles(true);
       try {
-        const files = await StorageService.getRequestFiles(data.studyNumber, activeFolder);
+        const files = await StorageService.getRequestFiles(data.id, activeFolder);
         if (isMounted) {
-          const filtered = files.filter(f => f.name !== '.keep');
+          const filtered = files.filter((f: any) => f.name !== '.keep');
           setStudyFiles(filtered);
         }
       } catch (err) {
@@ -766,7 +767,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     };
     fetchFiles();
     return () => { isMounted = false; };
-  }, [activeFolder, data.studyNumber]);
+  }, [activeFolder, data.id]);
 
   // Consolidate estimatedDeliveryDate Logic and Repair Execution Dates
   useEffect(() => {
@@ -821,6 +822,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const getFO = (type: string) => type.split('-').pop() || '';
 
   const isResidencial = data.studySubType?.toLowerCase() === 'residencial';
+  const hasResidentialComponent = data.studySubType?.toLowerCase().includes('residencial');
   const totalClientsAuto = Number(data.numClientsRes) || 0;
   const unitFlowAuto = 0.09;
   const penetrationAuto = 1;
@@ -947,38 +949,47 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && onUpdateData) {
       const rawFiles = Array.from(e.target.files);
-      const newFiles = await Promise.all(rawFiles.map(async (f: File) => {
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64String = reader.result ? reader.result.toString().split(',')[1] : null;
-            resolve({
-              name: f.name,
-              size: f.size,
-              type: f.type,
-              lastModified: f.lastModified,
-              base64: base64String
-            });
-          };
-          reader.onerror = () => {
-            resolve({ name: f.name, size: f.size, type: f.type, lastModified: f.lastModified });
-          };
-          reader.readAsDataURL(f);
-        });
-      }));
+      const requestId = data.id;
 
-      let updatedData = { ...data, totalExecutionTime: elapsedTime };
-      if (activeFolder === 'Solicitacao') {
-        updatedData.selectedFiles = [...(data.selectedFiles || []), ...newFiles];
-      } else {
-        const currentCategorized = data.categorizedFiles || {};
-        const folderFiles = currentCategorized[activeFolder] || [];
-        updatedData.categorizedFiles = {
-          ...currentCategorized,
-          [activeFolder]: [...folderFiles, ...newFiles]
-        };
+      if (!requestId) {
+        showToast('ID da solicitação não encontrado. Não é possível anexar arquivos.', 'error');
+        return;
       }
-      onUpdateData(updatedData);
+
+      setIsLoadingFiles(true);
+      try {
+        // Upload each file to the server immediately
+        for (const file of rawFiles) {
+          await StorageService.uploadFile(requestId, activeFolder, file);
+        }
+        
+        showToast(`${rawFiles.length} arquivo(s) anexado(s) com sucesso!`, 'success');
+        
+        // Refresh the file list from the server
+        const updatedFiles = await StorageService.getRequestFiles(requestId, activeFolder);
+        setStudyFiles(updatedFiles.filter((f: any) => f.name !== '.keep'));
+        
+        // Sync the local categorized metadata as well (optional but good for consistency)
+        const updatedData = { ...data };
+        if (activeFolder === 'Solicitacao') {
+          updatedData.selectedFiles = [...(data.selectedFiles || []), ...rawFiles.map(f => ({ name: f.name, size: f.size, type: f.type }))];
+        } else {
+          const currentCategorized = data.categorizedFiles || {};
+          const folderFiles = currentCategorized[activeFolder] || [];
+          updatedData.categorizedFiles = {
+            ...currentCategorized,
+            [activeFolder]: [...folderFiles, ...rawFiles.map(f => ({ name: f.name, size: f.size, type: f.type }))]
+          };
+        }
+        onUpdateData(updatedData);
+      } catch (err) {
+        console.error('Error uploading files:', err);
+        showToast('Erro ao fazer upload dos arquivos extras.', 'error');
+      } finally {
+        setIsLoadingFiles(false);
+        // Reset input
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -1968,8 +1979,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
 
           <div className="space-y-6">
-            <div className={`space-y-6 ${!isResidencial ? 'opacity-40 grayscale pointer-events-none select-none' : ''}`}>
-              {!isResidencial && (
+            <div className={`space-y-6 ${!hasResidentialComponent ? 'opacity-40 grayscale pointer-events-none select-none' : ''}`}>
+              {!hasResidentialComponent && (
                 <div className="bg-orange-50 border border-orange-100 p-2 rounded-lg mb-2 text-center">
                   <p className="text-[8px] font-black text-orange-600 uppercase tracking-tighter italic">Disponível apenas para estudos Residenciais</p>
                 </div>
@@ -2076,7 +2087,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </div>
 
                 <button
-                  disabled={readOnly}
+                  disabled={readOnly || !hasResidentialComponent}
                   onClick={() => {
                     const total = currentCalc.totalFlow;
                     const summary = `Vazão total para o dimensionamento: ${total.toFixed(3).replace('.', ',')} m³/h (Clientes: ${currentCalc.totalClients} | Qut: ${currentCalc.unitFlow.toFixed(2)} | FP: ${currentCalc.penetration} | FD: ${currentCalc.diversification.toFixed(2)})`;
@@ -2402,7 +2413,14 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
               <li
                 onClick={() => setShowQCModal(true)}
-                className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${data.qcData ? 'text-purple-600 font-black' : ''}`}
+                className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${
+                  data.qcData || 
+                  data.status === StudyStatus.CONTROLE_QUALIDADE || 
+                  data.status === StudyStatus.ENVIADO_SEM_CQ ||
+                  data.status === StudyStatus.EM_EXECUCAO ||
+                  data.status === StudyStatus.REPROVADO_CQ
+                    ? 'text-purple-600 font-black' : ''
+                }`}
               >
                 <i className={`fa-solid ${data.qcData?.qcStatusCQ === 'Reprovado' ? 'fa-triangle-exclamation text-red-500' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'fa-check-circle text-green-500' : 'fa-plus text-[#004080]'}`}></i>
                 {data.qcData?.qcStatusCQ === 'Reprovado' ? 'Ver Motivo da Reprovação CQ' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'Ver Aprovação CQ' : 'Abrir Controle de Qualidade'}
@@ -2968,6 +2986,24 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
         ) : (
           <div className="flex items-center gap-4">
+            {data.status === StudyStatus.APROVADO_CQ && (
+              <button
+                onClick={handleFinalizeApproved}
+                className="px-8 py-4 bg-green-600 text-white rounded-[1.5rem] font-black uppercase text-[11px] tracking-widest hover:bg-green-700 transition-all active:scale-95 shadow-lg flex items-center gap-3"
+              >
+                <i className="fa-solid fa-check-circle text-sm"></i>
+                Finalizar Estudo
+              </button>
+            )}
+            {data.status === StudyStatus.ENVIADO_SEM_CQ && (
+              <button
+                onClick={() => setShowQCModal(true)}
+                className="px-8 py-4 bg-purple-600 text-white rounded-[1.5rem] font-black uppercase text-[11px] tracking-widest hover:bg-purple-700 transition-all active:scale-95 shadow-lg flex items-center gap-3"
+              >
+                <i className="fa-solid fa-clipboard-check text-sm"></i>
+                Abrir Controle de Qualidade
+              </button>
+            )}
             {data.status === StudyStatus.APROVADO_CQ && (
               <div className="px-6 py-3 bg-green-50 text-green-600 rounded-[1.2rem] font-black uppercase text-[10px] tracking-widest border border-green-100 flex items-center gap-3">
                 <i className="fa-solid fa-clipboard-check text-sm"></i>

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole } from '../types/types';
-import { formatToLocalTime, formatDate, normalizeArea } from '../utils/utils';
+import { formatToLocalTime, formatDate, normalizeArea, toTitleCase } from '../utils/utils';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { useDialog } from '../components/AppDialog';
 
@@ -47,7 +47,8 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
 
   // Lógica para exibir todas as solicitações sem duplicar por revisão
   const latestRequests = useMemo(() => {
-    if (!requests || requests.length === 0) return [];
+    // Usar allRequests para mostrar todas as solicitações do banco
+    const sourceRequests = allRequests && allRequests.length > 0 ? allRequests : (requests || []);
 
     const statusFilters: { [key: string]: (r: FormData) => boolean } = {
       'Todas': () => true,
@@ -55,16 +56,25 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       'Pendente': (r: FormData) => r.status === StudyStatus.PENDENTE || r.status === StudyStatus.REJEITADO || r.status === StudyStatus.AGUARDANDO_INFORMACAO,
       'Aguardando Execução': (r: FormData) => r.status === StudyStatus.AGUARDANDO_EXECUCAO || r.status === StudyStatus.VALIDADO,
       'Em Execução': (r: FormData) => r.status === StudyStatus.EM_EXECUCAO || r.status === StudyStatus.CONTROLE_QUALIDADE || r.status === StudyStatus.APROVADO_CQ || r.status === StudyStatus.REPROVADO_CQ,
-      'Concluído': (r: FormData) => r.status === StudyStatus.CONCLUIDO,
+      'Concluído': (r: FormData) => r.status === StudyStatus.CONCLUIDO || r.status === StudyStatus.ENVIADO_SEM_CQ,
       'Cancelado': (r: FormData) => r.status === StudyStatus.CANCELADO
     };
 
     // Filtrar solicitações baseado no modo de visualização
-    const filteredByTab = requests.filter(req => {
-      if (viewMode === 'meus') return req.user_id === currentUser?.id;
-      // Para o modo área, o backend já traz apenas os da área dele via SOL_ORGAO
-      // Mas para garantir no frontend, podemos checar se o SOL_ORGAO bate com o area do usuário
-      return true; 
+    const userAreaNormalized = currentUser ? normalizeArea(currentUser.area) : '';
+    
+    const filteredByTab = sourceRequests.filter(req => {
+      if (viewMode === 'meus') {
+        // Meus Pedidos: verificar por user_id OU requesterName OU email
+        const isOwnerByUserId = req.user_id === currentUser?.id;
+        const isOwnerByName = req.requesterName === currentUser?.name;
+        const isOwnerByEmail = req.email === currentUser?.email;
+        return isOwnerByUserId || isOwnerByName || isOwnerByEmail;
+      } else {
+        // Pedidos da Área: todas as solicitações de usuários da mesma área
+        const reqAreaNormalized = normalizeArea(req.requesterArea);
+        return reqAreaNormalized === userAreaNormalized && userAreaNormalized !== ''; 
+      }
     });
 
     // Agrupar por estudo base (sem revisão)
@@ -124,7 +134,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       const dateB = new Date(b.requestDate || b.createdAt || b.updatedAt || 0).getTime();
       return dateB - dateA;
     });
-  }, [requests, searchQuery, currentUser, statusFilter, viewMode]);
+  }, [requests, allRequests, searchQuery, currentUser, statusFilter, viewMode]);
 
   const totalPages = Math.ceil(latestRequests.length / itemsPerPage);
 
@@ -145,14 +155,28 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       case StudyStatus.REJEITADO: return 'bg-amber-50 text-amber-600 border-amber-200';
       case StudyStatus.AGUARDANDO_INFORMACAO: return 'bg-amber-50 text-amber-600 border-amber-200 italic';
       case StudyStatus.AGUARDANDO_EXECUCAO: return 'bg-orange-50 text-orange-600 border-orange-200';
-      case StudyStatus.EM_EXECUCAO:
+      case StudyStatus.EM_EXECUCAO: return 'bg-purple-50 text-purple-600 border-purple-200';
       case StudyStatus.CONTROLE_QUALIDADE:
       case StudyStatus.APROVADO_CQ:
       case StudyStatus.REPROVADO_CQ: return 'bg-purple-50 text-purple-600 border-purple-200';
       case StudyStatus.VALIDADO:
-      case StudyStatus.CONCLUIDO: return 'bg-green-50 text-green-600 border-green-200';
+      case StudyStatus.CONCLUIDO:
+      case StudyStatus.ENVIADO_SEM_CQ: return 'bg-green-50 text-green-600 border-green-200';
       case StudyStatus.CANCELADO: return 'bg-red-50 text-red-600 border-red-200';
       default: return 'bg-slate-50 text-slate-400';
+    }
+  };
+
+  const getStatusDisplay = (status: StudyStatus): string => {
+    switch (status) {
+      case StudyStatus.CONTROLE_QUALIDADE:
+      case StudyStatus.APROVADO_CQ:
+      case StudyStatus.REPROVADO_CQ:
+        return 'Em Execução';
+      case StudyStatus.ENVIADO_SEM_CQ:
+        return 'Concluído';
+      default:
+        return status;
     }
   };
 
@@ -456,7 +480,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
               ) : (
                 displayedRequests.map(req => {
                   const isCancelled = req.status === StudyStatus.CANCELADO;
-                  const isCompleted = req.status === StudyStatus.CONCLUIDO;
+                  const isCompleted = req.status === StudyStatus.CONCLUIDO || req.status === StudyStatus.ENVIADO_SEM_CQ;
                   const hasRevision = (req.studyNumber || '').includes('-REV');
 
                   return (
@@ -467,7 +491,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                       <div className={isCancelled ? 'pointer-events-none' : ''}>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div>
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">{formatStudyID(req)}</p>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">{req.studyNumber || 'PROV-APR'}</p>
                             <h3 className="font-black text-[#004080] text-sm leading-tight group-hover:text-orange-500 transition-colors">
                               {req.studyTitle || req.clientName || 'Sem Título'}
                             </h3>
@@ -482,7 +506,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                           </div>
                           <div className="flex flex-col gap-1">
                             <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border inline-block ${getStatusStyle(req.status)}`}>
-                              {req.status}
+                              {getStatusDisplay(req.status)}
                             </span>
                             {req.status === StudyStatus.AGUARDANDO_INFORMACAO && req.holdReason && (
                               <button
@@ -497,15 +521,27 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                         </div>
 
                         <div className="space-y-2 mb-4">
-                          {req.studyNumber && (
-                            <p className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
-                              <span className="text-[9px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-black">{req.studyNumber}</span>
-                              {hasRevision && <span className="text-[8px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-black">REV</span>}
-                            </p>
-                          )}
-                          <p className="text-xs text-slate-500 flex items-center gap-2">
-                            <i className="fa-solid fa-location-dot text-slate-400 flex-shrink-0"></i>
-                            <span>{req.city && req.address ? `${req.city} - ${req.address.substring(0, 20)}...` : req.city || req.address || '—'}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-black">{formatStudyID(req)}</span>
+                            {hasRevision && <span className="text-[8px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-black">REV</span>}
+                          </div>
+                          <p className="text-xs text-slate-500 flex items-start gap-2">
+                            <i className="fa-solid fa-location-dot text-slate-400 flex-shrink-0 mt-0.5"></i>
+                            <span className="leading-tight">
+                              {(() => {
+                                const address = toTitleCase(req.address);
+                                const neighborhood = toTitleCase(req.neighborhood);
+                                const city = toTitleCase(req.city);
+                                const sigla = (req.empresa === 'SPS') ? 'SP' : 'RJ';
+                                
+                                const parts = [];
+                                if (address) parts.push(address);
+                                if (neighborhood) parts.push(neighborhood);
+                                if (city) parts.push(`${city}/${sigla}`);
+                                
+                                return parts.length > 0 ? parts.join(' - ') : (req.city || req.address || '—');
+                              })()}
+                            </span>
                           </p>
                         </div>
                       </div>

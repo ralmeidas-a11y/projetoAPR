@@ -13,7 +13,8 @@ const port = process.env.PORT || 3001;
 
 // Middlewares
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
 // SQL Server Config
 const sqlConfig = {
@@ -92,8 +93,30 @@ async function startServer() {
           ALTER TABLE Users_Solicitantes ADD [area] VARCHAR(100) NULL;
       IF COL_LENGTH('Users_Solicitantes', 'naturgyUnit') IS NULL
           ALTER TABLE Users_Solicitantes ADD [naturgyUnit] VARCHAR(100) NULL;
-
+      IF COL_LENGTH('Users_Solicitantes', 'sap') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [sap] VARCHAR(100) NULL;
+      IF COL_LENGTH('Users_Solicitantes', 'isActive') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [isActive] BIT DEFAULT 1;
     `;
+
+    // 1b. Create T_AUDIT Table if not exists
+    console.log('[Server] Checking T_AUDIT table...');
+    await sql.query`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='T_AUDIT' and xtype='U')
+      CREATE TABLE T_AUDIT (
+        [ID] [int] IDENTITY(1,1) PRIMARY KEY,
+        [StudyNumber] [varchar](100) NULL,
+        [ActionType] [varchar](50) NOT NULL,
+        [FieldChanged] [varchar](100) NULL,
+        [OldValue] [nvarchar](max) NULL,
+        [NewValue] [nvarchar](max) NULL,
+        [UserId] [varchar](100) NULL,
+        [UserName] [nvarchar](200) NULL,
+        [Timestamp] [datetime] DEFAULT GETDATE()
+      )
+    `;
+
+    // --- ONE-TIME DATA MIGRATION: Padding Analyst ID 805217 (Completed) ---
 
     console.log('[Server] Verificando e criando colunas nativas na E_OPEMAN...');
     await sql.query`
@@ -240,10 +263,25 @@ async function startServer() {
       );
       
       -- Add missing column to existing table if needed
+    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='RequestAttachments' and xtype='U')
+    CREATE TABLE RequestAttachments (
+      id INT PRIMARY KEY IDENTITY(1,1),
+      requestId VARCHAR(100) NOT NULL,
+      fileName NVARCHAR(255) NOT NULL,
+      fileContent VARBINARY(MAX) NOT NULL,
+      fileType NVARCHAR(100) NULL,
+      category NVARCHAR(50) NULL,
+      createdAt DATETIME DEFAULT GETDATE(),
+      FOREIGN KEY (requestId) REFERENCES Requests(id) ON DELETE CASCADE
+    );
+
+    -- Add missing column to existing table if needed
       IF COL_LENGTH('Requests', 'requestDate') IS NULL
           ALTER TABLE Requests ADD requestDate DATETIME NULL;
       IF COL_LENGTH('Requests', 'formType') IS NULL
           ALTER TABLE Requests ADD formType VARCHAR(50) NULL;
+      IF COL_LENGTH('Requests', 'naturgyUnit') IS NULL
+          ALTER TABLE Requests ADD naturgyUnit NVARCHAR(50) NULL;
     `;
 
     // Ensure T_ESTPLA also has metadata column if it doesn't
@@ -400,15 +438,21 @@ async function startServer() {
       try {
         const result = await sql.query`
           SELECT 
-            [id], [email], [name], [role], [password], [department], [company], [roleDescription], [gb],
-            [phone], [area], [naturgyUnit],
-            [gb] as [sap],
-            CAST([profileComplete] as bit) as profileComplete, 
-            CAST([requiresPasswordChange] as bit) as requiresPasswordChange, 
-            CONVERT(VARCHAR(30), [createdAt], 120) as [createdAt],
-            NULL as [permissionsRaw]
-          FROM Users_Solicitantes
+            U.[id], U.[email], U.[name], U.[role], U.[password], U.[department], U.[company], U.[roleDescription],
+            -- Use ISNULL/COALESCE to pull from legacy if modern is empty
+            ISNULL(NULLIF(RTRIM(LTRIM(U.[gb])), ''), RTRIM(LTRIM(E.USUARIO))) as [gb],
+            ISNULL(NULLIF(RTRIM(LTRIM(U.[sap])), ''), RTRIM(LTRIM(E.SAP))) as [sap],
+            U.[phone], U.[area], U.[naturgyUnit],
+            CAST(ISNULL(U.[isActive], 1) as bit) as isActive,
+            CAST(U.[profileComplete] as bit) as profileComplete, 
+            CAST(U.[requiresPasswordChange] as bit) as requiresPasswordChange, 
+            CONVERT(VARCHAR(30), U.[createdAt], 120) as [createdAt],
+            E.PERMISSOES as [permissionsRaw]
+          FROM Users_Solicitantes U
+          LEFT JOIN E_OPEMAN E ON UPPER(LTRIM(RTRIM(U.email))) = UPPER(LTRIM(RTRIM(E.EMAIL)))
+          
           UNION ALL
+
           SELECT 
             RTRIM(LTRIM(CAST(EMAIL as varchar(100)))) as [id], 
             RTRIM(LTRIM(EMAIL)) as [email], 
@@ -419,21 +463,26 @@ async function startServer() {
             RTRIM(LTRIM(EMPRESA)) as [company],
             RTRIM(LTRIM(CARGO)) as [roleDescription],
             RTRIM(LTRIM(USUARIO)) as [gb],
+            RTRIM(LTRIM(SAP)) as [sap],
             NULL as [phone],
             RTRIM(LTRIM(DEPARTMENT)) as [area],
             RTRIM(LTRIM(EMPRESA)) as [naturgyUnit],
-            RTRIM(LTRIM(SAP)) as [sap],
+            CAST(CASE 
+              WHEN UPPER(LTRIM(RTRIM(CAST(FUNCIONARIO as varchar(50))))) IN ('1', 'S', 'SIM', 'V', 'VERDADEIRO', 'TRUE') THEN 1 
+              ELSE 0 
+            END as bit) as isActive,
             CAST(ISNULL(PROFILE_COMPLETE, 0) as bit) as profileComplete, 
             CAST(CASE WHEN [PASSWORD] IS NULL OR [PASSWORD] = '' THEN 1 ELSE 0 END as bit) as requiresPasswordChange, 
             CONVERT(VARCHAR(30), TRY_CAST(CREATED_AT AS DATETIME), 120) as [createdAt],
             PERMISSOES as [permissionsRaw]
           FROM E_OPEMAN
           WHERE EMAIL IS NOT NULL AND LTRIM(RTRIM(EMAIL)) <> '' 
-          AND UPPER(LTRIM(RTRIM(CAST(FUNCIONARIO as varchar(50))))) IN ('1', 'S', 'SIM', 'V', 'VERDADEIRO', 'TRUE')
+            AND UPPER(LTRIM(RTRIM(EMAIL))) NOT IN (SELECT UPPER(EMAIL) FROM Users_Solicitantes WHERE EMAIL IS NOT NULL)
         `;
 
         const finalUsers = result.recordset.map(u => ({
           ...u,
+          isActive: u.isActive === null ? false : Boolean(u.isActive),
           profileComplete: !!u.profileComplete,
           requiresPasswordChange: !!u.requiresPasswordChange,
           permissions: (u.permissionsRaw && typeof u.permissionsRaw === 'string') ? u.permissionsRaw.split(',').map(p => p.trim()) : []
@@ -449,7 +498,7 @@ async function startServer() {
     // 4. POST Upsert User
     app.post('/api/users', async (req, res) => {
       try {
-        const { id, email, name, role, password, department, profileComplete, requiresPasswordChange, permissions, company, roleDescription, gb, phone, area, naturgyUnit } = req.body;
+        const { id, email, name, role, password, department, profileComplete, requiresPasswordChange, permissions, company, roleDescription, gb, sap, phone, area, naturgyUnit, isActive } = req.body;
         
         const request = new sql.Request();
         request.input('id', sql.VarChar, id || '');
@@ -460,11 +509,14 @@ async function startServer() {
         request.input('company', sql.VarChar, company || '');
         request.input('roleDescription', sql.VarChar, roleDescription || '');
         request.input('gb', sql.VarChar, gb || '');
+        request.input('sap', sql.VarChar, sap || '');
         request.input('phone', sql.VarChar, phone || '');
         request.input('area', sql.VarChar, area || '');
         request.input('naturgyUnit', sql.VarChar, naturgyUnit || '');
         request.input('profileComplete', sql.Bit, profileComplete ? 1 : 0);
         request.input('reqPassReset', sql.Bit, requiresPasswordChange ? 1 : 0);
+        request.input('isActiveBit', sql.Bit, (isActive === undefined || isActive === true) ? 1 : 0);
+        request.input('isActiveLegacy', sql.VarChar, (isActive === undefined || isActive === true) ? 'VERDADEIRO' : 'FALSO');
         request.input('permissions', sql.VarChar, permissions ? permissions.join(',') : '');
 
         const isHashed = password && (password.startsWith('$2a$') || password.startsWith('$2b$') || password.startsWith('$2y$'));
@@ -473,19 +525,24 @@ async function startServer() {
 
         const r = role ? role.toLowerCase() : '';
         if (r === 'analista' || r === 'adm' || r === 'administrador') {
-            await request.query`
+            const sapValueToUpdate = sap || gb || '';
+            console.log(`[UserMgmt] 💾 Updating E_OPEMAN for ${email}. SAP: ${sapValueToUpdate}, GB: ${gb}, Active: ${isActive}`);
+            
+            await request.input('sapUpdateFinal', sql.VarChar, sapValueToUpdate).query`
               UPDATE E_OPEMAN 
               SET [PASSWORD] = @finalPwd,
                   PERMISSOES = @permissions,
                   DEPARTMENT = @department,
                   EMPRESA = @company,
                   CARGO = @roleDescription,
-                  SAP = @gb,
+                  SAP = @sapUpdateFinal,
+                  USUARIO = @gb,
                   PROFILE_COMPLETE = @profileComplete,
-                  REQUIRES_PASSWORD_CHANGE = @reqPassReset
+                  REQUIRES_PASSWORD_CHANGE = @reqPassReset,
+                  FUNCIONARIO = @isActiveLegacy
               WHERE EMAIL = @email
             `;
-            return res.status(200).json(req.body); 
+            // Notice: We purposefully don't return early here anymore. We must update Users_Solicitantes as well!
         }
 
         await request.query`
@@ -494,18 +551,19 @@ async function startServer() {
              UPDATE Users_Solicitantes SET 
                 email = @email, name = @name, role = @role, 
                 password = @finalPwd, department = @department,
-                company = @company, roleDescription = @roleDescription, gb = @gb,
+                company = @company, roleDescription = @roleDescription, gb = @gb, sap = @sap,
                 phone = @phone, area = @area, naturgyUnit = @naturgyUnit,
-                profileComplete = @profileComplete, requiresPasswordChange = @reqPassReset
+                profileComplete = @profileComplete, requiresPasswordChange = @reqPassReset,
+                isActive = @isActiveBit
              WHERE id = @id
           END
           ELSE
           BEGIN
              INSERT INTO Users_Solicitantes 
-                (id, email, name, role, password, department, company, roleDescription, gb, phone, area, naturgyUnit, profileComplete, requiresPasswordChange)
+                (id, email, name, role, password, department, company, roleDescription, gb, sap, phone, area, naturgyUnit, profileComplete, requiresPasswordChange, isActive)
              VALUES 
-                (@id, @email, @name, @role, @finalPwd, @department, @company, @roleDescription, @gb, @phone, @area, @naturgyUnit, @profileComplete, @reqPassReset)
-          END
+                (@id, @email, @name, @role, @finalPwd, @department, @company, @roleDescription, @gb, @sap, @phone, @area, @naturgyUnit, @profileComplete, @reqPassReset, @isActiveBit)
+END
         `;
 
         res.status(200).json(req.body);
@@ -526,7 +584,7 @@ async function startServer() {
       'Controle de Qualidade': '280',  // Controle de Qualidade
       'Aprovado pelo CQ': '215',       // Pronto (Estudo Pronto)
       'Reprovado pelo CQ': '290',      // Rever Estudo CQ
-      'Enviado sem CQ': '215',         // Pronto
+      'Enviado sem CQ': '225',         // Enviado sem CQ
       'Concluído': '210',              // Concluído (Enviado)
       'Rejeitado': '220',              // Cancelado
       'Cancelado': '220'               // Cancelado
@@ -582,15 +640,16 @@ async function startServer() {
       '205': 'Em Execução',
       '210': 'Concluído',
       '211': 'Errata de Estudo',
-      '215': 'Pronto',
+      '215': 'Aprovado pelo CQ',
       '220': 'Cancelado',
+      '225': 'Enviado sem CQ',
       '230': 'Adiado',
       '240': 'Aguardando Informações',
       '250': 'Concluído - Cliente Não Contratado',
       '260': 'Substituido',
       '270': 'Em Vigor',
       '280': 'Controle de Qualidade',
-      '290': 'Rever Estudo CQ',
+      '290': 'Reprovado pelo CQ',
       '300': 'Em Uso',
       '310': 'Demada Solicitada',
       '320': 'Vencido',
@@ -630,12 +689,15 @@ async function startServer() {
       }
 
       const trimmedStatus = String(row.status || '').trim();
-      let displayStatus = meta.status || statusCodeToText[trimmedStatus] || trimmedStatus;
+      // Priority: 1) STATUS column from database (most recent), 2) statusCodeToText mapping, 3) meta.status as fallback
+      let displayStatus = statusCodeToText[trimmedStatus] || trimmedStatus || meta.status;
       if (!displayStatus || displayStatus === 'undefined') displayStatus = 'Em Análise';
       
-      const sapCode = String(row.respSepla || '').trim().replace(/^0+/, '');
-      let analystName = sapToNameMap[sapCode] || sapCode || 'ADRSis - SISTEMA';
-      if (sapCode.toUpperCase() === 'ADRSIS') analystName = 'ADRSis - SISTEMA';
+      const sapCode = String(row.respSepla || '').trim();
+      // Prioritize respSepla as the ID for assignedTo, and map it to a name
+      // Try mapping with padding or without to find the most accurate user name
+      let analystName = sapToNameMap[sapCode] || sapToNameMap[sapCode.replace(/^0+/, '')] || sapCode || 'ADRSis - SISTEMA';
+      if (sapCode.toUpperCase() === 'ADRSIS' || !sapCode) analystName = 'ADRSis - SISTEMA';
 
       const numType = parseInt(row.formType) || 0;
       const displayType = (numType > 0 && numType < 100) ? `PE.00492-FO.${String(numType).padStart(2, '0')}` : row.formType;
@@ -657,6 +719,7 @@ async function startServer() {
         user_id: row.user_id,
         formType: displayType,
         studyNumber: row.studyNumber,
+        // The source of truth for the assigned analyst is always RESP_SEPLA from T_ESTPLA (mapped as respSepla)
         assignedTo: sapCode || 'ADRSis - SISTEMA',
         analystName: analystName, 
         assignedToName: analystName, 
@@ -743,6 +806,8 @@ async function startServer() {
           sqlReq1.input('areaName', sql.VarChar, areaName || '');
           wherePart1 = ` WHERE (user_id = @uid OR UPPER(LTRIM(RTRIM(SOL_ORGAO))) = UPPER(@areaCode) OR UPPER(LTRIM(RTRIM(SOL_ORGAO))) = UPPER(@areaName)) `;
         }
+        // For ADM and Analyst, no WHERE filter - get all requests
+        console.log('[API] GET /api/requests - role:', role, 'userId:', userId, 'area:', area);
         const resReq = await sqlReq1.query(`
           SELECT 
             id, user_id, formType, meta_data,
@@ -754,7 +819,7 @@ async function startServer() {
             NOME_CLIENTE, PONTO_ENTREGA, INCREMENTO_CONSUMO, DIAS_TRABALHO_SEMANA, VAZAO_TOTAL_PREVISTA,
             PRESSAO_MINIMA, CODIGO_SAP_ISU, NOME_INDUSTRIA, CONSUMO_ATUAL, PRESSAO_CONTRATUAL, FAIXA_PRESSAO_ATUAL,
             NOME_UTE, PRESS_MAX_UTE, PRESS_MIN_UTE, PRESS_MAX_UPGN, PRESS_MIN_UPGN,
-            RESP_MAX_PO, RESP_MIN, RESP_GARANTIA, ANALISTA_EMPRESA, ANALISTA_CARGO, ANALISTA_GB, MEMO_RESPOSTA,
+            RESP_SEPLA as respSepla,
             VazaoInsta, QDC, HoraFunciona, CATEGORIA_MERCADO, RESP_UNID
           FROM Requests
           ${wherePart1}
@@ -885,27 +950,197 @@ async function startServer() {
       }
     });
 
+    // 8b. GET QC History for a Study
+    app.get('/api/qc-history/:studyNumber', async (req, res) => {
+      console.log('[QCHistory] Received request for studyNumber:', req.params.studyNumber);
+      try {
+        const { studyNumber } = req.params;
+        console.log('[QCHistory] Querying for studyNumber:', studyNumber);
+        const sqlReq = new sql.Request();
+        sqlReq.input('studyNumber', sql.VarChar, studyNumber);
+        
+        const result = await sqlReq.query`
+          SELECT 
+            IDCHKLST,
+            FK_T_ESTPLA,
+            STATUSCHK,
+            OPERADOR_VALIDACAO,
+            COMENTARIOS,
+            DATA_SOLICITACAO,
+            DATA_VALIDACAO,
+            QT_DEFCTO1, QT_DEFCTO2, QT_DEFCTO3, QT_DEFCTO4, QT_DEFCTO5, QT_DEFCTO6,
+            QT_DEFCTO7, QT_DEFCTO8, QT_DEFCTO9, QT_DEFCTO10, QT_DEFCTO11, QT_DEFCTO12,
+            QT_DEFCTO13, QT_DEFCTO14, QT_DEFCTO15
+          FROM T_CHKLST 
+          WHERE FK_T_ESTPLA = @studyNumber
+          ORDER BY DATA_VALIDACAO DESC
+        `;
+        
+        console.log('[QCHistory] Query returned rows:', result.recordset.length);
+        
+        const excelToJSDate = (excelDate) => {
+          if (!excelDate) return null;
+          return new Date((excelDate - 25569) * 86400 * 1000).toISOString();
+        };
+        
+        const history = result.recordset.map(row => ({
+          id: row.IDCHKLST,
+          studyNumber: row.FK_T_ESTPLA,
+          status: row.STATUSCHK === 200 ? 'Reprovado' : row.STATUSCHK === 300 ? 'Aprovado' : row.STATUSCHK === 400 ? 'Aprovado com Ressalvas' : 'Pendente',
+          reviewer: row.OPERADOR_VALIDACAO,
+          comments: row.COMENTARIOS,
+          requestDate: excelToJSDate(row.DATA_SOLICITACAO),
+          validationDate: excelToJSDate(row.DATA_VALIDACAO),
+          criticalFailures: {
+            1: row.QT_DEFCTO1, 2: row.QT_DEFCTO2, 3: row.QT_DEFCTO3, 4: row.QT_DEFCTO4,
+            5: row.QT_DEFCTO5, 6: row.QT_DEFCTO6, 7: row.QT_DEFCTO7, 8: row.QT_DEFCTO8,
+            9: row.QT_DEFCTO9, 10: row.QT_DEFCTO10, 11: row.QT_DEFCTO11, 12: row.QT_DEFCTO12
+          },
+          secondaryFailures: {
+            13: row.QT_DEFCTO13, 14: row.QT_DEFCTO14, 15: row.QT_DEFCTO15
+          }
+        }));
+        
+        res.json(history);
+      } catch (err) {
+        console.error('[QCHistory] Error fetching QC history:', err.message, err.stack);
+        res.status(500).json({ error: 'Failed to fetch QC history', details: err.message });
+      }
+    });
+
+    // 9. POST - Create Audit Log Entry
+    app.post('/api/audit', async (req, res) => {
+      console.log('[Audit] Received request to create audit log:', req.body);
+      try {
+        const { studyNumber, actionType, fieldChanged, oldValue, newValue, userId, userName } = req.body;
+        
+        const sqlReq = new sql.Request();
+        sqlReq.input('studyNumber', sql.VarChar, studyNumber || null);
+        sqlReq.input('actionType', sql.VarChar, actionType);
+        sqlReq.input('fieldChanged', sql.VarChar, fieldChanged || null);
+        sqlReq.input('oldValue', sql.NVarChar(sql.MAX), oldValue || null);
+        sqlReq.input('newValue', sql.NVarChar(sql.MAX), newValue || null);
+        sqlReq.input('userId', sql.VarChar, userId || null);
+        sqlReq.input('userName', sql.NVarChar(200), userName || null);
+        sqlReq.input('timestamp', sql.DateTime, new Date());
+        
+        const result = await sqlReq.query`
+          INSERT INTO T_AUDIT (StudyNumber, ActionType, FieldChanged, OldValue, NewValue, UserId, UserName, Timestamp)
+          VALUES (@studyNumber, @actionType, @fieldChanged, @oldValue, @newValue, @userId, @userName, @timestamp)
+        `;
+        
+        console.log('[Audit] Audit log created successfully');
+        res.json({ success: true, message: 'Audit log created' });
+      } catch (err) {
+        console.error('[Audit] Error creating audit log:', err.message, err.stack);
+        res.status(500).json({ error: 'Failed to create audit log', details: err.message });
+      }
+    });
+
+    // 9b. GET - Fetch Audit Logs
+    app.get('/api/audit', async (req, res) => {
+      console.log('[Audit] Received request to fetch audit logs', req.query);
+      try {
+        const { studyNumber, actionType, userId, limit = 100 } = req.query;
+        
+        console.log('[Audit] Filters - studyNumber:', studyNumber, 'actionType:', actionType, 'userId:', userId);
+        
+        // Join com E_OPEMAN para obter email do usuário
+        let query = `
+          SELECT TOP(@limit) 
+            A.ID, A.StudyNumber, A.ActionType, A.FieldChanged, A.OldValue, A.NewValue,
+            A.UserId, A.UserName, A.Timestamp, E.EMAIL as UserEmail
+          FROM T_AUDIT A
+          LEFT JOIN E_OPEMAN E ON UPPER(LTRIM(RTRIM(A.UserName))) = UPPER(LTRIM(RTRIM(E.NOME)))
+          WHERE 1=1
+        `;
+        const params = [];
+        
+        if (studyNumber) {
+          query += ' AND A.StudyNumber = @studyNumber';
+          params.push({ name: 'studyNumber', type: sql.VarChar, value: studyNumber });
+        }
+        if (actionType) {
+          query += ' AND A.ActionType = @actionType';
+          params.push({ name: 'actionType', type: sql.VarChar, value: actionType });
+        }
+        if (userId) {
+          query += ' AND A.UserId = @userId';
+          params.push({ name: 'userId', type: sql.VarChar, value: userId });
+        }
+        
+        query += ' ORDER BY A.Timestamp DESC';
+        params.push({ name: 'limit', type: sql.Int, value: parseInt(limit) });
+        
+        const sqlReq = new sql.Request();
+        params.forEach(p => sqlReq.input(p.name, p.type, p.value));
+        
+        const result = await sqlReq.query(query);
+        
+        console.log('[Audit] Query result records:', result.recordset.length);
+        console.log('[Audit] Sample records:', result.recordset.slice(0, 3).map(r => ({ 
+          ID: r.ID, 
+          StudyNumber: r.StudyNumber, 
+          ActionType: r.ActionType,
+          UserName: r.UserName,
+          UserEmail: r.UserEmail
+        })));
+        
+        console.log('[Audit] Fetched audit logs:', result.recordset.length);
+        res.json(result.recordset);
+      } catch (err) {
+        console.error('[Audit] Error fetching audit logs:', err.message, err.stack);
+        res.status(500).json({ error: 'Failed to fetch audit logs', details: err.message });
+      }
+    });
+
+    // 9c. GET - Fetch Audit Log for specific study
+    app.get('/api/audit/study/:studyNumber', async (req, res) => {
+      console.log('[Audit] Received request for study audit:', req.params.studyNumber);
+      try {
+        const { studyNumber } = req.params;
+        
+        const sqlReq = new sql.Request();
+        sqlReq.input('studyNumber', sql.VarChar, studyNumber);
+        
+        const result = await sqlReq.query`
+          SELECT * FROM T_AUDIT 
+          WHERE StudyNumber = @studyNumber
+          ORDER BY Timestamp DESC
+        `;
+        
+        console.log('[Audit] Fetched study audit logs:', result.recordset.length);
+        res.json(result.recordset);
+      } catch (err) {
+        console.error('[Audit] Error fetching study audit logs:', err.message, err.stack);
+        res.status(500).json({ error: 'Failed to fetch study audit logs', details: err.message });
+      }
+    });
+
     // 6. POST Upsert Request with Move logic + Full T_ESTPLA mapping
     const textToStatusCode = {
-      'Pendente': 240,                // 240 = Aguardando Informações
-      'Rascunho': 330,                // 330 = Pré-Cadastro
-      'Em Análise': 330,              // 330 = Pré-Cadastro
-      'Validado': 200,                // 200 = Aberto
-      'Aguardando Execução': 200,     // 200 = Aberto
+      'Pendente': 330,
+      'Rascunho': 330,
+      'Em Análise': 330,
+      'Em Analise': 330,
+      'Validado': 200,                // Aberto
+      'Aguardando Execução': 200,     // Aberto
       'Aberto': 200,
-      'Em Execução': 205,             // 205 = Em andamento
-      'Aguardando Informações': 240,  // 240 = Aguardando Informações
-      'Controle de Qualidade': 280,   // 280 = Controle de Qualidade
-      'Aprovado pelo CQ': 215,        // 215 = Pronto
-      'Reprovado pelo CQ': 290,       // 290 = Rever Estudo CQ
-      'Enviado sem CQ': 215,          // 215 = Pronto
-      'Concluído': 210,               // 210 = Concluído
-      'Rejeitado': 220,               // 220 = Cancelado
-      'Cancelado': 220,               // 220 = Cancelado
+      'Em Execução': 205,             // Em andamento
+      'Aguardando Informações': 240,  // Aguardando Informações
+      'Controle de Qualidade': 280,   // Controle de Qualidade
+      'Aprovado pelo CQ': 215,        // Aprovado pelo CQ
+      'Reprovado pelo CQ': 290,       // Reprovado pelo CQ
+      'Enviado sem CQ': 225,          // Enviado sem CQ
+      'Concluído': 210,               // Concluído
+      'Rejeitado': 220,               // Cancelado
+      'Cancelado': 220,               // Cancelado
     };
 
+  const requestLocks = new Set();
+
   app.post('/api/requests', async (req, res) => {
-    console.log(`[Server] 📥 Received POST /api/requests - ID: ${req.body?.id}, Status: ${req.body?.status}`);
+    console.log(`[Server] 📥 Received POST /api/requests - ID: ${req.body?.id}, Status: ${req.body?.status}, StudyNumber: ${req.body?.studyNumber}`);
     const data = req.body;
     
     if (!data || Object.keys(data).length === 0) {
@@ -916,13 +1151,49 @@ async function startServer() {
       return res.status(400).json({ error: 'Usuário não identificado' });
     }
 
-    let numericStatus = 100; // Default: Em Análise
+    const lockKey = 'global_save_lock';
+    while (requestLocks.has(lockKey)) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    requestLocks.add(lockKey);
+
     try {
-      numericStatus = textToStatusCode[data.status] !== undefined ? textToStatusCode[data.status] : 330;
-      // Explicit override for "Em Análise" to ensure 330
-      if (data.status === 'Em Análise' || data.status === 'Em Analise' || data.status === 'Pendente') numericStatus = 330;
-    } catch (e) {
-      console.error('Error mapping status text to code:', data.status, e.message);
+
+    let numericStatus = textToStatusCode[data.status] || 330;
+    console.log(`[Server] 🔍 textToStatusCode lookup: "${data.status}" -> ${numericStatus}`);
+
+    // --- Status Override for Quality Control (T_CHKLST -> T_ESTPLA Synchronization) ---
+    // Rule: Derive technical status from QC results ONLY when the status being sent is a QC result
+    // PRIORITY: Check if sending to QC (new request) first, before checking existing QC results
+    
+    // Primeiro, verificar se o status sendo enviado é um status de CQ (resultado)
+    const isQCResultStatus = ['Controle de Qualidade', 'Aprovado pelo CQ', 'Reprovado pelo CQ', 'Em Execução'].includes(data.status);
+    
+    if (data.status === 'Controle de Qualidade') {
+      // Se o status sendo enviado é "Controle de Qualidade" (nova revisão), garantir 280
+      numericStatus = 280;
+    } else if (data.status === 'Em Execução') {
+      // Em Execução deve ser 205, não 290 - IGNORAR qcData da revisão anterior
+      numericStatus = 205;
+    } else if ((data.status === 'Aprovado pelo CQ' || data.status === 'Reprovado pelo CQ') && data.qcData && data.qcData.qcStatusCQ) {
+      // Apenas substituir se o status sendo enviado é Aprovado/Reprovado E tem resultado de QC
+      const qcResult = data.qcData.qcStatusCQ;
+      if (qcResult === 'Reprovado') {
+        numericStatus = 290;
+      } else if (qcResult === 'Aprovado') {
+        numericStatus = 215;
+      }
+    } else if (data.qcData && data.qcData.qcStatusCQ && !isQCResultStatus) {
+      // Se tem qcData mas o status NÃO é um status de CQ, IGNORAR o qcData e usar o status enviado
+      // Isso evita que dados de revisões anteriores sobrescrevam o status atual
+      // numericStatus já tem o valor correto de textToStatusCode
+    }
+    
+    // Explicit override for "Em Análise" or "Pendente" to ensure 330
+    // Only apply if the status is actually "Em Análise" or "Pendente", not "Aguardando Execução"
+    if ((data.status === 'Em Análise' || data.status === 'Em Analise' || data.status === 'Pendente') && 
+        !data.status.includes('Aguardando') && !data.status.includes('Exec')) {
+      numericStatus = 330;
     }
     
     // Rule: Move to T_ESTPLA if status is validated (2xx) OR if it ALREADY exists there (Sync corrections)
@@ -941,7 +1212,7 @@ async function startServer() {
        }
     }
 
-    console.log(`[StatusSync] 🔄 Incoming: "${data.status}" -> Code: ${numericStatus} (Moved to T_ESTPLA: ${shouldMoveToT_ESTPLA})`);
+    console.log(`[StatusSync] 🔄 Incoming: "${data.status}" -> Code: ${numericStatus} | shouldMoveToT_ESTPLA: ${shouldMoveToT_ESTPLA} | ID: ${data.id}`);
 
     const statusVal = numericStatus;
     const now = new Date();
@@ -1115,6 +1386,46 @@ async function startServer() {
       const safeFloat = safeParseFloat;
       const safeInt = safeParseInt;
 
+      // 1. Resolve Analyst ID (SAP lookup)
+      let respSeplaValue = String(data.assignedTo || '');
+      if (respSeplaValue) {
+        try {
+          console.log(`[SAP Lookup] 🔍 Attempting to resolve SAP for: ${respSeplaValue}`);
+          const cleanId = respSeplaValue.trim();
+          const paddedId = (/^\d+$/.test(cleanId) && cleanId.length < 8) ? cleanId.padStart(8, '0') : cleanId;
+          
+          const sapReq = new sql.Request();
+          sapReq.input('cleanId', sql.VarChar, cleanId);
+          sapReq.input('upperCleanId', sql.VarChar, cleanId.toUpperCase());
+          sapReq.input('paddedId', sql.VarChar, paddedId);
+
+          const userSapResult = await sapReq.query(`
+            SELECT TOP 1 RTRIM(LTRIM(SAP)) as SAP, NomeCompleto 
+            FROM E_OPEMAN 
+            WHERE UPPER(LTRIM(RTRIM(Email))) = @upperCleanId
+               OR UPPER(LTRIM(RTRIM(NomeCompleto))) = @upperCleanId
+               OR UPPER(LTRIM(RTRIM(NOME))) = @upperCleanId
+               OR UPPER(LTRIM(RTRIM(USUARIO))) = @upperCleanId
+               OR LTRIM(RTRIM(SAP)) = @cleanId
+               OR LTRIM(RTRIM(SAP)) = @paddedId
+          `);
+          if (userSapResult.recordset.length > 0 && userSapResult.recordset[0].SAP) {
+            respSeplaValue = userSapResult.recordset[0].SAP;
+            console.log(`[SAP Lookup] ✅ Resolved: ${userSapResult.recordset[0].NomeCompleto} (SAP: ${respSeplaValue})`);
+          } else {
+            console.warn(`[SAP Lookup] ⚠️ Could not resolve SAP for "${respSeplaValue}". Keeping original value.`);
+          }
+        } catch (sapErr) {
+          console.error(`[SAP Lookup] ❌ Error resolving SAP for ${respSeplaValue}:`, sapErr.message);
+        }
+      }
+
+      // Final safeguard: Never save an email to RESP_SEPLA
+      if (respSeplaValue && respSeplaValue.includes('@')) {
+        console.warn(`[SAP Lookup] 🛑 Blocking email storage in RESP_SEPLA: "${respSeplaValue}". Defaulting to ADRSIS.`);
+        respSeplaValue = 'ADRSIS';
+      }
+
       if (shouldMoveToT_ESTPLA) {
         // Migration to Technical System (T_ESTPLA)
         // ============================================================
@@ -1161,25 +1472,6 @@ async function startServer() {
         sqlReq.input('numE2', sql.Int, safeInt(data.numClientsCom || 0));
         sqlReq.input('vazS2', sql.Float, safeFloat(data.totalFlowCom || 0));
         
-        // Technical Technical Response fields (from executers)
-        let respSeplaValue = data.assignedTo || '';
-        if (respSeplaValue) {
-          try {
-            // Search by Email, NomeCompleto, or NOME to get SAP
-            const userSapResult = await sql.query`
-              SELECT TOP 1 RTRIM(LTRIM(SAP)) as SAP 
-              FROM E_OPEMAN 
-              WHERE email = ${respSeplaValue.trim()} 
-                 OR NomeCompleto = ${respSeplaValue.trim()}
-                 OR NOME = ${respSeplaValue.trim()}
-            `;
-            if (userSapResult.recordset.length > 0 && userSapResult.recordset[0].SAP) {
-              respSeplaValue = userSapResult.recordset[0].SAP;
-            }
-          } catch (sapErr) {
-            console.error(`[SAP Lookup] Error resolving SAP for ${respSeplaValue}:`, sapErr);
-          }
-        }
         sqlReq.input('respSepla', sql.VarChar, respSeplaValue);
         sqlReq.input('localiz', sql.VarChar, (data.address || '') + (data.number ? ' ' + data.number : ''));
         sqlReq.input('tel', sql.VarChar, data.phone || '');
@@ -1266,165 +1558,254 @@ async function startServer() {
         sqlReq.input('dtEntregaPrevista', sql.Float, dStr ? dateToOADate(new Date(dStr)) : null);
 
         // UPSERT Query with correct ID handling (Direct string comparison)
+        console.log(`[T_ESTPLA] 🔧 Executing UPSERT for ID=${requestId}, STATUS=${statusVal}`);
         try {
           await sqlReq.query(`
             IF EXISTS (SELECT 1 FROM T_ESTPLA WHERE id = @id)
             BEGIN
-              UPDATE T_ESTPLA SET 
-                user_id = @user_id, FK_MODELO = @formType, NRO_ESTUDO = @nro, STATUS = @status, meta_data = @meta,
-                EMPRESA = @emp, SOL_ORGAO = @org, SOL_RESPON = @resp, TITULO = @tit, PRESSAO = @pres, OBSERVS = @obs,
-                BAIRRO = @bairro, MUNICIPIO = @muni, NUMECONOMIAS = @numEconomias, VAZAOSOL = @vazS, VAZAOINSTA = @vazI, CONSMENS = @cons,
-                PresSolMax = @pMax, PresSolMin = @pMin, HorOpeIni = @hIn, HorOpeFin = @hFin, DiaOpeMes = @dMes, EmailContato = @mail,
-                NumEconomiasComIndEtc = @numE2, VazaoSolComIndEtc = @vazS2, 
-                RESP_SEPLA = @respSepla, LOCALIZ = @localiz, TEL_SOL = @tel, EntradaReal = @entradaReal, DAT_EN_SEP = @datEnSep, DAT_IN_SEP = @datInSep, DAT_SA_SEP = @datSaSep,
-                NRO_EST_AN = @nroAn, GRUPO_EST = @grupoEst, TIPO_EST = @tipoEst, TIP_ES = @tipEs, GrauDificult = @grauDif, TPGASS = @tpgass, PRESGASS = @presGas, PRESGAS = @presGas,
-                CROQUI = @croqui, EstudoRelevante = @estudoRelev, ObservaResp = @observaResp,
-                PresClieMax = @presClieMax, PresClieMin = @presClieMin, PresClieGarant = @presClieGarant,
-                StatusEntrega = @statusEntrega, RegulardoSN = @regulardoSN, ReguladroVazao = @reguladroVazao, HoraFunciona = @horaFunciona,
-                PressaoResposta = @pressaoResposta, CustoRegulador = @custoRegulador, PressaoEntrada = @pressaoEntrada, unidPresEnt = @unidPresEnt,
-                PressaoSaida = @pressaoSaida, unidPresSai = @unidPresSai, VazaoFutura = @vazaoFutura, PresSol = @presSol, UnidSol = @unidSol,
-                QDC = @qdc, fd = @fd, fp = @fp, vu = @vu, Diversificar = @diversificar, EMAIL_ENVIADO = @emailEnviado,
-                PRESCALC = @prescalc, GRUPORED = @grupored, PRAZ_EST_CONST = @prazEstConst, CONSUMO_ESTIMADO = @consumoEstimado,
-                PRESSAO_INICIAL = @pressaoInicial, PRESSAO_FINAL = @pressaoFinal, PRESSAO_ABSOLUTA = @pressaoAbsoluta, PRESSAO_ATM = @pressaoAtm, CODIGO_PASTA = @codigoPasta,
-                Simulacao = @simulacao, Supervision = @supervision, Tempo = @tempo, TempoEstimado = @tempoEstimado, Preparacion = @preparacion,
-                RedeExtTotal = @redeExtTotal, dtEntregaPrevista = @dtEntregaPrevista,
-                MEMO_RESPOSTA = @memoResposta,
-                VAZ_MEDIA = @vazMedia,
-                VAZ_PICO = @vazPico,
-                IDSIGEP = @idsigep
+              UPDATE T_ESTPLA SET
+                EMPRESA = @emp, SOL_ORGAO = @org, DAT_EN_SEP = @datEnSep, SOL_RESPON = @resp,
+                RESP_SEPLA = @respSepla, OPERADOR_M = @respSepla, FK_MODELO = @formType,
+                STATUS = @status, meta_data = @meta, TITULO = @tit, NOME_CLIENTE = @tit,
+                ObsEstudSol = @obs, Bairro = @bairro,
+                Municipio = @muni, NumEconomias = @numE, VazaoSol = @vazS,
+                VazaoInsta = @vazI, ConsMens = @cons, PresSolMax = @pMax,
+                PresSolMin = @pMin, HorOpeIni = @hIn, HorOpeFin = @hFin,
+                DiaOpeMes = @dMes, EmailContato = @mail, NumEconomiasComIndEtc = @numE2,
+                VazaoSolComIndEtc = @vazS2, LOCALIZ = @localiz, TEL_SOL = @tel,
+                EntradaReal = @entradaReal, IDSIGEP = @idsigep, NRO_EST_AN = @nroAn,
+                NRO_ESTUDO = @nro, GRUPO_EST = @grupoEst, TIPO_EST = @tipoEst, TIP_ES = @tipEs,
+                GrauDificult = @grauDif, TPGASS = @tpgass, 
+                CROQUI = @croqui, ESTUDO_RELEV = @estudoRelev, DATA_SOLIC_OPER = @dataOper,
+                VAZ_MEDIA = @vazMedia, VAZ_PICO = @vazPico, PRESGAS = @presGas,
+                PresClieMax = @presClieMax, PresClieMin = @presClieMin,
+                PresClieGarant = @presClieGarant, ObservaResp = @observaResp,
+                vu = @vu, fp = @fp, fd = @fd, Diversificar = @diversificar,
+                StatusEntrega = @statusEntrega, RegulardoSN = @regulardoSN,
+                ReguladroVazao = @reguladroVazao, HoraFunciona = @horaFunciona,
+                PressaoResposta = @pressaoResposta, CustoRegulador = @custoRegulador,
+                PressaoEntrada = @pressaoEntrada, unidPresEnt = @unidPresEnt,
+                PressaoSaida = @pressaoSaida, unidPresSai = @unidPresSai,
+                VazaoFutura = @vazaoFutura, PRESSAO = @presSol, UnidSol = @unidSol,
+                QDC = @qdc, EMAIL_ENVIADO = @emailEnviado, MEMO_RESPOSTA = @memoResposta,
+                PRESCALC = @prescalc, GRUPORED = @grupored, PRAZ_EST_CONST = @prazEstConst,
+                CONSUMO_ESTIMADO = @consumoEstimado, PRESSAO_INICIAL = @pressaoInicial,
+                PRESSAO_FINAL = @pressaoFinal, PRESSAO_ABSOLUTA = @pressaoAbsoluta,
+                PRESSAO_ATM = @pressaoAtm, CODIGO_PASTA = @codigoPasta, Simulacao = @simulacao,
+                Supervision = @supervision, Tempo = @tempo, TempoEstimado = @tempoEstimado,
+                Preparacion = @preparacion, RedeExtTotal = @redeExtTotal,
+                dtEntregaPrevista = @dtEntregaPrevista
               WHERE id = @id
             END
             ELSE
             BEGIN
               INSERT INTO T_ESTPLA (
-                id, user_id, FK_MODELO, NRO_ESTUDO, STATUS, meta_data,
-                EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, PRESSAO, OBSERVS,
-                BAIRRO, MUNICIPIO, NUMECONOMIAS, VAZAOSOL, VAZAOINSTA, CONSMENS,
-                PresSolMax, PresSolMin, HorOpeIni, HorOpeFin, DiaOpeMes, EmailContato,
-                NumEconomiasComIndEtc, VazaoSolComIndEtc,
-                RESP_SEPLA, LOCALIZ, TEL_SOL, EntradaReal, DAT_EN_SEP, DAT_IN_SEP, DAT_SA_SEP,
-                NRO_EST_AN, GRUPO_EST, TIPO_EST, TIP_ES, GrauDificult, TPGASS, PRESGASS, PRESGAS,
-                CROQUI, EstudoRelevante, ObservaResp,
-                PresClieMax, PresClieMin, PresClieGarant,
-                StatusEntrega, RegulardoSN, ReguladroVazao, HoraFunciona,
-                PressaoResposta, CustoRegulador, PressaoEntrada, unidPresEnt,
-                PressaoSaida, unidPresSai, VazaoFutura, PresSol, UnidSol,
-                QDC, fd, fp, vu, Diversificar, EMAIL_ENVIADO,
-                PRESCALC, GRUPORED, PRAZ_EST_CONST, CONSUMO_ESTIMADO,
-                PRESSAO_INICIAL, PRESSAO_FINAL, PRESSAO_ABSOLUTA, PRESSAO_ATM, CODIGO_PASTA,
-                Simulacao, Supervision, Tempo, TempoEstimado, Preparacion,
-                RedeExtTotal, dtEntregaPrevista,
-                MEMO_RESPOSTA,
-                DATA_SOLIC_OPER,
-                VAZ_MEDIA,
-                VAZ_PICO,
-                IDSIGEP
-              )
-              VALUES (
-                @id, @user_id, @formType, @nro, @status, @meta,
-                @emp, @org, @resp, @tit, @pres, @obs,
-                @bairro, @muni, @numEconomias, @vazS, @vazI, @cons,
-                @pMax, @pMin, @hIn, @hFin, @dMes, @mail,
-                @numE2, @vazS2,
-                @respSepla, @localiz, @tel, @entradaReal, @datEnSep, @datInSep, @datSaSep,
-                @nroAn, @grupoEst, @tipoEst, @tipEs, @grauDif, @tpgass, @presGas, @presGas,
-                @croqui, @estudoRelev, @observaResp,
-                @presClieMax, @presClieMin, @presClieGarant,
-                @statusEntrega, @regulardoSN, @reguladroVazao, @horaFunciona,
-                @pressaoResposta, @custoRegulador, @pressaoEntrada, @unidPresEnt,
-                @pressaoSaida, @unidPresSai, @vazaoFutura, @presSol, @unidSol,
-                @qdc, @fd, @fp, @vu, @diversificar, @emailEnviado,
-                @prescalc, @grupored, @prazEstConst, @consumoEstimado,
-                @pressaoInicial, @pressaoFinal, @pressaoAbsoluta, @pressaoAtm, @codigoPasta,
-                @simulacao, @supervision, @tempo, @tempoEstimado, @preparacion,
-                @redeExtTotal, @dtEntregaPrevista,
-                @memoResposta,
-                @dataOper,
-                @vazMedia,
-                @vazPico,
-                @idsigep
+                id, EMPRESA, SOL_ORGAO, DAT_EN_SEP, SOL_RESPON, RESP_SEPLA, OPERADOR_M, FK_MODELO, STATUS, meta_data,
+                TITULO, NOME_CLIENTE, LOCALIZ, Bairro, Municipio,
+                NumEconomias, VazaoSol, VazaoInsta, ConsMens, PresSolMax, PresSolMin,
+                HorOpeIni, HorOpeFin, DiaOpeMes, EmailContato, NumEconomiasComIndEtc,
+                VazaoSolComIndEtc, TEL_SOL, EntradaReal, IDSIGEP, NRO_EST_AN, NRO_ESTUDO,
+                GRUPO_EST, TIPO_EST, TIP_ES, GrauDificult, TPGASS, CROQUI, ESTUDO_RELEV,
+                DATA_SOLIC_OPER, VAZ_MEDIA, VAZ_PICO, PRESGAS, PresClieMax, PresClieMin,
+                PresClieGarant, ObservaResp, vu, fp, fd, Diversificar, StatusEntrega,
+                RegulardoSN, ReguladroVazao, HoraFunciona, PressaoResposta, CustoRegulador,
+                PressaoEntrada, unidPresEnt, PressaoSaida, unidPresSai, VazaoFutura,
+                PRESSAO, UnidSol, QDC, EMAIL_ENVIADO, MEMO_RESPOSTA, PRESCALC, GRUPORED,
+                PRAZ_EST_CONST, CONSUMO_ESTIMADO, PRESSAO_INICIAL, PRESSAO_FINAL,
+                PRESSAO_ABSOLUTA, PRESSAO_ATM, CODIGO_PASTA, Simulacao, Supervision,
+                Tempo, TempoEstimado, Preparacion, RedeExtTotal, dtEntregaPrevista
+              ) VALUES (
+                @id, @emp, @org, @datEnSep, @resp, @respSepla, @respSepla, @formType, @status, @meta,
+                @tit, @tit, @localiz, @bairro, @muni, @numE, @vazS, @vazI, @cons,
+                @pMax, @pMin, @hIn, @hFin, @dMes, @mail, @numE2, @vazS2, @tel, @entradaReal,
+                @idsigep, @nroAn, @nro, @grupoEst, @tipoEst, @tipEs, @grauDif, @tpgass,
+                @croqui, @estudoRelev, @dataOper, @vazMedia, @vazPico, @presGas, @presClieMax,
+                @presClieMin, @presClieGarant, @observaResp, @vu, @fp, @fd, @diversificar,
+                @statusEntrega, @regulardoSN, @reguladroVazao, @horaFunciona, @pressaoResposta,
+                @custoRegulador, @pressaoEntrada, @unidPresEnt, @pressaoSaida, @unidPresSai,
+                @vazaoFutura, @presSol, @unidSol, @qdc, @emailEnviado, @memoResposta,
+                @prescalc, @grupored, @prazEstConst, @consumoEstimado, @pressaoInicial,
+                @pressaoFinal, @pressaoAbsoluta, @pressaoAtm, @codigoPasta, @simulacao,
+                @supervision, @tempo, @tempoEstimado, @preparacion, @redeExtTotal, @dtEntregaPrevista
               )
             END
           `);
+          console.log(`[T_ESTPLA] ✅ UPSERT completed for ID=${requestId}, STATUS=${statusVal}`);
+          
+// --- QC Persistence (T_CHKLST) ---
+          // SÓ criar registro em T_CHKLST quando o QCControlModal é preenchido no frontend
+          // e enviado para o backend com a flag fromQCModal=true
+          // NÃO criar quando apenas verifica status 215/290 no banco
+          console.log(`[QC] 🔍 Checking QC conditions - numericStatus: ${numericStatus}, qcData: ${!!data.qcData}, fromQCModal: ${data.qcData?.fromQCModal}`);
+          
+          const numericStatusNum = Number(numericStatus);
+          const isQCApprovalResult = (numericStatusNum === 215 || numericStatusNum === 290);
+          
+          // Só cria T_CHKLST se a flag fromQCModal estiver presente (indica ação explícita do modal)
+          const isFromQCModal = data.qcData && data.qcData.fromQCModal === true;
+          
+          console.log(`[QC] 🔍 isQCApprovalResult: ${isQCApprovalResult}, isFromQCModal: ${isFromQCModal}`);
+          
+          // Só cria T_CHKLST se Vier do Modal de CQ (ação explícita do usuário)
+          if (isQCApprovalResult && isFromQCModal) {
+            try {
+              // Definir effectiveNro para o registro
+              const rawNroQC = data.studyNumber || data.nro || '';
+              let effectiveNroQC = String(rawNroQC);
+              if (typeof rawNroQC === 'object' && rawNroQC !== null) {
+                effectiveNroQC = String(rawNroQC.nextNumber || rawNroQC.studyNumber || rawNroQC.nro || '');
+              }
+              if (effectiveNroQC === '[object Object]') effectiveNroQC = '';
+              
+              console.log(`[QC] 🔍 Processing QC approval/rejection for Study: ${effectiveNroQC || requestId}`);
+              
+              // 1. Resolve Status Code (User's dynamic workflow)
+              // Mapping: T_CHKLST 200 (Fail), 300 (Pass), 400 (Pass w/ Res)
+              let chklstStatus = 300; // Default: Aprovado
+              const qcResult = data.qcData?.qcStatusCQ;
+              const hasFailures = (Object.values(data.qcData?.qcCriticalFailures || {}).some(v => Number(v) > 0)) ||
+                                 (Object.values(data.qcData?.qcSecondaryFailures || {}).some(v => Number(v) > 0));
+
+              if (qcResult === 'Reprovado') {
+                chklstStatus = 200;
+              } else if (qcResult === 'Aprovado') {
+                chklstStatus = hasFailures ? 400 : 300;
+                if (data.qcData?.qcFinalStatus) {
+                   chklstStatus = parseInt(data.qcData.qcFinalStatus);
+                }
+              }
+
+              // 2. Resolve Operator SAP (Reviewer)
+              let operatorSap = data.qcData?.qcSupervisor || data.assignedTo || '';
+              if (operatorSap) {
+                const opResult = await sql.query`
+                  SELECT TOP 1 RTRIM(LTRIM(SAP)) as SAP 
+                  FROM E_OPEMAN 
+                  WHERE email = ${operatorSap.trim()} 
+                     OR NomeCompleto = ${operatorSap.trim()}
+                     OR NOME = ${operatorSap.trim()}
+                `;
+                if (opResult.recordset.length > 0) {
+                  operatorSap = opResult.recordset[0].SAP;
+                }
+              }
+
+              // 3. Get Next IDCHKLST
+              const idResult = await sql.query`SELECT ISNULL(MAX(IDCHKLST), 0) + 1 as nextId FROM T_CHKLST`;
+              const nextId = idResult.recordset[0].nextId;
+
+              // 4. Build Insert Query
+              const qcSql = new sql.Request();
+              qcSql.input('id', sql.Int, nextId);
+              qcSql.input('fkEst', sql.VarChar, effectiveNroQC || requestId);
+              qcSql.input('status', sql.Int, chklstStatus);
+              qcSql.input('operador', sql.VarChar, operatorSap);
+              qcSql.input('comments', sql.NVarChar, data.qcData?.qcComments || '');
+              qcSql.input('solDate', sql.Float, data.qcData?.qcRequestDate ? dateToOADate(new Date(data.qcData.qcRequestDate)) : null);
+              qcSql.input('valDate', sql.Float, dateToOADate(new Date()));
+
+              // Map Defect Counts (1-15)
+              for (let i = 1; i <= 15; i++) {
+                const count = (i <= 12) 
+                  ? (Number(data.qcData?.qcCriticalFailures?.[String(i)]) || 0)
+                  : (Number(data.qcData?.qcSecondaryFailures?.[String(i)]) || 0);
+                qcSql.input(`q${i}`, sql.Int, count);
+                qcSql.input(`c${i}`, sql.Int, i);
+              }
+
+              await qcSql.query(`
+                INSERT INTO T_CHKLST (
+                  IDCHKLST, FK_T_ESTPLA, STATUSCHK, OPERADOR_VALIDACAO, COMENTARIOS,
+                  DATA_SOLICITACAO, DATA_VALIDACAO,
+                  QT_DEFCTO1, CODIGO1, QT_DEFCTO2, CODIGO2, QT_DEFCTO3, CODIGO3,
+                  QT_DEFCTO4, CODIGO4, QT_DEFCTO5, CODIGO5, QT_DEFCTO6, CODIGO6,
+                  QT_DEFCTO7, CODIGO7, QT_DEFCTO8, CODIGO8, QT_DEFCTO9, CODIGO9,
+                  QT_DEFCTO10, CODIGO10, QT_DEFCTO11, CODIGO11, QT_DEFCTO12, CODIGO12,
+                  QT_DEFCTO13, CODIGO13, QT_DEFCTO14, CODIGO14, QT_DEFCTO15, CODIGO15
+                ) VALUES (
+                  @id, @fkEst, @status, @operador, @comments,
+                  @solDate, @valDate,
+                  @q1, @c1, @q2, @c2, @q3, @c3, @q4, @c4, @q5, @c5, @q6, @c6,
+                  @q7, @c7, @q8, @c8, @q9, @c9, @q10, @c10, @q11, @c11, @q12, @c12,
+                  @q13, @c13, @q14, @c14, @q15, @c15
+                )
+              `);
+              console.log(`[QC] ✅ Record created in T_CHKLST: ID ${nextId}, Status ${chklstStatus}`);
+            } catch (qcErr) {
+              console.error(`[QC] ❌ Error persisting to T_CHKLST:`, qcErr.message);
+            }
+          }
 
           // Sync Child Tables (I_ESTPLA and G_PRTRER)
-        if (numericIDSIGEP) {
-          console.log(`[StatusSync] 🔄 Syncing child tables for IDSIGEP: ${numericIDSIGEP}`);
-          // 1. Sync I_ESTPLA (Interconnections)
-          await sql.query`DELETE FROM I_ESTPLA WHERE IDSIGEP = ${numericIDSIGEP}`;
-          const interconnections = data.interconnectionPoints || [];
-          
-          if (interconnections.length > 0) {
-            // Get next OID (legacy manual increment)
-            const maxOidRes = await sql.query`SELECT ISNULL(MAX(OID), 0) as maxOid FROM I_ESTPLA`;
-            let nextOid = (maxOidRes.recordset[0].maxOid || 0) + 1;
-            console.log(`[StatusSync] ℹ️ Next I_ESTPLA OID: ${nextOid}`);
+          if (numericIDSIGEP) {
+            console.log(`[StatusSync] 🔄 Syncing child tables for IDSIGEP: ${numericIDSIGEP}`);
+            // 1. Sync I_ESTPLA (Interconnections)
+            await sql.query`DELETE FROM I_ESTPLA WHERE IDSIGEP = ${numericIDSIGEP}`;
+            const interconnections = data.interconnectionPoints || [];
+            
+            if (interconnections.length > 0) {
+              const maxOidRes = await sql.query`SELECT ISNULL(MAX(OID), 0) as maxOid FROM I_ESTPLA`;
+              let nextOid = (maxOidRes.recordset[0].maxOid || 0) + 1;
 
-            for (const point of interconnections) {
-              const ptSql = new sql.Request();
-              ptSql.input('oid', sql.Int, nextOid++);
-              ptSql.input('idsigep', sql.Int, numericIDSIGEP);
-              ptSql.input('nro', sql.Int, numericIDSIGEP); // Use same for NRO_ESTUDO for legacy support
-              ptSql.input('pres', sql.VarChar, point.pressure || '');
-              ptSql.input('mat', sql.VarChar, point.material || '');
-              ptSql.input('dia', sql.VarChar, point.diameter || '');
-              ptSql.input('logradouro', sql.VarChar, point.location || point.address || '');
-              ptSql.input('indicacao', sql.VarChar, point.comment || '');
-              await ptSql.query(`
-                INSERT INTO I_ESTPLA (OID, IDSIGEP, NRO_ESTUDO, PRESSAO, MATERIAL, DIAMETRO, LOGRADOURO, INDICACAO)
-                VALUES (@oid, @idsigep, @nro, @pres, @mat, @dia, @logradouro, @indicacao)
-              `);
+              for (const point of interconnections) {
+                const ptSql = new sql.Request();
+                ptSql.input('oid', sql.Int, nextOid++);
+                ptSql.input('idsigep', sql.Int, numericIDSIGEP);
+                ptSql.input('nro', sql.Int, numericIDSIGEP); 
+                ptSql.input('pres', sql.VarChar, point.pressure || '');
+                ptSql.input('mat', sql.VarChar, point.material || '');
+                ptSql.input('dia', sql.VarChar, point.diameter || '');
+                ptSql.input('logradouro', sql.VarChar, point.location || point.address || '');
+                ptSql.input('indicacao', sql.VarChar, point.comment || '');
+                await ptSql.query(`
+                  INSERT INTO I_ESTPLA (OID, IDSIGEP, NRO_ESTUDO, PRESSAO, MATERIAL, DIAMETRO, LOGRADOURO, INDICACAO)
+                  VALUES (@oid, @idsigep, @nro, @pres, @mat, @dia, @logradouro, @indicacao)
+                `);
+              }
             }
-          }
 
-          // 2. Sync G_PRTRER (Planned Extensions)
-          await sql.query`DELETE FROM G_PRTRER WHERE IDSIGEP = ${numericIDSIGEP}`;
-          const extensions = data.plannedExtensions || [];
-          
+            // 2. Sync G_PRTRER (Planned Extensions)
+            await sql.query`DELETE FROM G_PRTRER WHERE IDSIGEP = ${numericIDSIGEP}`;
+            const extensions = data.plannedExtensions || [];
+            
             if (extensions.length > 0) {
-              // Get next OBJECTID (legacy manual increment)
               const maxObjRes = await sql.query`SELECT ISNULL(MAX(OBJECTID), 0) as maxObj FROM G_PRTRER`;
               let nextObj = (maxObjRes.recordset[0].maxObj || 0) + 1;
-              console.log(`[StatusSync] ℹ️ Next G_PRTRER OBJECTID: ${nextObj}`);
 
-            // Code mappings for G_PRTRER
-            const extensionTypeMap = { 'DESCONHECIDO': 1, 'REDE EXTERNA': 2, 'REDE INTERNA': 3, 'RAMAL': 4 };
-            const extensionStatusMap = { 'EM SERVIÇO': 2, 'ESTUDO (ABANDONAR)': 9, 'ESTUDO (CONSTRUIR)': 5, 'ENERGIZADO': 8 };
+              const extensionTypeMap = { 'DESCONHECIDO': 1, 'REDE EXTERNA': 2, 'REDE INTERNA': 3, 'RAMAL': 4 };
+              const extensionStatusMap = { 'EM SERVIÇO': 2, 'ESTUDO (ABANDONAR)': 9, 'ESTUDO (CONSTRUIR)': 5, 'ENERGIZADO': 8 };
 
-            for (const ext of extensions) {
-              const extSql = new sql.Request();
-              extSql.input('object', sql.Int, nextObj++);
-              extSql.input('idsigep', sql.Int, numericIDSIGEP);
-              extSql.input('nro', sql.Int, numericIDSIGEP);
-              extSql.input('mat', sql.VarChar, ext.material || '');
-              // Extract numeric diameter (e.g., "63mm" -> 63)
-              const numDiameter = parseInt(String(ext.diameter).replace(/[^0-9]/g, '')) || 0;
-              extSql.input('dia', sql.Int, numDiameter);
-              extSql.input('extensao', sql.Int, safeInt(ext.extension || 0));
-              extSql.input('tipred', sql.Int, extensionTypeMap[(ext.networkType || ext.type)?.toUpperCase()] || 1);
-              extSql.input('valvulas', sql.Int, safeInt(ext.valves || 0));
-              extSql.input('pres', sql.VarChar, ext.pressure || '');
-              extSql.input('gas', sql.VarChar, ext.gasType || 'GN');
-              extSql.input('status', sql.Int, extensionStatusMap[String(ext.status).toUpperCase()] || 5); // Default to "Estudo construir"
+              for (const ext of extensions) {
+                const extSql = new sql.Request();
+                extSql.input('object', sql.Int, nextObj++);
+                extSql.input('idsigep', sql.Int, numericIDSIGEP);
+                extSql.input('nro', sql.Int, numericIDSIGEP);
+                extSql.input('mat', sql.VarChar, ext.material || '');
+                const numDiameter = parseInt(String(ext.diameter).replace(/[^0-9]/g, '')) || 0;
+                extSql.input('dia', sql.Int, numDiameter);
+                extSql.input('extensao', sql.Int, safeInt(ext.extension || 0));
+                extSql.input('tipred', sql.Int, extensionTypeMap[(ext.networkType || ext.type)?.toUpperCase()] || 1);
+                extSql.input('valvulas', sql.Int, safeInt(ext.valves || 0));
+                extSql.input('pres', sql.VarChar, ext.pressure || '');
+                extSql.input('gas', sql.VarChar, ext.gasType || 'GN');
+                extSql.input('status', sql.Int, extensionStatusMap[String(ext.status).toUpperCase()] || 5);
 
-              await extSql.query(`
-                INSERT INTO G_PRTRER (OBJECTID, IDSIGEP, NRO_ESTUDO, MATERIAL, DIAMETRO, Extensao, TIPRED, QT_VALVULAS, Pressao, TipGas, status)
-                VALUES (@object, @idsigep, @nro, @mat, @dia, @extensao, @tipred, @valvulas, @pres, @gas, @status)
-              `);
+                await extSql.query(`
+                  INSERT INTO G_PRTRER (OBJECTID, IDSIGEP, NRO_ESTUDO, MATERIAL, DIAMETRO, Extensao, TIPRED, QT_VALVULAS, Pressao, TipGas, status)
+                  VALUES (@object, @idsigep, @nro, @mat, @dia, @extensao, @tipred, @valvulas, @pres, @gas, @status)
+                `);
+              }
             }
+            console.log(`[StatusSync] 🚀 Record ${requestId} synced in T_ESTPLA: ${interconnections.length} pts, ${extensions.length} exts`);
           }
-
-          console.log(`[StatusSync] 🚀 Record ${requestId} synced in T_ESTPLA: ${interconnections.length} pts, ${extensions.length} exts`);
+        } catch (dbErr) {
+          console.error(`[StatusSync] ❌ Error saving to T_ESTPLA (ID: ${requestId}):`, dbErr.message);
+          throw dbErr;
         }
-      } catch (dbErr) {
-        console.error(`[StatusSync] ❌ Error saving to T_ESTPLA (ID: ${requestId}):`, dbErr.message);
-        throw dbErr; // Propagate to outer catch
       }
-    }
 
     // REGARDLESS of T_ESTPLA move, always update/insert the Requests table
       // This ensures the status is identical in both locations and prevents UI sync issues.
-      {
         const sqlReq = new sql.Request();
         const requestId = String(data.id);
         const effectiveUserId = data.user_id || data.userId || '';
@@ -1452,6 +1833,8 @@ async function startServer() {
         sqlReq.input('bairro', sql.VarChar, data.neighborhood || data.bairro || '');
         sqlReq.input('muni', sql.VarChar, mappedCity);
         sqlReq.input('localiz', sql.VarChar, (data.address || '') + (data.number ? ' ' + data.number : ''));
+        sqlReq.input('natUnit', sql.VarChar, data.naturgyUnit || '');
+        sqlReq.input('respSepla', sql.VarChar, respSeplaValue || '');
 
         await sqlReq.query(`
           IF EXISTS (SELECT 1 FROM Requests WHERE id = @id)
@@ -1460,7 +1843,8 @@ async function startServer() {
               user_id = @user_id, formType = @formType, NRO_ESTUDO = @nro, STATUS = @status,
               meta_data = @meta, updatedAt = @now, requestDate = @datEnSep,
               EMPRESA = @emp, SOL_ORGAO = @org, SOL_RESPON = @resp, TITULO = @tit, 
-              BAIRRO = @bairro, MUNICIPIO = @muni, LOCALIZ = @localiz
+              BAIRRO = @bairro, MUNICIPIO = @muni, LOCALIZ = @localiz,
+              naturgyUnit = @natUnit, RESP_SEPLA = @respSepla
             WHERE id = @id
           END
           ELSE
@@ -1468,20 +1852,41 @@ async function startServer() {
             INSERT INTO Requests (
               id, user_id, formType, NRO_ESTUDO, STATUS,
               meta_data, createdAt, updatedAt, requestDate,
-              EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, BAIRRO, MUNICIPIO, LOCALIZ
+              EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, BAIRRO, MUNICIPIO, LOCALIZ, naturgyUnit, RESP_SEPLA
             )
             VALUES (
               @id, @user_id, @formType, @nro, @status,
               @meta, @now, @now, @datEnSep,
-              @emp, @org, @resp, @tit, @bairro, @muni, @localiz
+              @emp, @org, @resp, @tit, @bairro, @muni, @localiz, @natUnit, @respSepla
             )
           END
         `);
 
         console.log(`[StatusSync] ✅ Record ${requestId} synchronized in Requests with STATUS=${statusVal}`);
-      }
+        
+        // Create audit log entry
+        try {
+          const auditReq = new sql.Request();
+          const isNewStudy = !data.studyNumber || data.studyNumber === '';
+          auditReq.input('studyNumber', sql.VarChar, data.studyNumber || null);
+          auditReq.input('actionType', sql.VarChar, isNewStudy ? 'CREATE' : 'UPDATE');
+          auditReq.input('fieldChanged', sql.VarChar, 'study');
+          auditReq.input('oldValue', sql.NVarChar(sql.MAX), isNewStudy ? null : JSON.stringify({ status: 'previous', studyNumber: data.studyNumber }));
+          auditReq.input('newValue', sql.NVarChar(sql.MAX), JSON.stringify({ status: data.status, studyNumber: data.studyNumber }));
+          auditReq.input('userId', sql.VarChar, data.user_id || data.userId || null);
+          auditReq.input('userName', sql.NVarChar(200), data.requesterName || null);
+          auditReq.input('timestamp', sql.DateTime, new Date());
+          
+          await auditReq.query`
+            INSERT INTO T_AUDIT (StudyNumber, ActionType, FieldChanged, OldValue, NewValue, UserId, UserName, Timestamp)
+            VALUES (@studyNumber, @actionType, @fieldChanged, @oldValue, @newValue, @userId, @userName, @timestamp)
+          `;
+          console.log('[Audit] Study created/updated logged successfully');
+        } catch (auditErr) {
+          console.warn('[Audit] Failed to log audit entry:', auditErr.message);
+        }
       
-      res.status(200).json(data);
+        res.status(200).json(data);
     } catch (err) {
       const errorDetails = {
         timestamp: new Date().toISOString(),
@@ -1504,6 +1909,9 @@ async function startServer() {
       } catch (logErr) {}
 
       res.status(500).json({ error: 'Erro ao salvar/mover solicitação', message: err.message, details: errorDetails });
+    }
+    } finally {
+      requestLocks.delete(lockKey);
     }
   });
 
@@ -1565,18 +1973,19 @@ async function startServer() {
              console.log(`[DuplicateCheck] 🔍 Match found: ${existingNro} for ${matchedAddr} / ${matchedTitle}`);
              
              // Convert numeric status code to readable text
-             const statusCodeToText = {
-               '100': 'Em Análise',
-               '200': 'Aguardando Execução',
-               '205': 'Em Execução',
-               '210': 'Concluído',
-               '215': 'Aprovado pelo CQ',
-               '220': 'Cancelado',
-               '240': 'Aguardando Informações',
-               '280': 'Controle de Qualidade',
-               '290': 'Reprovado pelo CQ',
-               '330': 'Em Análise'
-             };
+const statusCodeToText = {
+                '100': 'Em Análise',
+                '200': 'Aguardando Execução',
+                '205': 'Em Execução',
+                '210': 'Concluído',
+                '215': 'Aprovado pelo CQ',
+                '220': 'Cancelado',
+                '225': 'Enviado sem CQ',
+                '240': 'Aguardando Informações',
+                '280': 'Controle de Qualidade',
+                '290': 'Reprovado pelo CQ',
+                '330': 'Em Análise'
+              };
              const rawStatus = String(checkResult.recordset[0].STATUS || '');
              const statusText = statusCodeToText[rawStatus] || rawStatus;
 
@@ -1633,6 +2042,20 @@ async function startServer() {
       }
     });
 
+    app.get('/api/debug-db', async (req, res) => {
+      try {
+        const reqR = await sql.query("SELECT TOP 5 id, NRO_ESTUDO, status FROM Requests ORDER BY createdAt DESC");
+        const tR = await sql.query("SELECT TOP 10 id, IDSIGEP, NRO_ESTUDO, STATUS FROM T_ESTPLA ORDER BY DataCriaReg DESC");
+        res.json({
+          requests: reqR.recordset,
+          t_estpla: tR.recordset
+        });
+      } catch(err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+
     // 8. DELETE Request
     app.delete('/api/requests/:id', async (req, res) => {
       try {
@@ -1667,12 +2090,99 @@ async function startServer() {
   }
 }
 
-// Global error handlers to prevent silent crashes
-process.on('uncaughtException', (err) => {
-  console.error('[Server] Uncaught Exception:', err);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('[Server] Unhandled Rejection:', reason);
-});
+
+    // --- Attachments Endpoints ---
+
+    app.post('/api/attachments', async (req, res) => {
+      try {
+        const { requestId, fileName, fileType, category, contentBase64 } = req.body;
+        if (!requestId || !fileName || !contentBase64) {
+          return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const buffer = Buffer.from(contentBase64, 'base64');
+        const sqlReq = new sql.Request();
+        sqlReq.input('requestId', sql.VarChar, String(requestId));
+        sqlReq.input('fileName', sql.NVarChar, fileName);
+        sqlReq.input('fileContent', sql.VarBinary(sql.MAX), buffer);
+        sqlReq.input('fileType', sql.NVarChar, fileType || 'application/octet-stream');
+        sqlReq.input('category', sql.NVarChar, category || 'Solicitacao');
+
+        // PREVENT DUPLICATES: Delete old file with same metadata before inserting
+        await sqlReq.query(`
+          DELETE FROM RequestAttachments 
+          WHERE requestId = @requestId AND fileName = @fileName AND category = @category
+        `);
+
+        await sqlReq.query(`
+          INSERT INTO RequestAttachments (requestId, fileName, fileContent, fileType, category)
+          VALUES (@requestId, @fileName, @fileContent, @fileType, @category)
+        `);
+
+        res.status(201).json({ message: 'Attachment saved successfully' });
+      } catch (err) {
+        console.error('[Attachments] Error saving attachment:', err);
+        res.status(500).json({ error: 'Internal server error', details: err.message });
+      }
+    });
+
+    app.get('/api/attachments/:requestId', async (req, res) => {
+      try {
+        const { requestId } = req.params;
+        const { category } = req.query;
+        const sqlReq = new sql.Request();
+        sqlReq.input('requestId', sql.VarChar, String(requestId));
+        
+        let query = 'SELECT id, fileName as name, fileType as type, category, DATALENGTH(fileContent) as size, createdAt FROM RequestAttachments WHERE requestId = @requestId';
+        if (category) {
+          sqlReq.input('category', sql.NVarChar, category);
+          query += ' AND category = @category';
+        }
+
+        const result = await sqlReq.query(query);
+        res.json(result.recordset);
+      } catch (err) {
+        console.error('[Attachments] Error listing attachments:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    app.get('/api/attachments/download/:fileId', async (req, res) => {
+      try {
+        const { fileId } = req.params;
+        const sqlReq = new sql.Request();
+        sqlReq.input('id', sql.Int, parseInt(fileId));
+
+        const result = await sqlReq.query('SELECT fileName, fileContent, fileType FROM RequestAttachments WHERE id = @id');
+        if (result.recordset.length === 0) {
+          return res.status(404).json({ error: 'File not found' });
+        }
+
+        const file = result.recordset[0];
+        const isDownload = req.query.download === '1' || req.query.download === 'true';
+        const disposition = isDownload ? 'attachment' : 'inline';
+        
+        res.setHeader('Content-Type', file.fileType || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.fileName)}"`);
+        res.send(file.fileContent);
+      } catch (err) {
+        console.error('[Attachments] Error downloading file:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
+    app.delete('/api/attachments/:fileId', async (req, res) => {
+      try {
+        const { fileId } = req.params;
+        const sqlReq = new sql.Request();
+        sqlReq.input('id', sql.Int, parseInt(fileId));
+        await sqlReq.query('DELETE FROM RequestAttachments WHERE id = @id');
+        res.json({ message: 'Attachment deleted successfully' });
+      } catch (err) {
+        console.error('[Attachments] Error deleting attachment:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+
 
 startServer();

@@ -29,6 +29,8 @@
   "exclude": [
     "supabase",
     "node_modules",
-    "dist"
+    "dist",
+    "server",
+    "skills"
   ]
 }

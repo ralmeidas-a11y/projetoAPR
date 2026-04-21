@@ -69,6 +69,7 @@ export interface User {
   roleDescription?: string;
   gb?: string;
   sap?: string;
+  isActive?: boolean;
 }
 
 export interface ElectronAPI {
@@ -122,6 +123,8 @@ export interface QCControlData {
   qcSecondaryFailures?: Record<string, number>;
   qcIterations?: QCIteration[];
   qcComments?: string;
+  qcFinalStatus?: string;
+  fromQCModal?: boolean; // Flag para indicar que veio do modal de CQ
 }
 
 export interface FormData {
@@ -232,6 +235,9 @@ export interface FormData {
   completedAt?: string;
   hasExpansion?: boolean;
   updatedAt?: string;
+  lastAnalystAlertDate?: string; // Data (YYYY-MM-DD) do último alerta exibido ao analista
+  lastAdminAlertDate?: string;   // Data (YYYY-MM-DD) do último alerta exibido ao ADM
+  alertConfirmations?: string[]; // Histórico de confirmações (Read Receipts)
   
   // Validation fields
   gasType?: string;
@@ -270,6 +276,7 @@ export interface FormData {
   // Quality Control
   qcData?: QCControlData;
   analystName?: string;
+  assignedToName?: string;
   holdReason?: string;
   holdResponse?: string;
   holdResponseSeen?: boolean;

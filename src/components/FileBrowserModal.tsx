@@ -63,6 +63,8 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
     return allRequests?.find(r => r.studyNumber === activeRevision) || request;
   }, [allRequests, activeRevision, request]);
 
+  const requestId = useMemo(() => selectedRevisionData.id, [selectedRevisionData]);
+
   const categories = ['Solicitacao', 'Resposta', 'Calculos', 'Outros'];
   const availableCategories = useMemo(() => {
     const base = isStaff 
@@ -103,9 +105,8 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
     setLoading(true);
     try {
       for (const file of uploadedFiles) {
-        await StorageService.uploadFile(activeRevision, activeCategory, file as File);
+        await StorageService.uploadFile(requestId, activeCategory, file as File);
       }
-      await StorageService.syncFilesFromStorage(activeRevision);
       await loadFiles();
       showToast(`${uploadedFiles.length} arquivo(s) adicionados.`, 'success');
     } catch (err) {
@@ -117,30 +118,12 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
   };
 
   const loadFiles = useCallback(async () => {
-    if (!activeRevision) return;
+    if (!requestId) return;
     setLoading(true);
     try {
-      const result = await StorageService.getRequestFiles(activeRevision, activeCategory);
-      let list = result.filter(f => !f.name.startsWith('.')); // Ocultar .keep
+      const result = await StorageService.getRequestFiles(requestId, activeCategory);
+      const remoteFiles = result.filter(f => !f.name.startsWith('.')); // Ocultar .keep
       
-      // Se for a aba de solicitação, injetar o "Formulário" virtual somente se o físico não existir
-      const officialFormName = `Formulario - ${activeRevision}.pdf`;
-      const hasPhysicalForm = list.some(f => f.name === officialFormName);
-
-      if (activeCategory === 'Solicitacao' && !hasPhysicalForm) {
-        const folderPath = getRequestPath(activeRevision, 'Solicitacao');
-        list = [
-          { 
-            name: `Formulario - ${activeRevision}.pdf`, 
-            isVirtualForm: true,
-            size: 0,
-            type: 'Documento PDF (Espelho)',
-            fullPath: `${folderPath}/Formulario - ${activeRevision}.pdf`
-          },
-          ...list
-        ];
-      }
-
       // Merging local files ONLY if looking at the "current" physical request being edited
       const isCurrentRequest = activeRevision === request.studyNumber;
       const localFiles = isCurrentRequest 
@@ -149,10 +132,13 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
             : (request.categorizedFiles?.[activeCategory] || []))
         : [];
       
-      const remoteNames = new Set(list.map(f => f.name));
-      const uniqueLocalFiles = localFiles.filter((f: any) => !remoteNames.has(f.name));
+      // Filter out invalid/empty files from local state
+      const validLocalFiles = localFiles.filter((f: any) => f && f.name && f.name !== '-');
+      
+      const remoteNames = new Set(remoteFiles.map(f => f.name));
+      const filteredLocalFiles = validLocalFiles.filter((f: any) => !remoteNames.has(f.name));
 
-      setFiles([...list, ...uniqueLocalFiles]);
+      setFiles([...remoteFiles, ...filteredLocalFiles]);
     } catch (error) {
       console.error('Error loading files:', error);
     } finally {
@@ -303,11 +289,11 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
               {files.map((file, i) => (
                 <div key={i} className="group flex items-center gap-4 p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
                   <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#004080] flex items-center justify-center shrink-0">
-                    <i className={`fa-solid ${file.name.toLowerCase().endsWith('.pdf') ? 'fa-file-pdf' : 'fa-file'} text-lg`}></i>
+                    <i className={`fa-solid ${file.name?.toLowerCase().endsWith('.pdf') ? 'fa-file-pdf' : 'fa-file'} text-lg`}></i>
                   </div>
                   
                   <div className="min-w-0 flex-grow">
-                    <p className="text-xs font-black text-slate-700 truncate">{file.name.replace('Formulario', 'Formulário')}</p>
+                    <p className="text-xs font-black text-slate-700 truncate">{file.name?.replace('Formulario', 'Formulário')}</p>
                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{formatSize(file.size)} • {file.type || 'Arquivo'}</p>
                   </div>
 
@@ -323,12 +309,14 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                     
                     <button 
                       onClick={async () => {
-                        const url = await StorageService.getFileUrl(file.fullPath);
+                        const url = await StorageService.getFileUrl(file.fullPath, true);
                         if (url) {
                           const link = document.createElement('a');
                           link.href = url;
-                          link.download = file.name;
+                          link.setAttribute('download', file.name);
+                          document.body.appendChild(link);
                           link.click();
+                          document.body.removeChild(link);
                         } else showToast('Erro ao buscar arquivo.', 'error');
                       }}
                       className="h-9 w-9 rounded-xl bg-slate-100 text-slate-600 hover:bg-[#004080] hover:text-white transition-all flex items-center justify-center active:scale-90"
@@ -345,23 +333,25 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                             if (url) window.open(url, '_blank');
                             else showToast('Erro ao abrir arquivo.', 'error');
                           }}
-                          className={`h-9 ${file.name.startsWith('Formulario') ? 'px-4 bg-orange-500 text-white shadow-lg shadow-orange-100' : 'w-9 bg-slate-100 text-slate-600'} rounded-xl hover:bg-orange-600 hover:text-white transition-all flex items-center justify-center gap-2 active:scale-90 font-black uppercase text-[9px] tracking-widest`}
+                          className={`h-9 ${file.name?.startsWith('Formulario') ? 'px-4 bg-orange-500 text-white shadow-lg shadow-orange-100' : 'w-9 bg-slate-100 text-slate-600'} rounded-xl hover:bg-orange-600 hover:text-white transition-all flex items-center justify-center gap-2 active:scale-90 font-black uppercase text-[9px] tracking-widest`}
                           title="Visualizar em Nova Guia"
                         >
                           <i className="fa-solid fa-eye text-xs"></i>
-                          {file.name.startsWith('Formulario') ? 'Ver' : null}
+                          {file.name?.startsWith('Formulario') ? 'Ver' : null}
                         </button>
 
                         {canModify && (
                           <button 
                             onClick={async () => {
-                              const ok = await showConfirm(`Deseja realmente excluir o arquivo "${file.name}"? Esta ação removerá o arquivo permanentemente do Storage e do Banco de Dados.`, 'Excluir Arquivo');
+                              const ok = await showConfirm(`Deseja realmente excluir o arquivo "${file.name || 'documento'}"? Esta ação removerá o arquivo permanentemente do Storage e do Banco de Dados.`, 'Excluir Arquivo');
                               if (ok) {
                                 setLoading(true);
                                 try {
-                                  await StorageService.deleteFile(file.fullPath);
-                                  // Após deletar fisicamente, disparar um sync para limpar o banco também
-                                  await StorageService.syncFilesFromStorage(activeRevision);
+                                  if (!file.isVirtualForm) {
+                                    if (file.id) {
+                                      await StorageService.deleteFile(file.fullPath);
+                                    }
+                                  }
                                   await loadFiles();
                                   showToast('Arquivo excluído.', 'success');
                                 } catch (err) {

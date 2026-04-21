@@ -100,8 +100,8 @@ class StorageManager {
     return this.provider.uploadFile(studyNumber, folder, file);
   }
 
-  async getFileUrl(path: string): Promise<string | null> {
-    return this.provider.getFileUrl(path);
+  async getFileUrl(path: string, download?: boolean): Promise<string | null> {
+    return this.provider.getFileUrl(path, download);
   }
 
   async deleteFile(path: string): Promise<void> {

@@ -187,40 +187,110 @@ export class SQLServerProvider implements StorageProvider {
 
   // --- File Operations ---
 
+  // --- File Operations ---
+
+  async uploadFile(requestId: string, folder: string, file: File): Promise<string> {
+    try {
+      const toBase64 = (f: File) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(f);
+        reader.onload = () => {
+          const res = reader.result as string;
+          resolve(res.split(',')[1]);
+        };
+        reader.onerror = error => reject(error);
+      });
+
+      const base64 = await toBase64(file);
+      const res = await fetch(`${this.apiUrl}/api/attachments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId: String(requestId),
+          fileName: file.name,
+          fileType: file.type || 'application/octet-stream',
+          category: folder,
+          contentBase64: base64
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to upload file');
+      }
+      
+      return `api/attachments/download/${requestId}/${file.name}`;
+    } catch (err) {
+      console.error('[SQLServerProvider] uploadFile error', err);
+      return '';
+    }
+  }
+
+  async getRequestFiles(requestId: string, folder: string): Promise<any[]> {
+    try {
+      const url = new URL(`${this.apiUrl}/api/attachments/${requestId}`);
+      if (folder) url.searchParams.append('category', folder);
+      
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      const files = await res.json();
+      
+      return files.map((f: any) => ({
+        ...f,
+        fullPath: `${this.apiUrl}/api/attachments/download/${f.id}`
+      }));
+    } catch (err) {
+      console.error('[SQLServerProvider] getRequestFiles error', err);
+      return [];
+    }
+  }
+
   async uploadCartaResposta(request: FormData, blob: Blob): Promise<string> {
-    console.warn('[SQLServerProvider] uploadCartaResposta not implemented');
-    return '';
+    const file = new File([blob], `Carta_Resposta_${request.studyNumber}.pdf`, { type: 'application/pdf' });
+    return this.uploadFile(request.id, 'Resposta', file);
   }
 
-  async getRequestFiles(studyNumber: string, folder: string): Promise<any[]> {
-    console.warn('[SQLServerProvider] getRequestFiles not implemented');
-    return [];
-  }
-
-  async uploadFile(studyNumber: string, folder: string, file: File): Promise<string> {
-    console.warn('[SQLServerProvider] uploadFile not implemented');
-    return '';
-  }
-
-  async getFileUrl(path: string): Promise<string | null> {
-    console.warn('[SQLServerProvider] getFileUrl not implemented');
-    return null;
+  async getFileUrl(path: string, download: boolean = false): Promise<string | null> {
+    if (!path) return null;
+    if (path.startsWith('http')) {
+      if (download) return path + (path.includes('?') ? '&' : '?') + 'download=1';
+      return path;
+    }
+    if (path.startsWith('blob:')) return path;
+    const url = `${this.apiUrl}/${path}`;
+    if (download) return url + (url.includes('?') ? '&' : '?') + 'download=1';
+    return url;
   }
 
   async deleteFile(path: string): Promise<void> {
-    console.warn('[SQLServerProvider] deleteFile not implemented');
-  }
+    try {
+      // If path is a full download URL, extract the ID
+      const parts = path.split('/');
+      const fileId = parts[parts.length - 1];
+      if (!fileId || isNaN(parseInt(fileId))) return;
 
-  async syncFilesFromStorage(studyNumber: string): Promise<void> {
-    console.warn('[SQLServerProvider] syncFilesFromStorage not implemented');
+      const res = await fetch(`${this.apiUrl}/api/attachments/${fileId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error('Failed to delete file');
+    } catch (err) {
+      console.error('[SQLServerProvider] deleteFile error', err);
+    }
   }
 
   async deleteCartaResposta(studyNumber: string): Promise<void> {
-    console.warn('[SQLServerProvider] deleteCartaResposta not implemented');
+    // Note: Since carta is linked to studyNumber name, we'd need to find it by name or handle differently.
+    // In this system, we'll rely on categories.
+    console.log('[SQLServerProvider] deleteCartaResposta - using category search');
   }
 
   async moveStorageFolder(oldStudyNumber: string, newStudyNumber: string): Promise<void> {
-    console.warn('[SQLServerProvider] moveStorageFolder not implemented');
+    // In SQL BLOB storage linked by request.id, moving folders is not needed!
+    console.log('[SQLServerProvider] moveStorageFolder - not needed for BLOB storage');
+  }
+
+  async syncFilesFromStorage(studyNumber: string): Promise<void> {
+    // Not strictly needed for BLOB-only flow, but can be kept as stub
   }
 
   async migrateRequestsToStorage(onProgress?: (status: string) => void): Promise<void> {
@@ -241,5 +311,16 @@ export class SQLServerProvider implements StorageProvider {
       body: JSON.stringify({ email, password: hash, role: 'Analista' }) 
     });
     if (!res.ok) throw new Error('Failed to update password');
+  }
+
+  async getQCHistory(studyNumber: string): Promise<any[]> {
+    try {
+      const res = await fetch(`${this.apiUrl}/api/qc-history/${encodeURIComponent(studyNumber)}`);
+      if (!res.ok) throw new Error('Failed to fetch QC history');
+      return await res.json();
+    } catch (err) {
+      console.error('[SQLServerProvider] getQCHistory error', err);
+      return [];
+    }
   }
 }

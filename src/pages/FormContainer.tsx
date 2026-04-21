@@ -3,7 +3,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { FormType, FormData, StudyStatus, User, UserRole } from '../types/types';
 import { FORM_OPTIONS } from '../constants/constants';
-import { getGMT3ISOString, isWithinLast12Months } from '../utils/utils';
+import { getGMT3ISOString, isWithinLast12Months, toTitleCase, isAssignedToMe, formatDateTimeBR } from '../utils/utils';
 import { getCompanyByCity } from '../utils/cityCompanyMapping';
 import { FormFO01 } from './FormFO01';
 import { FormFO02 } from './FormFO02';
@@ -39,6 +39,8 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   const { showAlert } = useDialog();
   const [browsingPrecedentStudy, setBrowsingPrecedentStudy] = useState<FormData | null>(null);
   const [formData, setFormData] = useState<FormData>(() => {
+    const isNewStudy = !initialData?.studyNumber;
+    
     const defaults: any = {
       id: 0,
       studyNumber: '',
@@ -47,11 +49,11 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       formType: formType,
       requestDate: getGMT3ISOString().split('T')[0],
       studyType: 'Novo Estudo',
-      naturgyUnit: currentUser?.naturgyUnit || '',
-      requesterName: currentUser?.name || '',
-      requesterArea: currentUser?.area || '',
-      phone: currentUser?.phone || '',
-      email: currentUser?.email || '',
+      naturgyUnit: '',
+      requesterName: '',
+      requesterArea: '',
+      phone: '',
+      email: '',
       gridDataFO02: {
         residenciais: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
         comerciais: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
@@ -63,10 +65,35 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     };
     
     if (initialData) {
+      // Rule: Only the owner can edit. 
+      // Strict Update: Even Admins/Analysts are Read-Only if they didn't create this specific record.
+      const isOwner = initialData.user_id === userId;
+      // Allow assignedTo to edit when study is REPROVADO_CQ (needs corrections)
+      const isAssignedAnalyst = initialData.assignedTo === userId;
+      const isReprovadoCQ = initialData.status === StudyStatus.REPROVADO_CQ;
+      const canEdit = isOwner || (isAssignedAnalyst && isReprovadoCQ);
+      
+      // If it's a new study being created by ADM/Analyst (no studyNumber yet), leave requester fields empty for input
+      if (isNewStudy && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA)) {
+        return { 
+          ...defaults, 
+          ...initialData,
+          requestDate: getGMT3ISOString().split('T')[0],
+          readOnly: false
+        };
+      }
+      
       return { 
         ...defaults, 
         ...initialData,
-        requestDate: getGMT3ISOString().split('T')[0] // Always Today on edit
+        requestDate: getGMT3ISOString().split('T')[0], // Always Today on edit
+        // Sync requester info with current user IF they are the owner
+        naturgyUnit: isOwner && currentUser?.naturgyUnit ? currentUser.naturgyUnit : (initialData.naturgyUnit || defaults.naturgyUnit),
+        requesterName: isOwner && currentUser?.name ? currentUser.name : (initialData.requesterName || defaults.requesterName),
+        requesterArea: isOwner && currentUser?.area ? currentUser.area : (initialData.requesterArea || defaults.requesterArea),
+        phone: isOwner && currentUser?.phone ? currentUser.phone : (initialData.phone || defaults.phone),
+        email: isOwner && currentUser?.email ? currentUser.email : (initialData.email || defaults.email),
+        readOnly: !canEdit // STREICT: No Admin/Analyst bypass
       };
     }
     return defaults;
@@ -85,7 +112,14 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   const currentOption = FORM_OPTIONS.find(o => o.id === formType);
   const isAdmin = currentUser?.role === UserRole.ADM;
   const executors = useMemo(() => allUsers.filter(u => u.permissions?.includes('executar') || u.role === UserRole.ADM), [allUsers]);
+  const canExecute = currentUser?.permissions?.includes('executar');
   const isOwner = initialData?.assignedTo === currentUser?.id;
+  const isCreator = initialData?.user_id === currentUser?.id;
+  const isReprovadoCQ = initialData?.status === StudyStatus.REPROVADO_CQ;
+  const canEdit = isOwner || isCreator || (isReprovadoCQ && canExecute);
+  
+  // Debug: verificar valores
+  console.log('[FormContainer] Debug - status:', initialData?.status, 'REPROVADO_CQ:', StudyStatus.REPROVADO_CQ, 'isReprovadoCQ:', isReprovadoCQ, 'canEdit:', canEdit, 'canExecute:', canExecute);
   const [serverFiles, setServerFiles] = useState<any[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -273,7 +307,10 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
     // Auto-populate company and state based on city
     if (newData.city) {
-      const cityInfo = getCompanyByCity(newData.city);
+      const titleCity = toTitleCase(newData.city);
+      updatedData.city = titleCity;
+      
+      const cityInfo = getCompanyByCity(titleCity);
       if (cityInfo) {
         updatedData.empresa = cityInfo.company;
         // Also update state if available and relevant for the form
@@ -406,11 +443,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   const handleConfirmValidation = (assignedAnalyst: string, validationData: Partial<FormData>) => {
     if (onStatusUpdate && initialData) {
-      if (initialData.status === StudyStatus.PENDENTE || initialData.status === StudyStatus.EM_ANALISE) {
-        onStatusUpdate(initialData.id, StudyStatus.AGUARDANDO_EXECUCAO, undefined, assignedAnalyst || undefined, validationData);
-      } else {
-        onStatusUpdate(initialData.id, initialData.status, undefined, assignedAnalyst || undefined, validationData);
-      }
+      onStatusUpdate(initialData.id, StudyStatus.AGUARDANDO_EXECUCAO, undefined, assignedAnalyst || undefined, validationData);
       setShowValidationModal(false);
       onBack();
     }
@@ -534,10 +567,17 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   const renderForm = () => {
     const displayData = duplicateDecision === 'viewing' && precedentStudy ? precedentStudy : formData;
+    // Calculate effective read-only state based on permissions and ownership
+    const isOwner = initialData?.user_id === userId;
+    // Novo estudo pode ser editado se não tem studyNumber (é criação) E o usuário é ADM/Analista
+    const isNewStudyByAdmin = !initialData?.studyNumber && initialData?.id && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA);
+    const canEdit = isOwner || isNewStudyByAdmin; 
+    const forceReadOnly = readOnly || !canEdit;
+
     const commonProps = { 
       data: displayData, 
       onChange: handleUpdateData, 
-      readOnly: readOnly || isExporting || duplicateDecision === 'viewing',
+      readOnly: forceReadOnly || isExporting || duplicateDecision === 'viewing',
       precedentStudy: precedentStudy // Pass it down to forms if they need to show warnings
     };
     switch (formType) {
@@ -553,7 +593,8 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   const isRequesterView = currentUser?.role === UserRole.SOLICITANTE;
 
   // Analistas vêem o que é deles ou o que está na fila (exceto se atribuído a outro)
-  const isRestricted = readOnly && initialData?.assignedTo && !isOwner && !isAdmin;
+  const isAssigned = isAssignedToMe(initialData?.assignedTo, currentUser);
+  const isRestricted = readOnly && initialData?.assignedTo && !isOwner && !isAdmin && !isAssigned;
 
   // Solicitante não vê detalhes técnicos enquanto está em execução
   const showInProgressMessage = isRequesterView && isPendingExecution && readOnly;
@@ -579,7 +620,6 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   }
 
   const canValidate = isAdmin || currentUser?.permissions?.includes('validar');
-  const canExecute = currentUser?.permissions?.includes('executar');
   // Se o analista tentar forçar entrada em algo que não é dele
   if (isRestricted) {
     return (
@@ -743,54 +783,56 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
           <div className="mt-12 pt-8 border-t border-slate-100 flex items-center justify-end">
             <div className="flex gap-4">
-              {readOnly ? (
+              {readOnly && !(isReprovadoCQ && canEdit) ? (
                 <>
-                  {(isAdmin || currentUser?.permissions?.includes('validar')) && (formData.status === StudyStatus.PENDENTE || formData.status === StudyStatus.EM_ANALISE) && (
+                  {(isAdmin || currentUser?.permissions?.includes('validar')) && (() => {
+                    const statusStr = String(formData.status);
+                    const statusNum = Number(formData.status);
+                    const isPendenteOrAnalise = 
+                      formData.status === StudyStatus.PENDENTE || 
+                      formData.status === StudyStatus.EM_ANALISE ||
+                      statusStr === '330' || 
+                      statusNum === 330;
+                    return isPendenteOrAnalise;
+                  })() && (
                     <>
                       <button type="button" onClick={() => setShowRejectionModal(true)} className="px-8 py-4 rounded-xl border border-red-100 text-red-600 font-black uppercase text-xs">Reprovar</button>
                       <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-green-600 text-white font-black uppercase text-xs shadow-lg shadow-green-200 transition-all">Validar Estudo</button>
                     </>
                   )}
-                  {(isAdmin || currentUser?.permissions?.includes('validar')) && (formData.status !== StudyStatus.PENDENTE && formData.status !== StudyStatus.EM_ANALISE && formData.status !== StudyStatus.CONCLUIDO && formData.status !== StudyStatus.CANCELADO) && (
+                  {(isAdmin || currentUser?.permissions?.includes('validar')) && (() => {
+                    const statusStr = String(formData.status);
+                    const statusNum = Number(formData.status);
+                    const isPendenteOrAnalise = 
+                      formData.status === StudyStatus.PENDENTE || 
+                      formData.status === StudyStatus.EM_ANALISE ||
+                      statusStr === '330' || 
+                      statusNum === 330;
+                    return !isPendenteOrAnalise && formData.status !== StudyStatus.CONCLUIDO && formData.status !== StudyStatus.CANCELADO;
+                  })() && (
                     <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">Gerenciar Atribuição</button>
                   )}
-                  {canExecute && (formData.status === StudyStatus.AGUARDANDO_EXECUCAO || formData.status === StudyStatus.EM_EXECUCAO) && isOwner && (
+                </>
+              ) : (
+                <>
+                  {canExecute && (formData.status === StudyStatus.AGUARDANDO_EXECUCAO || formData.status === StudyStatus.EM_EXECUCAO || formData.status === StudyStatus.REPROVADO_CQ) && canEdit && (
                     <button type="button" onClick={handleStartExecutionLocal} className="px-10 py-4 rounded-xl bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">
                       {formData.status === StudyStatus.EM_EXECUCAO ? 'Abrir Painel Técnico' : 'Iniciar Execução'}
                     </button>
                   )}
-                  {canExecute && formData.status === StudyStatus.EM_EXECUCAO && isOwner && (
+                  {canExecute && (formData.status === StudyStatus.EM_EXECUCAO || formData.status === StudyStatus.REPROVADO_CQ) && canEdit && (
                     <button type="button" onClick={handleFinishExecution} className="px-10 py-4 rounded-xl bg-indigo-600 text-white font-black uppercase text-xs shadow-lg transition-all">Enviar para Qualidade</button>
                   )}
+                  {!readOnly && (
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className={`px-12 py-5 rounded-2xl font-black text-white transition-all shadow-2xl text-lg flex items-center uppercase tracking-tighter ${isSubmitting ? 'bg-slate-400' : 'bg-[#004080] hover:bg-[#FF8000] active:scale-95 shadow-[#004080]/30'}`}
+                    >
+                      {isSubmitting ? <><i className="fa-solid fa-circle-notch fa-spin mr-3"></i>Enviando...</> : <>{initialData?.studyNumber ? 'Reenviar Solicitação' : 'Gerar Solicitação'} <i className="fa-solid fa-paper-plane ml-4"></i></>}
+                    </button>
+                  )}
                 </>
-              ) : duplicateDecision === 'viewing' ? (
-                <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const matchedStudy = backendPrecedentStudy || precedentStudy;
-                      handleSolicitarRevisaoAction(matchedStudy);
-                    }}
-                    className="px-12 py-5 rounded-2xl font-black text-white transition-all shadow-2xl text-lg flex items-center justify-center uppercase tracking-tighter bg-[#004080] hover:bg-[#FF8000] active:scale-95 shadow-[#004080]/30"
-                  >
-                    Solicitar Revisão <i className="fa-solid fa-rotate ml-4"></i>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onBack}
-                    className="px-10 py-5 rounded-2xl font-black text-slate-500 transition-all text-sm flex items-center justify-center uppercase tracking-tighter border-2 border-slate-200 hover:border-slate-400 active:scale-95"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className={`px-12 py-5 rounded-2xl font-black text-white transition-all shadow-2xl text-lg flex items-center uppercase tracking-tighter ${isSubmitting ? 'bg-slate-400' : 'bg-[#004080] hover:bg-[#FF8000] active:scale-95 shadow-[#004080]/30'}`}
-                >
-                  {isSubmitting ? <><i className="fa-solid fa-circle-notch fa-spin mr-3"></i>Enviando...</> : <>{initialData?.studyNumber ? 'Reenviar Solicitação' : 'Gerar Solicitação'} <i className="fa-solid fa-paper-plane ml-4"></i></>}
-                </button>
               )}
             </div>
           </div>
@@ -826,7 +868,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                   {item.id === formData.id && <span className="w-1.5 h-1.5 bg-[#004080] rounded-full animate-pulse"></span>}
                 </div>
                 <p className={`text-[9px] font-bold ${item.id === formData.id ? 'text-slate-600' : 'text-slate-400'}`}>
-                  Solicitado em: {item.requestDate}
+                  Solicitado em: {formatDateTimeBR(item.requestDate)}
                 </p>
                 <div className="flex items-center gap-1 mt-1">
                   <span className="text-[7px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">

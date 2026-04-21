@@ -67,6 +67,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
         }
 
         if (isMatch) {
+          if (foundUser.isActive === false) {
+            setError('Sua conta está inativa. Entre em contato com um administrador.');
+            setIsLoading(false);
+            return;
+          }
           onLogin(foundUser);
         } else {
           setError('Senha incorreta. Tente novamente.');

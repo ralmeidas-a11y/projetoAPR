@@ -12,16 +12,18 @@ interface DashboardProps {
   requests: FormData[];
   allRequests: FormData[];
   allUsers?: User[];
-  onAnalyze: (request: FormData) => void;
-  onExecute: (request: FormData) => void;
-  onStatusUpdate: (id: string, status: StudyStatus, reason?: string, assignedTo?: string, additionalData?: Partial<FormData>) => void;
+  onAnalyze?: (request: FormData) => void;
+  onExecute?: (request: FormData) => void;
+  onStatusUpdate?: (id: string, status: StudyStatus, reason?: string, assignedTo?: string, additionalData?: Partial<FormData>) => Promise<void>;
+  onViewRequest?: (request: FormData) => void;
+  onCreateRequest?: (formId: string) => void;
   autoOpenRequestId?: string | null;
   onModalOpened?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
   user, requests, allRequests, allUsers = [], onAnalyze, onExecute, onStatusUpdate,
-  autoOpenRequestId, onModalOpened
+  onViewRequest, onCreateRequest, autoOpenRequestId, onModalOpened
 }) => {
   const { showAlert, showToast } = useDialog();
   const [filter, setFilter] = useState<string>('Todas');
@@ -39,6 +41,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [hasAutoNotified, setHasAutoNotified] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
+
+  const [newAnalyst, setNewAnalyst] = useState('');
 
   React.useEffect(() => {
     if (autoOpenRequestId) {
@@ -61,54 +65,54 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const resolveAnalystName = (id: string | undefined | null) => {
     if (!id) return 'Sistema';
     if (isSystemAssigned(id)) return 'ADRSIS - Sistema';
-    
+
     // Tenta encontrar pelo id, email ou sap no allUsers
-    const found = allUsers.find(u => 
-      u.id === id || 
-      u.email === id || 
+    const found = allUsers.find(u =>
+      u.id === id ||
+      u.email === id ||
       (u.sap && id.replace(/^0+/, '') === u.sap.replace(/^0+/, ''))
     );
-    
+
     return found ? found.name : id;
   };
 
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
 
-    // Restrição por papel (Role)
-    if (user.role === UserRole.ANALISTA && !isValidator) {
-      const isOwnedByMe = isAssignedToMe(r.assignedTo, user);
-      const isShared = isSystemAssigned(r.assignedTo);
-      const isQCStatus = isQC && r.status === StudyStatus.CONTROLE_QUALIDADE;
-      if (!isOwnedByMe && !isShared && !isQCStatus) return false;
-    }
+      // Restrição por papel (Role)
+      if (user.role === UserRole.ANALISTA && !isValidator) {
+        const isOwnedByMe = isAssignedToMe(r.assignedTo, user);
+        const isShared = isSystemAssigned(r.assignedTo);
+        const isQCStatus = isQC && r.status === StudyStatus.CONTROLE_QUALIDADE;
+        if (!isOwnedByMe && !isShared && !isQCStatus) return false;
+      }
 
-    // Filtro de Busca (Search)
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase();
-      const matches =
-        (r.studyNumber || '').toLowerCase().includes(search) ||
-        (r.address || '').toLowerCase().includes(search) ||
-        (r.studyTitle || '').toLowerCase().includes(search) ||
-        (r.clientName || '').toLowerCase().includes(search) ||
-        (r.uteName || '').toLowerCase().includes(search);
-      if (!matches) return false;
-    }
+      // Filtro de Busca (Search)
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        const matches =
+          (r.studyNumber || '').toLowerCase().includes(search) ||
+          (r.address || '').toLowerCase().includes(search) ||
+          (r.studyTitle || '').toLowerCase().includes(search) ||
+          (r.clientName || '').toLowerCase().includes(search) ||
+          (r.uteName || '').toLowerCase().includes(search);
+        if (!matches) return false;
+      }
 
-    if (filter === 'Todas') return true;
-    if (filter === 'Pendentes/Novas') return r.status === StudyStatus.PENDENTE || r.status === StudyStatus.REJEITADO || r.status === StudyStatus.EM_ANALISE || r.status === StudyStatus.AGUARDANDO_INFORMACAO;
-    if (filter === 'Cadastradas') return r.status === StudyStatus.AGUARDANDO_EXECUCAO || r.status === StudyStatus.ABERTO;
-    if (filter === 'Em Execução') return r.status === StudyStatus.EM_EXECUCAO;
-    if (filter === 'Controle de Qualidade') {
-      return r.status === StudyStatus.CONTROLE_QUALIDADE ||
-        r.status === StudyStatus.ENVIADO_SEM_CQ ||
-        r.status === StudyStatus.APROVADO_CQ ||
-        r.status === StudyStatus.REPROVADO_CQ;
-    }
-    if (filter === 'Aprovado pelo CQ') return r.status === StudyStatus.APROVADO_CQ;
-    if (filter === 'Concluídas') return r.status === StudyStatus.CONCLUIDO;
-    if (filter === 'Canceladas') return r.status === StudyStatus.CANCELADO;
-    return true;
+      if (filter === 'Todas') return true;
+      if (filter === 'Pendentes/Novas') return r.status === StudyStatus.PENDENTE || r.status === StudyStatus.REJEITADO || r.status === StudyStatus.EM_ANALISE || r.status === StudyStatus.AGUARDANDO_INFORMACAO;
+      if (filter === 'Cadastradas') return r.status === StudyStatus.AGUARDANDO_EXECUCAO || r.status === StudyStatus.ABERTO;
+      if (filter === 'Em Execução') return r.status === StudyStatus.EM_EXECUCAO;
+      if (filter === 'Controle de Qualidade') {
+        return r.status === StudyStatus.CONTROLE_QUALIDADE ||
+          r.status === StudyStatus.ENVIADO_SEM_CQ ||
+          r.status === StudyStatus.APROVADO_CQ ||
+          r.status === StudyStatus.REPROVADO_CQ;
+      }
+      if (filter === 'Aprovado pelo CQ') return r.status === StudyStatus.APROVADO_CQ;
+      if (filter === 'Concluídas') return r.status === StudyStatus.CONCLUIDO;
+      if (filter === 'Canceladas') return r.status === StudyStatus.CANCELADO;
+      return true;
     }).sort((a, b) => {
       const numA = a.studyNumber || '';
       const numB = b.studyNumber || '';
@@ -171,7 +175,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const getResponsibleName = (assignedToId?: string) => {
     if (!assignedToId || assignedToId === 'ADRSis - SISTEMA' || assignedToId === 'ADRSis - Sistema') return 'ADRSis - SISTEMA';
-    
+
     // Check if it's a known user
     const found = allUsers.find(u => {
       if (u.id === assignedToId) return true;
@@ -185,7 +189,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     // If it's an email format or numeric SAP that wasn't found, return Analista Externo
     const isEmail = assignedToId.includes('@');
     const isNumeric = /^\d+$/.test(assignedToId);
-    
+
     if (isEmail || isNumeric) return 'Analista Externo';
 
     return assignedToId;
@@ -210,7 +214,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (action === 'validate') {
         const isNewValidation = (targetRequest.status as any) === 330 || targetRequest.status === StudyStatus.PENDENTE;
         const nextStatus = isNewValidation ? StudyStatus.AGUARDANDO_EXECUCAO : targetRequest.status;
-        
+
         onStatusUpdate(targetRequest.id, nextStatus, undefined, assignedTo, data);
         setValidatingRequest(null);
         setAssigningRequest(null);
@@ -257,7 +261,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               onClick={() => { try { onExecute(req); } catch (e) { console.error('Erro:', e); } }}
               className="w-10 h-10 rounded-xl bg-[#004080] text-white hover:bg-orange-500 transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
-              title="Abrir Painel Técnico de Execução"
+              title="Abrir Painel de Execução"
             >
               <i className="fa-solid fa-play"></i>
             </button>
@@ -269,7 +273,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     setHoldingRequest(req);
                   }}
                   className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 border border-orange-100 hover:bg-orange-500 hover:text-white transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
-                  title="Pausar Estudo (Solicitar Informações)"
+                  title="Solicitar Informações"
                 >
                   <i className="fa-solid fa-pause"></i>
                 </button>
@@ -355,12 +359,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {assigningRequest && isValidator && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
           <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight mb-2">
-              {assigningRequest.status === StudyStatus.PENDENTE || assigningRequest.status === StudyStatus.EM_ANALISE
-                ? 'Validação de Estudo'
-                : 'Gestão de Atribuição'}
+<h3 className="text-lg font-semibold text-[#004080] mb-2">
+              Análise de Pressão
             </h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-8">
+            <p className="text-[10px] text-slate-400 mb-8">
               Estudo: {assigningRequest.studyNumber}
             </p>
 
@@ -368,7 +370,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div className="space-y-6">
                 {isRejecting ? (
                   <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 text-red-500">Motivo da Rejeição</label>
+                    <label className="block text-[10px] font-semibold text-slate-500 ml-1">Motivo da Rejeição</label>
                     <textarea
                       value={rejectionReason}
                       onChange={(e) => setRejectionReason(e.target.value)}
@@ -438,6 +440,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <p className="text-slate-500 text-sm mt-1">Gerenciamento do fluxo de solicitações.</p>
         </div>
 
+        {onCreateRequest && (isAdmin || user.role === UserRole.ANALISTA) && (
+          <button
+            onClick={() => onCreateRequest('PE.00492-FO.01')}
+            className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-green-700 transition-all"
+          >
+            <i className="fa-solid fa-plus"></i> Novo Estudo
+          </button>
+        )}
+
         <div className="flex flex-col md:flex-row gap-4 flex-grow max-w-full lg:max-w-none justify-end items-center">
           <div className="relative flex-grow md:max-w-xs lg:max-w-md group">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[#004080] transition-colors">
@@ -484,19 +495,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-[#004080]">Cód / Data</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-[#004080]">Solicitante</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-[#004080]">Cliente</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-[#004080]">Status / Analista Resp.</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-[#004080]">Prazo</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-[#004080] text-right">Ação</th>
+              <tr className="bg-slate-50/50 border-b border-slate-100">
+                <th className="px-5 py-3.5 text-[10px] font-semibold uppercase text-slate-500 tracking-wider text-center">Cód / Data</th>
+                <th className="px-5 py-3.5 text-[10px] font-semibold uppercase text-slate-500 tracking-wider text-center">Solicitante</th>
+                <th className="px-5 py-3.5 text-[10px] font-semibold uppercase text-slate-500 tracking-wider text-center">Cliente</th>
+                <th className="px-5 py-3.5 text-[10px] font-semibold uppercase text-slate-500 tracking-wider text-center">Status / Analista Resp.</th>
+                <th className="px-5 py-3.5 text-[10px] font-semibold uppercase text-slate-500 tracking-wider text-center">Prazo</th>
+                <th className="px-5 py-3.5 text-[10px] font-semibold uppercase text-slate-500 tracking-wider text-center">No Prazo</th>
+                <th className="px-5 py-3.5 text-[10px] font-semibold uppercase text-slate-500 tracking-wider text-center">Ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {displayedRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-20 text-center text-slate-400 font-bold uppercase tracking-widest italic">
+                  <td colSpan={7} className="px-5 py-16 text-center text-slate-400 text-sm">
                     Nenhuma solicitação nesta categoria disponível para você.
                   </td>
                 </tr>
@@ -504,89 +516,142 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 displayedRequests.map((req) => {
                   const isMe = isAssignedToMe(req.assignedTo, user);
                   const isSystem = isSystemAssigned(req.assignedTo);
+
+                  const normalizeDate = (ds: any) => {
+                    if (!ds) return '';
+                    const str = String(ds).trim();
+                    if (!isNaN(Number(str)) && !str.includes('-') && !str.includes('/')) {
+                      const excelDate = Number(str);
+                      if (excelDate > 40000) {
+                        try {
+                          const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
+                          return jsDate.toISOString().split('T')[0];
+                        } catch (e) { return str; }
+                      }
+                    }
+                    if (str.includes('/')) {
+                      const [d, m, y] = str.split('/');
+                      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                    }
+                    return str.split('T')[0];
+                  };
+
+                  const deadlineStr = normalizeDate(req.estimatedDeliveryDate);
+                  const isUrgent = (() => {
+                    if (!deadlineStr) return false;
+                    // Ignorar status concluídos/cancelados/rejeitados
+                    if ([StudyStatus.CONCLUIDO, StudyStatus.CANCELADO, StudyStatus.REJEITADO].includes(req.status)) return false;
+                    const deadline = new Date(deadlineStr + 'T00:00:00');
+                    const now = new Date();
+                    const diffDays = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+                    // Urgent: menos de 2 dias (prazo próximo) OU prazo ultrapassado (atrasado)
+                    return diffDays < 2;
+                  })();
+
                   return (
-                  <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="bg-[#004080] text-white text-[9px] font-black px-1.5 py-0.5 rounded">{getFO(req.formType)}</span>
-                        <p className="text-[11px] font-black text-[#004080] uppercase">{req.studyNumber}</p>
-                      </div>
-                      <p className="text-[10px] text-slate-400 font-bold mt-1">{formatDate(req.requestDate)}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-xs font-bold text-slate-700">{req.requesterName}</p>
-                      <p className="text-[9px] text-slate-400 uppercase mt-0.5">{normalizeArea(req.requesterArea)}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-xs font-bold text-[#004080] truncate max-w-[200px]">{req.studyTitle || req.uteName || req.clientName}</p>
-                      <p className="text-[9px] text-slate-400 uppercase mt-0.5">{req.city}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1.5 items-start">
-                        <span className={`px-2.5 py-1 rounded-full border text-[9px] font-black uppercase tracking-tighter ${getStatusStyle(req.status)}`}>
-                          {req.status}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {req.assignedTo ? (
-                            <>
-                              <i className={`fa-solid ${isMe ? 'fa-user-check text-green-500' : (isSystemAssigned(req.assignedTo) ? 'fa-users text-slate-300' : 'fa-user-lock text-orange-400')} text-[8px]`}></i>
-                              <span className={`text-[8px] font-black uppercase ${isMe ? 'text-green-600' : (isSystemAssigned(req.assignedTo) ? 'text-slate-300' : 'text-slate-400')}`}>
-                                {isMe ? 'Sua Tarefa' : resolveAnalystName(req.assignedTo)}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <i className="fa-solid fa-users text-[8px] text-slate-300"></i>
-                              <span className="text-[8px] font-black text-slate-300 uppercase">Sistema</span>
-                            </>
+                    <tr key={req.id} className={`transition-all duration-200 ${isUrgent ? 'bg-yellow-50/70 hover:bg-yellow-50' : 'hover:bg-slate-50'}`}>
+                      <td className="px-5 py-3.5 text-left">
+                        <div className="flex items-center gap-2.5">
+                          <span className="bg-[#004080]/90 text-white text-[10px] font-semibold px-2 py-0.5 rounded">{getFO(req.formType)}</span>
+                          <p className={`text-xs font-semibold uppercase ${isUrgent ? 'text-orange-700' : 'text-[#004080]'}`}>{req.studyNumber}</p>
+                        </div>
+                        <p className={`text-[11px] mt-1.5 ${isUrgent ? 'text-orange-600' : 'text-slate-400'}`}>{formatDate(req.requestDate)}</p>
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        <p className={`text-xs font-medium ${isUrgent ? 'text-slate-800' : 'text-slate-700'}`}>{req.requesterName}</p>
+                        <p className={`text-[10px] mt-0.5 ${isUrgent ? 'text-orange-500' : 'text-slate-400'} uppercase`}>{normalizeArea(req.requesterArea)}</p>
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        <p className={`text-xs font-medium truncate max-w-[180px] ${isUrgent ? 'text-slate-800' : 'text-[#004080]'}`}>{req.studyTitle || req.uteName || req.clientName}</p>
+                        <p className={`text-[10px] mt-0.5 ${isUrgent ? 'text-orange-500' : 'text-slate-400'} uppercase`}>{req.city}</p>
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        <div className="flex flex-col items-center gap-1.5">
+                          <span className={`px-2.5 py-1 rounded-full border text-[9px] font-semibold uppercase tracking-tight ${getStatusStyle(req.status)}`}>
+                            {req.status}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {req.assignedTo ? (
+                              <>
+                                <i className={`fa-solid ${isMe ? 'fa-user-check text-green-500' : (isSystemAssigned(req.assignedTo) ? 'fa-users text-slate-300' : 'fa-user-lock text-orange-400')} text-[8px]`}></i>
+                                <span className={`text-[8px] font-black uppercase ${isMe ? 'text-green-600' : (isSystemAssigned(req.assignedTo) ? 'text-slate-300' : 'text-slate-400')}`}>
+                                  {isMe ? 'Sua Tarefa' : resolveAnalystName(req.assignedTo)}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <i className="fa-solid fa-users text-[8px] text-slate-300"></i>
+                                <span className="text-[8px] font-black text-slate-300 uppercase">Sistema</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        <p className={`text-xs font-semibold ${isUrgent ? 'text-orange-600' : 'text-slate-700'}`}>{req.estimatedDeliveryDate ? formatDate(req.estimatedDeliveryDate) : '-'}</p>
+                      </td>
+                      <td className="px-5 py-3.5 text-center align-middle">
+                        {req.status === StudyStatus.CONCLUIDO ? (
+                          (() => {
+                            if (!deadlineStr) return <span className="text-slate-300 text-sm">-</span>;
+                            const deadline = new Date(deadlineStr + 'T00:00:00');
+                            const completed = new Date(req.updatedAt || req.completedAt || req.requestDate);
+                            const onTime = completed <= deadline;
+                            return onTime ? (
+                              <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                                <i className="fa-solid fa-check text-[10px]"></i>
+                              </div>
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+                                <i className="fa-solid fa-xmark text-[10px]"></i>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-slate-300 text-sm">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex justify-end gap-1.5">
+                          {/* Botão para Abrir Pasta da Solicitação */}
+                          {req.studyNumber && (
+                            <button
+                              onClick={() => handleOpenFolder(req)}
+                              className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 hover:bg-green-50 hover:text-green-600 hover:shadow-sm transition-all flex items-center justify-center text-xs"
+                              title="Visualizar Arquivos"
+                            >
+                              <i className="fa-solid fa-folder-open"></i>
+                            </button>
+                          )}
+
+                          {/* Botão de Atribuição Direta para ADM / Validador */}
+                          {isValidator && [StudyStatus.PENDENTE, StudyStatus.EM_ANALISE, StudyStatus.AGUARDANDO_EXECUCAO, StudyStatus.EM_EXECUCAO, StudyStatus.ABERTO].includes(req.status) && (
+                            <button
+                              onClick={() => handleOpenAssign(req)}
+                              className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center text-xs shadow-sm active:scale-95 ${req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE
+                                ? 'bg-orange-50 text-orange-600 border border-orange-100 hover:bg-orange-600 hover:text-white'
+                                : 'bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-600 hover:text-white'
+                                }`}
+                              title={req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE || req.status === StudyStatus.ABERTO ? 'Validar Estudo' : 'Gerenciar Atribuição'}
+                            >
+                              <i className={`fa-solid ${req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE || req.status === StudyStatus.ABERTO ? 'fa-clipboard-check' : 'fa-user-gear'}`}></i>
+                            </button>
+                          )}
+
+                          {renderActionButton(req)}
+
+                          {isQC && req.status === StudyStatus.CONTROLE_QUALIDADE && (
+                            <button
+                              onClick={() => setQcRequest(req)}
+                              className="w-10 h-10 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
+                              title="Abrir Controle de Qualidade"
+                            >
+                              <i className="fa-solid fa-clipboard-check"></i>
+                            </button>
                           )}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-xs font-bold text-slate-700">{req.estimatedDeliveryDate ? formatDate(req.estimatedDeliveryDate) : '-'}</p>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        {/* Botão para Abrir Pasta da Solicitação */}
-                        {req.studyNumber && (
-                          <button
-                            onClick={() => handleOpenFolder(req)}
-                            className="w-10 h-10 rounded-xl bg-green-50 text-green-600 border border-green-100 hover:bg-green-600 hover:text-white transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
-                            title="Visualizar Arquivos no Storage"
-                          >
-                            <i className="fa-solid fa-folder-open"></i>
-                          </button>
-                        )}
-
-                        {/* Botão de Atribuição Direta para ADM / Validador */}
-                        {isValidator && [StudyStatus.PENDENTE, StudyStatus.EM_ANALISE, StudyStatus.AGUARDANDO_EXECUCAO, StudyStatus.EM_EXECUCAO, StudyStatus.ABERTO].includes(req.status) && (
-                          <button
-                            onClick={() => handleOpenAssign(req)}
-                            className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center text-xs shadow-sm active:scale-95 ${req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE
-                              ? 'bg-orange-50 text-orange-600 border border-orange-100 hover:bg-orange-600 hover:text-white'
-                              : 'bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-600 hover:text-white'
-                              }`}
-                            title={req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE || req.status === StudyStatus.ABERTO ? 'Validar / Rejeitar Estudo' : 'Gerenciar Atribuição'}
-                          >
-                            <i className={`fa-solid ${req.status === StudyStatus.PENDENTE || req.status === StudyStatus.EM_ANALISE || req.status === StudyStatus.ABERTO ? 'fa-clipboard-check' : 'fa-user-gear'}`}></i>
-                          </button>
-                        )}
-
-                        {renderActionButton(req)}
-
-                        {isQC && req.status === StudyStatus.CONTROLE_QUALIDADE && (
-                          <button
-                            onClick={() => setQcRequest(req)}
-                            className="w-10 h-10 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
-                            title="Abrir Controle de Qualidade"
-                          >
-                            <i className="fa-solid fa-clipboard-check"></i>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
                   );
                 })
               )}
@@ -806,6 +871,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       )}
+
     </div>
   );
 };
