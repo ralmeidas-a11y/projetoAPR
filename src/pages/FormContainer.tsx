@@ -65,23 +65,23 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     };
     
     if (initialData) {
-      // Rule: Only the owner can edit. 
+      // If it's a new study being created by ADM/Analyst (no studyNumber yet), allow edit
+      if (isNewStudy && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA)) {
+        return { 
+          ...defaults, 
+          ...initialData,
+          requestDate: getGMT3ISOString().split('T')[0],
+          readOnly: false  // NEW STUDIES FOR ADMIN/ANALYST ARE ALWAYS EDITABLE
+        };
+      }
+      
+      // Rule: Only the owner can edit existing studies. 
       // Strict Update: Even Admins/Analysts are Read-Only if they didn't create this specific record.
       const isOwner = initialData.user_id === userId;
       // Allow assignedTo to edit when study is REPROVADO_CQ (needs corrections)
       const isAssignedAnalyst = initialData.assignedTo === userId;
       const isReprovadoCQ = initialData.status === StudyStatus.REPROVADO_CQ;
       const canEdit = isOwner || (isAssignedAnalyst && isReprovadoCQ);
-      
-      // If it's a new study being created by ADM/Analyst (no studyNumber yet), leave requester fields empty for input
-      if (isNewStudy && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA)) {
-        return { 
-          ...defaults, 
-          ...initialData,
-          requestDate: getGMT3ISOString().split('T')[0],
-          readOnly: false
-        };
-      }
       
       return { 
         ...defaults, 
@@ -93,7 +93,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         requesterArea: isOwner && currentUser?.area ? currentUser.area : (initialData.requesterArea || defaults.requesterArea),
         phone: isOwner && currentUser?.phone ? currentUser.phone : (initialData.phone || defaults.phone),
         email: isOwner && currentUser?.email ? currentUser.email : (initialData.email || defaults.email),
-        readOnly: !canEdit // STREICT: No Admin/Analyst bypass
+        readOnly: !canEdit // STRICT: No Admin/Analyst bypass for existing studies
       };
     }
     return defaults;
