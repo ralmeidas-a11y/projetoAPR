@@ -569,8 +569,9 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     const isOwner = initialData?.user_id === userId;
     // Novo estudo pode ser editado se não tem studyNumber (é criação) E o usuário é ADM/Analista
     const isNewStudyByAdmin = !initialData?.studyNumber && initialData?.id && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA);
+    // SOLICITANTE owners can always edit their own forms (even on status 220/330)
     const canEdit = isOwner || isNewStudyByAdmin; 
-    const forceReadOnly = readOnly || !canEdit;
+    const forceReadOnly = (readOnly && !isOwner) || !canEdit;
 
     const commonProps = { 
       data: displayData, 
@@ -592,10 +593,11 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   // Analistas vêem o que é deles ou o que está na fila (exceto se atribuído a outro)
   const isAssigned = isAssignedToMe(initialData?.assignedTo, currentUser);
-  const isRestricted = readOnly && initialData?.assignedTo && !isOwner && !isAdmin && !isAssigned;
+  const isOwnerForBlocking = initialData?.user_id === userId;
+  const isRestricted = readOnly && initialData?.assignedTo && !isOwnerForBlocking && !isAdmin && !isAssigned;
 
-  // Solicitante não vê detalhes técnicos enquanto está em execução
-  const showInProgressMessage = isRequesterView && isPendingExecution && readOnly;
+  // Solicitante não vê detalhes técnicos enquanto está em execução (EXCEPT if they're the owner - then they can edit)
+  const showInProgressMessage = isRequesterView && isPendingExecution && readOnly && !isOwnerForBlocking;
 
   if (showInProgressMessage) {
     return (
