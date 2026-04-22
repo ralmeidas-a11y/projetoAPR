@@ -1325,8 +1325,13 @@ const App: React.FC = () => {
   const handleViewRequest = (request: FormData) => {
     setEditingRequest(request);
     setSelectedForm(request.formType);
-    // Abrir painel técnico em modo read-only ao invés do formulário
-    setView('execution');
+    // Para Solicitante: abrir formulário em read-only na view 'form'
+    // Para outros (Analista/ADM): abrir painel técnico
+    if (user?.role === UserRole.SOLICITANTE) {
+      setView('form');
+    } else {
+      setView('execution');
+    }
   };
 
   const handleViewExecution = (request: FormData) => {

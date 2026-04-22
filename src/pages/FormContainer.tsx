@@ -116,10 +116,8 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   const isOwner = initialData?.assignedTo === currentUser?.id;
   const isCreator = initialData?.user_id === currentUser?.id;
   const isReprovadoCQ = initialData?.status === StudyStatus.REPROVADO_CQ;
-  const canEdit = isOwner || isCreator || (isReprovadoCQ && canExecute);
-  
-  // Debug: verificar valores
-  console.log('[FormContainer] Debug - status:', initialData?.status, 'REPROVADO_CQ:', StudyStatus.REPROVADO_CQ, 'isReprovadoCQ:', isReprovadoCQ, 'canEdit:', canEdit, 'canExecute:', canExecute);
+  const isValidadoOrAguardando = initialData?.status === StudyStatus.VALIDADO || initialData?.status === StudyStatus.AGUARDANDO_EXECUCAO;
+  const canEdit = isOwner || isCreator || (isReprovadoCQ && canExecute) || (isValidadoOrAguardando && canExecute);
   const [serverFiles, setServerFiles] = useState<any[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
