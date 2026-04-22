@@ -65,13 +65,13 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     };
     
     if (initialData) {
-      // If it's a new study being created by ADM/Analyst (no studyNumber yet), allow edit
-      if (isNewStudy && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA)) {
+      // If it's a new study being created (no studyNumber yet), allow edit for ADM, ANALISTA, and SOLICITANTE
+      if (isNewStudy && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA || currentUser?.role === UserRole.SOLICITANTE)) {
         return { 
           ...defaults, 
           ...initialData,
           requestDate: getGMT3ISOString().split('T')[0],
-          readOnly: false  // NEW STUDIES FOR ADMIN/ANALYST ARE ALWAYS EDITABLE
+          readOnly: false  // NEW STUDIES ARE ALWAYS EDITABLE FOR ALL ROLES
         };
       }
       
