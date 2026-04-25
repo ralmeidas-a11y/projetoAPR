@@ -33,14 +33,14 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   formType: propFormType, initialData, onBack, onSubmit, userId, currentUser, allUsers = [], allRequests = [], readOnly = false, onStatusUpdate, onStartExecution, onViewRequest
 }) => {
   // Normalize formType (handle shorthand FO.01 -> PE.00492-FO.01)
-  const formType = propFormType?.startsWith('FO.') 
-    ? `PE.00492-${propFormType}` 
+  const formType = propFormType?.startsWith('FO.')
+    ? `PE.00492-${propFormType}`
     : propFormType;
   const { showAlert } = useDialog();
   const [browsingPrecedentStudy, setBrowsingPrecedentStudy] = useState<FormData | null>(null);
   const [formData, setFormData] = useState<FormData>(() => {
     const isNewStudy = !initialData?.studyNumber;
-    
+
     const defaults: any = {
       id: 0,
       studyNumber: '',
@@ -63,18 +63,18 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         outros: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' }
       }
     };
-    
+
     if (initialData) {
       // If it's a new study being created (no studyNumber yet), allow edit for ADM, ANALISTA, and SOLICITANTE
       if (isNewStudy && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA || currentUser?.role === UserRole.SOLICITANTE)) {
-        return { 
-          ...defaults, 
+        return {
+          ...defaults,
           ...initialData,
           requestDate: getGMT3ISOString().split('T')[0],
           readOnly: false  // NEW STUDIES ARE ALWAYS EDITABLE FOR ALL ROLES
         };
       }
-      
+
       // Rule: Only the owner can edit existing studies. 
       // Strict Update: Even Admins/Analysts are Read-Only if they didn't create this specific record.
       const isOwner = initialData.user_id === userId;
@@ -82,9 +82,9 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       const isAssignedAnalyst = initialData.assignedTo === userId;
       const isReprovadoCQ = initialData.status === StudyStatus.REPROVADO_CQ;
       const canEdit = isOwner || (isAssignedAnalyst && isReprovadoCQ);
-      
-      return { 
-        ...defaults, 
+
+      return {
+        ...defaults,
         ...initialData,
         requestDate: getGMT3ISOString().split('T')[0], // Always Today on edit
         // Sync requester info with current user IF they are the owner
@@ -158,19 +158,19 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     const city = normalize(formData.city);
     const neighborhood = normalize(formData.neighborhood || "");
     const title = normalize(formData.studyTitle || formData.clientName || "");
-    
+
     if (addr.length < 5 || city.length < 2 || title.length < 2) return null;
 
     return allRequests.find(r => {
       if (r.id === formData.id) return false;
       // Skip matching against the study we're currently editing
       if (initialData && String(r.id) === String(initialData.id)) return false;
-      
+
       const rAddr = normalize(r.address);
       const rCity = normalize(r.city);
       const rNeighborhood = normalize(r.neighborhood || "");
       const rTitle = normalize(r.studyTitle || r.clientName || "");
-      
+
       // Match: address + city + neighborhood + title
       const neighborhoodMatch = !neighborhood || !rNeighborhood || rNeighborhood === neighborhood;
       return rAddr === addr && rCity === city && neighborhoodMatch && (title.length > 0 && rTitle === title);
@@ -180,14 +180,14 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   const studyHistory = useMemo(() => {
     if (!formData.studyNumber) return [];
-    
+
     const normalize = (code: string) => (code || '').replace('PROV-', '').trim();
     const currentCode = normalize(formData.studyNumber);
 
     // Get Base ID and current revision
     let baseCode = currentCode;
     const revSuffixMatch = currentCode.match(/(.+)-REV(\d+)$/i);
-    
+
     if (revSuffixMatch) {
       baseCode = revSuffixMatch[1];
     } else if (currentCode.length === 10 && /^\d+$/.test(currentCode)) {
@@ -198,7 +198,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       .filter(r => {
         const rCode = normalize(r.studyNumber);
         const rPrev = normalize(r.previousStudy || '');
-        
+
         // 1. Match by same base ID (New format YYYYXXXXRR)
         if (revSuffixMatch || (currentCode.length === 10 && /^\d+$/.test(currentCode))) {
           if (rCode.startsWith(baseCode)) return true;
@@ -232,7 +232,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   useEffect(() => {
     // Skip if already decided or read-only
     if (readOnly || duplicateDecision) return;
-    
+
     // Only check if we have enough info (address + city + title)
     if (!formData.address || !formData.city || !formData.studyTitle) {
       setBackendPrecedentStudy(null);
@@ -247,10 +247,10 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       try {
         console.log('[DuplicateCheck-FE] Checking for:', formData.address, formData.city, formData.neighborhood, formData.studyTitle);
         const result = await StorageService.getNextStudyNumber(
-          'new', 
-          undefined, 
-          formData.city, 
-          formData.address, 
+          'new',
+          undefined,
+          formData.city,
+          formData.address,
           formData.studyTitle,
           formData.neighborhood
         );
@@ -300,21 +300,21 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   const handleUpdateData = (newData: Partial<FormData>) => {
     if (readOnly) return;
-    
+
     let updatedData = { ...newData };
 
     // Auto-populate company and state based on city
     if (newData.city) {
       const titleCity = toTitleCase(newData.city);
       updatedData.city = titleCity;
-      
+
       const cityInfo = getCompanyByCity(titleCity);
       if (cityInfo) {
         updatedData.empresa = cityInfo.company;
         // Also update state if available and relevant for the form
         if (cityInfo.state) {
-          updatedData.state = cityInfo.state === 'RJ' ? 'Rio de Janeiro' : 
-                             cityInfo.state === 'SP' ? 'São Paulo' : cityInfo.state;
+          updatedData.state = cityInfo.state === 'RJ' ? 'Rio de Janeiro' :
+            cityInfo.state === 'SP' ? 'São Paulo' : cityInfo.state;
         }
       }
     }
@@ -334,7 +334,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
       if (formRef.current) {
         setIsExporting(true);
-        
+
         // Espera o React aplicar o modo de exportação no DOM
         await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -342,12 +342,12 @@ export const FormContainer: React.FC<FormContainerProps> = ({
           const element = formRef.current;
           if (element) {
             window.scrollTo(0, 0);
-            
+
             // Salvamos o estilo original para restaurar depois
             const originalStyle = element.style.cssText;
-            
+
             // Forçamos uma largura padrão para que a proporção no PDF A4 seja harmoniosa (aprox 900px)
-            element.style.width = '1000px'; 
+            element.style.width = '1000px';
             element.style.height = 'auto';
             element.style.overflow = 'visible';
 
@@ -364,7 +364,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                   clonedRoot.style.width = '1000px';
                   clonedRoot.style.height = 'auto';
                   clonedRoot.style.overflow = 'visible';
-                  
+
                   // Ocultar elementos marcados com 'hide-export' (ex: anexos)
                   clonedRoot.querySelectorAll('.hide-export').forEach(node => {
                     (node as HTMLElement).style.display = 'none';
@@ -391,27 +391,27 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
-            
+
             // Calculamos as dimensões para caber em UMA ÚNICA PÁGINA A4 (Compressão total)
             const contentWidth = canvas.width;
             const contentHeight = canvas.height;
             const ratio = contentWidth / contentHeight;
-            
+
             let finalWidth = pdfWidth;
             let finalHeight = pdfWidth / ratio;
-            
+
             // Se a altura calculada ainda for maior que a página A4, escalonamos pela altura
             if (finalHeight > pdfHeight) {
-                finalHeight = pdfHeight;
-                finalWidth = finalHeight * ratio;
+              finalHeight = pdfHeight;
+              finalWidth = finalHeight * ratio;
             }
-            
+
             // Centraliza se for menor que a largura total
             const xOffset = (pdfWidth - finalWidth) / 2;
             const yOffset = 0; // Topo
 
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
-            
+
             // Adiciona em uma única página
             pdf.addImage(imgData, 'JPEG', xOffset, yOffset, finalWidth, finalHeight, undefined, 'FAST');
 
@@ -514,15 +514,15 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   const handleSolicitarRevisaoAction = (precedent: any) => {
     if (!precedent) return;
-    
+
     setDuplicateDecision('revision');
-    
+
     // "Copie tudo": Deep clone the relevant technical data
     // We preserve technical fields but reset identity/requester fields to the current state
     setFormData(prev => {
       // Create a clean copy of the precedent
       const cleanClone = { ...precedent };
-      
+
       // Remove metadata that should not be carried to a new revision
       delete cleanClone.id;
       delete cleanClone.createdAt;
@@ -532,21 +532,21 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
       return {
         ...cleanClone, // Start with everything from the previous study
-        id: 0, 
-        studyNumber: '', 
+        id: 0,
+        studyNumber: '',
         status: StudyStatus.EM_ANALISE,
         user_id: userId,
         requestDate: getGMT3ISOString().split('T')[0],
         studyType: 'Revisão de Estudo',
         previousStudy: precedent.studyNumber,
-        
+
         // Keep current user as the one requesting the revision
         naturgyUnit: currentUser?.naturgyUnit || prev.naturgyUnit,
         requesterName: currentUser?.name || prev.requesterName,
         requesterArea: currentUser?.area || prev.requesterArea,
         phone: currentUser?.phone || prev.phone,
         email: currentUser?.email || prev.email,
-        
+
         // Cleanup execution/quality data that shouldn't be in a new revision
         assignedTo: undefined,
         assignedToName: undefined,
@@ -559,23 +559,27 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         activeTab: undefined
       } as any;
     });
-    
+
     setShowDuplicateModal(false);
   };
 
   const renderForm = () => {
     const displayData = duplicateDecision === 'viewing' && precedentStudy ? precedentStudy : formData;
     // Calculate effective read-only state based on permissions and ownership
-    const isOwner = initialData?.user_id === userId;
-    // Novo estudo pode ser editado se não tem studyNumber (é criação) E o usuário é ADM/Analista
-    const isNewStudyByAdmin = !initialData?.studyNumber && initialData?.id && (currentUser?.role === UserRole.ADM || currentUser?.role === UserRole.ANALISTA);
-    // SOLICITANTE owners can always edit their own forms (even on status 220/330)
-    const canEdit = isOwner || isNewStudyByAdmin; 
-    const forceReadOnly = (readOnly && !isOwner) || !canEdit;
+    // CORREÇÃO: garantir que novo estudo seja sempre editável (inclusive para SOLICITANTE)
+    const isNewStudy = !initialData?.studyNumber;
 
-    const commonProps = { 
-      data: displayData, 
-      onChange: handleUpdateData, 
+    const isOwner = initialData?.user_id === userId;
+
+    // Novo estudo SEMPRE pode editar (independente da role)
+    const canEdit = isNewStudy || isOwner;
+
+    // ReadOnly só se explicitamente for readonly E não puder editar
+    const forceReadOnly = readOnly && !canEdit;
+
+    const commonProps = {
+      data: displayData,
+      onChange: handleUpdateData,
       readOnly: forceReadOnly || isExporting || duplicateDecision === 'viewing',
       precedentStudy: precedentStudy // Pass it down to forms if they need to show warnings
     };
@@ -646,7 +650,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         {showDuplicateModal && (precedentStudy || backendPrecedentStudy) && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[999] p-4 animate-in fade-in duration-300">
             <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] overflow-hidden flex flex-col items-center p-10 animate-in zoom-in-95 duration-300">
-              
+
               <div className="w-20 h-20 bg-orange-50 rounded-3xl flex items-center justify-center mb-8">
                 <i className="fa-solid fa-triangle-exclamation text-orange-500 text-3xl"></i>
               </div>
@@ -670,7 +674,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                   {(backendPrecedentStudy || precedentStudy)?.address}, {(backendPrecedentStudy || precedentStudy)?.city}
                 </p>
               </div>
-              
+
               <div className="w-full space-y-3 flex flex-col">
                 <button
                   onClick={() => {
@@ -788,30 +792,30 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                   {(isAdmin || currentUser?.permissions?.includes('validar')) && (() => {
                     const statusStr = String(formData.status);
                     const statusNum = Number(formData.status);
-                    const isPendenteOrAnalise = 
-                      formData.status === StudyStatus.PENDENTE || 
+                    const isPendenteOrAnalise =
+                      formData.status === StudyStatus.PENDENTE ||
                       formData.status === StudyStatus.EM_ANALISE ||
-                      statusStr === '330' || 
+                      statusStr === '330' ||
                       statusNum === 330;
                     return isPendenteOrAnalise;
                   })() && (
-                    <>
-                      <button type="button" onClick={() => setShowRejectionModal(true)} className="px-8 py-4 rounded-xl border border-red-100 text-red-600 font-black uppercase text-xs">Reprovar</button>
-                      <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-green-600 text-white font-black uppercase text-xs shadow-lg shadow-green-200 transition-all">Validar Estudo</button>
-                    </>
-                  )}
+                      <>
+                        <button type="button" onClick={() => setShowRejectionModal(true)} className="px-8 py-4 rounded-xl border border-red-100 text-red-600 font-black uppercase text-xs">Reprovar</button>
+                        <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-green-600 text-white font-black uppercase text-xs shadow-lg shadow-green-200 transition-all">Validar Estudo</button>
+                      </>
+                    )}
                   {(isAdmin || currentUser?.permissions?.includes('validar')) && (() => {
                     const statusStr = String(formData.status);
                     const statusNum = Number(formData.status);
-                    const isPendenteOrAnalise = 
-                      formData.status === StudyStatus.PENDENTE || 
+                    const isPendenteOrAnalise =
+                      formData.status === StudyStatus.PENDENTE ||
                       formData.status === StudyStatus.EM_ANALISE ||
-                      statusStr === '330' || 
+                      statusStr === '330' ||
                       statusNum === 330;
                     return !isPendenteOrAnalise && formData.status !== StudyStatus.CONCLUIDO && formData.status !== StudyStatus.CANCELADO;
                   })() && (
-                    <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">Gerenciar Atribuição</button>
-                  )}
+                      <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">Gerenciar Atribuição</button>
+                    )}
                 </>
               ) : (
                 <>
