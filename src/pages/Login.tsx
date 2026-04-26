@@ -16,12 +16,28 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
   const [error, setError] = useState('');
   const [isDetecting, setIsDetecting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        // Primeiro tenta carregar do main
         const emailFromMain = window.api ? await window.api.getCorporateEmail() : null;
+
+        // Se não houver do main, tenta do localStorage (Remember Me)
+        const savedData = localStorage.getItem('remembered_user');
+        if (savedData) {
+          try {
+            const { email: savedEmail, password: savedPassword } = JSON.parse(savedData);
+            if (savedEmail) {
+              setEmail(savedEmail);
+              if (savedPassword) setPassword(savedPassword);
+              setRememberMe(true);
+            }
+          } catch (e) { /* ignore parse error */ }
+        }
+
         if (!cancelled) {
           if (emailFromMain) {
             setEmail(emailFromMain);
@@ -48,9 +64,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
         return;
       }
 
-      const emailLower = email.toLowerCase().trim();
+      const loginIdentifier = email.trim();
+      const emailLower = loginIdentifier.toLowerCase();
       const latestUsers = await StorageService.getUsers();
-      let foundUser = latestUsers.find(u => u.email.toLowerCase() === emailLower);
+
+      // Busca por email OU por SAP (GB)
+      let foundUser = latestUsers.find(u =>
+        u.email.toLowerCase() === emailLower ||
+        (u.sap && String(u.sap).trim() === loginIdentifier) ||
+        (u.gb && String(u.gb).trim() === loginIdentifier)
+      );
 
       if (foundUser) {
         const storedHash = foundUser.password || '';
@@ -72,6 +95,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
             setIsLoading(false);
             return;
           }
+
+          // Se o usuário marcou para lembrar, salvar as infos
+          if (rememberMe) {
+            localStorage.setItem('remembered_user', JSON.stringify({ email, password }));
+          } else {
+            localStorage.removeItem('remembered_user');
+          }
+
           onLogin(foundUser);
         } else {
           setError('Senha incorreta. Tente novamente.');
@@ -100,18 +131,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
             <form onSubmit={handleFormLogin} className="space-y-6">
               <div className="space-y-2 relative">
                 <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1 flex justify-between items-center">
-                  E-mail Corporativo
+                  E-mail ou GB
                   {isAutoEmail && !isDetecting && <span className="text-[8px] text-green-500 font-black tracking-widest uppercase">DETECTADO</span>}
                 </label>
                 <div className="relative group">
                   <i className={`fa-solid ${isDetecting ? 'fa-circle-notch fa-spin' : 'fa-user-check'} absolute left-4 top-1/2 -translate-y-1/2 text-[#004080] transition-colors`}></i>
                   <input
-                    type="email"
+                    type="text"
                     required
                     readOnly={isAutoEmail}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder={isDetecting ? "Detectando conta..." : "exemplo@gmail.com"}
+                    placeholder={isDetecting ? "Detectando conta..." : "E-mail ou GB (SAP)"}
                     className={`w-full pl-11 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder-white/60 ${isAutoEmail ? 'bg-white/20 border-white/40' : 'focus:border-white/60'}`}
                   />
                 </div>
@@ -132,6 +163,23 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                     className="w-full pl-11 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder-white/60 focus:border-white/60"
                   />
                 </div>
+              </div>
+
+              <div className="flex items-center gap-3 px-2">
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <div className="w-5 h-5 border-2 border-white/30 rounded-lg bg-white/5 peer-checked:bg-orange-500 peer-checked:border-orange-500 transition-all flex items-center justify-center">
+                      <i className={`fa-solid fa-check text-[10px] text-white transition-opacity ${rememberMe ? 'opacity-100' : 'opacity-0'}`}></i>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black text-white/70 uppercase tracking-widest group-hover:text-white transition-colors">Salvar informações</span>
+                </label>
               </div>
 
               {error && (

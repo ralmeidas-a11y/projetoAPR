@@ -768,6 +768,7 @@ END
 
       return {
         ...meta,
+        originalInputs: meta,
         id: String(row.id),
         user_id: row.user_id,
         formType: displayType,

@@ -20,10 +20,11 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
   const [area, setArea] = useState(user.area || '');
   const [phone, setPhone] = useState(user.phone || '');
   const [naturgyUnit, setNaturgyUnit] = useState(user.naturgyUnit || '');
-  const [password, setPassword] = useState(user.password || '');
-  const [confirmPassword, setConfirmPassword] = useState(user.password || '');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [sap, setSap] = useState(user.sap || '');
   const [isLoading, setIsLoading] = useState(false);
-  
+
   // Success screen
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -31,9 +32,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!name.trim() || !email.trim() || !area || !phone.trim() || !naturgyUnit || !password) {
-      showAlert('Por favor, preencha todos os campos, incluindo a senha', 'Campos Obrigatórios', 'warning');
+      showAlert('Por favor, preencha todos os campos obrigatórios e defina sua senha', 'Campos Obrigatórios', 'warning');
       return;
     }
 
@@ -62,6 +63,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
         area,
         phone: phone.trim(),
         naturgyUnit,
+        sap: sap.trim(),
         password: hashedPassword,
         profileComplete: true,
         requiresPasswordChange: false,
@@ -93,10 +95,10 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
             </div>
             <h2 className="text-2xl font-black uppercase tracking-tight">Primeiro Acesso</h2>
             <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">Personalize seu perfil corporativo</p>
-            
+
             {/* Botão de Voltar */}
-            <button 
-              onClick={() => window.location.reload()} 
+            <button
+              onClick={() => window.location.reload()}
               className="absolute top-6 left-6 w-10 h-10 bg-slate-50 hover:bg-slate-100 rounded-xl flex items-center justify-center transition-all text-slate-400 border border-slate-100"
               title="Voltar ao Login"
             >
@@ -114,8 +116,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2 col-span-1">
                 <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">E-mail Corporativo</label>
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -127,8 +129,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
 
               <div className="space-y-2 col-span-2">
                 <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Nome Completo</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -139,7 +141,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
 
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Unidade</label>
-                <select 
+                <select
                   required
                   value={naturgyUnit}
                   onChange={(e) => setNaturgyUnit(e.target.value)}
@@ -154,8 +156,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
 
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Telefone / Ramal</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -165,8 +167,19 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
               </div>
 
               <div className="space-y-2">
+                <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">GB <span className="text-red-500 normal-case font-bold ml-1">*(Opcional)</span></label>
+                <input
+                  type="text"
+                  value={sap}
+                  onChange={(e) => setSap(e.target.value)}
+                  className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-[#004080] focus:bg-white transition-all text-sm font-medium text-slate-700"
+                  placeholder="Ex: 80XXXXXX"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Área</label>
-                <select 
+                <select
                   required
                   value={area}
                   onChange={(e) => setArea(e.target.value)}
@@ -183,8 +196,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                   <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1 flex items-center gap-2">
                     <i className="fa-solid fa-lock text-[#FF8000]"></i> Definir Senha de Acesso
                   </label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -195,8 +208,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Confirmar Senha</label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
@@ -207,7 +220,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
               </div>
             </div>
 
-            <button 
+            <button
               type="submit"
               disabled={isLoading}
               className="w-full py-5 bg-[#004080] text-white rounded-[1.5rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-blue-100 hover:bg-[#FF8000] hover:shadow-orange-100 transition-all flex items-center justify-center gap-4 active:scale-95 disabled:opacity-50 mt-10"
@@ -229,22 +242,22 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 md:p-8 font-sans">
       <div className="w-full max-w-xl bg-white rounded-[3.5rem] shadow-[0_40px_100px_-20px_rgba(0,64,128,0.25)] overflow-hidden animate-in zoom-in-95 duration-500 border border-white">
         <div className="bg-[#004080] p-12 text-center text-white relative">
-           <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-6 backdrop-blur-md border border-white/20">
-              <i className="fa-solid fa-check text-4xl text-green-400"></i>
-           </div>
-           <h2 className="text-3xl font-black uppercase tracking-tight">Perfil Atualizado!</h2>
-           <p className="text-blue-100/60 text-xs font-bold uppercase tracking-widest mt-3">Você já pode acessar o Portal Técnico</p>
+          <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-6 backdrop-blur-md border border-white/20">
+            <i className="fa-solid fa-check text-4xl text-green-400"></i>
+          </div>
+          <h2 className="text-3xl font-black uppercase tracking-tight">Perfil Atualizado!</h2>
+          <p className="text-blue-100/60 text-xs font-bold uppercase tracking-widest mt-3">Você já pode acessar o Portal Técnico</p>
         </div>
 
         <div className="p-12 text-center space-y-10">
-           <div className="space-y-6">
-              <div className="space-y-3">
-                <h3 className="text-sm font-black text-[#004080] uppercase tracking-widest">✓ Dados Pessoais Confirmados</h3>
-                <p className="text-slate-600 text-[13px] leading-relaxed font-medium">
-                  Seu perfil está pronto. As pastas para suas solicitações serão criadas automaticamente quando você gerar a primeira solicitação.
-                </p>
-              </div>
-           </div>
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <h3 className="text-sm font-black text-[#004080] uppercase tracking-widest">✓ Dados Pessoais Confirmados</h3>
+              <p className="text-slate-600 text-[13px] leading-relaxed font-medium">
+                Seu perfil está pronto. As pastas para suas solicitações serão criadas automaticamente quando você gerar a primeira solicitação.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

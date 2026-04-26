@@ -693,41 +693,57 @@ export const FormContainer: React.FC<FormContainerProps> = ({
             <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col items-center animate-in zoom-in-95 duration-300 relative">
               <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600"></div>
               
-              <div className="pt-16 pb-8 px-10 w-full">
-                <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-orange-50 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
-                  <i className="fa-solid fa-triangle-exclamation text-orange-500 text-4xl"></i>
+              <div className="pt-8 pb-6 px-10 w-full">
+                <div className="w-16 h-16 bg-gradient-to-br from-orange-100 to-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+                  <i className="fa-solid fa-triangle-exclamation text-orange-500 text-3xl"></i>
                 </div>
 
-                <h3 className="text-2xl font-black text-slate-800 text-center leading-tight mb-4">
+                <h3 className="text-xl font-black text-slate-800 text-center leading-tight mb-2">
                   Estudo Existente
                 </h3>
-                <p className="text-sm text-slate-500 text-center leading-relaxed mb-8">
+                <p className="text-xs text-slate-500 text-center leading-relaxed mb-6">
                   Identificamos que já existe uma solicitação para este endereço. Estudos concluídos permanecem vigentes por 12 meses.
                 </p>
 
-                <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 mb-8 border border-slate-200 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-xs font-bold text-orange-600 uppercase tracking-widest">Status</span>
-                    <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-bold">
+                <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-5 mb-6 border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Status</span>
+                    <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-bold">
                       {(backendPrecedentStudy || precedentStudy)?.status || 'Concluído'}
                     </span>
                   </div>
-                  <p className="text-lg font-bold text-slate-800 mb-2">
+                  <p className="text-base font-bold text-slate-800 mb-1">
                     {(backendPrecedentStudy as any)?.title || (precedentStudy as any)?.studyTitle || (precedentStudy as any)?.clientName || 'Sem Título'}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-[11px] text-slate-500">
                     {(backendPrecedentStudy || precedentStudy)?.address}
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-[11px] text-slate-400">
                     {(backendPrecedentStudy || precedentStudy)?.city}
                   </p>
-                  <div className="mt-4 pt-4 border-t border-slate-200">
-                    <span className="text-xs font-bold text-slate-600">Nº do Estudo</span>
-                    <p className="text-sm font-black text-[#004080]">{(backendPrecedentStudy || precedentStudy)?.studyNumber}</p>
+                  <div className="mt-3 pt-3 border-t border-slate-200 flex justify-between items-end">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-600">Nº do Estudo</span>
+                      <p className="text-xs font-black text-[#004080]">{(backendPrecedentStudy || precedentStudy)?.studyNumber}</p>
+                    </div>
+                    {(() => {
+                      const matched = backendPrecedentStudy || precedentStudy;
+                      if (!matched) return null;
+                      const baseDate = matched.cartaGeneratedAt || matched.completedAt || matched.updatedAt || matched.createdAt;
+                      if (!baseDate) return null;
+                      const d = new Date(baseDate);
+                      d.setFullYear(d.getFullYear() + 1);
+                      return (
+                        <div className="text-right">
+                          <span className="text-[10px] font-bold text-red-500 uppercase tracking-tighter">Válido até</span>
+                          <p className="text-xs font-black text-red-600">{d.toLocaleDateString('pt-BR')}</p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
-                <div className="space-y-3 flex flex-col">
+                <div className="space-y-2.5 flex flex-col">
                   <button
                     onClick={() => {
                       const matchedStudy = backendPrecedentStudy || precedentStudy;
@@ -736,7 +752,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                       }
                       setShowDuplicateModal(false);
                     }}
-                    className="w-full py-5 bg-gradient-to-r from-[#004080] to-[#003366] text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-500/30 hover:shadow-xl hover:scale-[1.02] transition-all active:scale-[0.98]"
+                    className="w-full py-4 bg-gradient-to-r from-[#004080] to-[#003366] text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/30 hover:shadow-xl hover:scale-[1.01] transition-all active:scale-[0.99]"
                   >
                     <i className="fa-solid fa-eye mr-2"></i>
                     Visualizar Estudo Existente
@@ -746,7 +762,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                       const matchedStudy = backendPrecedentStudy || precedentStudy;
                       handleSolicitarRevisaoAction(matchedStudy);
                     }}
-                    className="w-full py-5 bg-white text-slate-700 border-2 border-slate-200 rounded-2xl font-bold text-sm hover:bg-slate-50 hover:border-[#004080] hover:text-[#004080] transition-all active:scale-[0.98] flex items-center justify-center"
+                    className="w-full py-4 bg-white text-slate-700 border border-slate-200 rounded-xl font-bold text-sm hover:bg-slate-50 hover:border-[#004080] hover:text-[#004080] transition-all active:scale-[0.99] flex items-center justify-center"
                   >
                     <i className="fa-solid fa-rotate-right mr-2 text-slate-400"></i>
                     Solicitar Revisão

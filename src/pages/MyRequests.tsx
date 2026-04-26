@@ -507,9 +507,18 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                               Enviado em: {req.requestDate ? formatDate(req.requestDate) : 'Data não disponível'}
                             </p>
                             {isCompleted && (req.completedAt || req.updatedAt) && (
-                              <p className="text-[10px] text-green-600 font-bold uppercase tracking-widest mt-0.5">
-                                Concluído em: {formatDate(req.completedAt || req.updatedAt!)}
-                              </p>
+                              <div className="flex flex-col">
+                                <p className="text-[10px] text-green-600 font-bold uppercase tracking-widest mt-0.5">
+                                  Concluído em: {formatDate(req.completedAt || req.updatedAt!)}
+                                </p>
+                                <p className="text-[10px] text-red-500 font-black uppercase tracking-widest mt-0.5">
+                                  Válido até: {(() => {
+                                    const d = new Date(req.completedAt || req.updatedAt!);
+                                    d.setFullYear(d.getFullYear() + 1);
+                                    return d.toLocaleDateString('pt-BR');
+                                  })()}
+                                </p>
+                              </div>
                             )}
                           </div>
                           <div className="flex flex-col gap-1">

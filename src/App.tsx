@@ -1234,12 +1234,18 @@ const App: React.FC = () => {
         (async () => {
           try {
             const nextId = await StorageService.getNextId();
+            
+            // Use originalInputs as the base for the revision data
+            const baseData = originalRequest.originalInputs || originalRequest;
+            const isDifferentUser = user && originalRequest.user_id && originalRequest.user_id !== user.id;
+
             const revisionData: FormData = {
-              ...originalRequest,
+              ...baseData,
               id: nextId,
               studyNumber: '',
               status: StudyStatus.EM_ANALISE,
-              studyType: '',
+              formType: originalRequest.formType,
+              studyType: 'Revisão de Estudo',
               previousStudy: originalRequest.studyNumber,
               requestDate: getGMT3ISOString().split('T')[0],
               assignedTo: undefined,
@@ -1262,7 +1268,15 @@ const App: React.FC = () => {
               studySubType: '',
               difficulty: '',
               validatorObservations: '',
-              user_id: user?.id || originalRequest.user_id
+              // Update requester data based on role
+              user_id: (user?.role === UserRole.SOLICITANTE) ? (user?.id || originalRequest.user_id) : '',
+              userId: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : (originalRequest.userId || originalRequest.email)) : '',
+              lastModifiedBy: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : (originalRequest.lastModifiedBy || originalRequest.requesterName)) : (user?.name || ''),
+              requesterName: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : originalRequest.requesterName) : '',
+              email: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : originalRequest.email) : '',
+              phone: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.phone : originalRequest.phone) : '',
+              requesterArea: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.area : originalRequest.requesterArea) : '',
+              naturgyUnit: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.naturgyUnit : originalRequest.naturgyUnit) : ''
             };
             setEditingRequest(revisionData);
             setSelectedForm(originalRequest.formType);
@@ -1283,12 +1297,18 @@ const App: React.FC = () => {
       (async () => {
         try {
           const nextId = await StorageService.getNextId();
+          
+          // Use originalInputs as the base for the revision data
+          const baseData = originalRequest.originalInputs || originalRequest;
+          const isDifferentUser = user && originalRequest.user_id && originalRequest.user_id !== user.id;
+
           const revisionData: FormData = {
-            ...originalRequest,
+            ...baseData,
             id: nextId,
             studyNumber: '',
             status: StudyStatus.PENDENTE,
-            studyType: '',
+            formType: originalRequest.formType,
+            studyType: 'Revisão de Estudo',
             previousStudy: originalRequest.studyNumber,
             requestDate: new Date().toISOString().split('T')[0],
             assignedTo: undefined,
@@ -1311,7 +1331,15 @@ const App: React.FC = () => {
             studySubType: '',
             difficulty: '',
             validatorObservations: '',
-            user_id: user?.id || originalRequest.user_id
+            // Update requester data based on role
+            user_id: (user?.role === UserRole.SOLICITANTE) ? (user?.id || originalRequest.user_id) : '',
+            userId: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : (originalRequest.userId || originalRequest.email)) : '',
+            lastModifiedBy: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : (originalRequest.lastModifiedBy || originalRequest.requesterName)) : (user?.name || ''),
+            requesterName: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : originalRequest.requesterName) : '',
+            email: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : originalRequest.email) : '',
+            phone: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.phone : originalRequest.phone) : '',
+            requesterArea: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.area : originalRequest.requesterArea) : '',
+            naturgyUnit: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.naturgyUnit : originalRequest.naturgyUnit) : ''
           };
           setEditingRequest(revisionData);
           setSelectedForm(originalRequest.formType);

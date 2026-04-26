@@ -288,4 +288,5 @@ export interface FormData {
   holdRequestSeen?: boolean;
   qcRequestDate?: string;
   responseMemo?: string;
+  originalInputs?: Partial<FormData>;
 }
