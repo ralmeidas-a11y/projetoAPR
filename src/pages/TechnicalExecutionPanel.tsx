@@ -999,13 +999,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         for (const file of rawFiles) {
           await StorageService.uploadFile(requestId, activeFolder, file);
         }
-        
+
         showToast(`${rawFiles.length} arquivo(s) anexado(s) com sucesso!`, 'success');
-        
+
         // Refresh the file list from the server
         const updatedFiles = await StorageService.getRequestFiles(requestId, activeFolder);
         setStudyFiles(updatedFiles.filter((f: any) => f.name !== '.keep'));
-        
+
         // Sync the local categorized metadata as well (optional but good for consistency)
         const updatedData = { ...data };
         if (activeFolder === 'Solicitacao') {
@@ -2022,7 +2022,100 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <p className="text-[8px] font-black text-orange-600 uppercase tracking-tighter italic">Disponível apenas para estudos Residenciais</p>
                 </div>
               )}
-              <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-3 shadow-sm">
+              <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-3 shadow-sm relative">
+                {/* Popovers alinhados ao topo do card (nome do cálculo) */}
+                {showVazaoModal && (
+                  <div className="absolute right-full top-0 mr-4 z-[1000] w-[450px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 animate-in fade-in zoom-in-95 duration-200 origin-right">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                      <span className="text-[10px] font-black text-[#004080] uppercase tracking-widest">Tabela de Vazão Unitária</span>
+                      <button onClick={(e) => { e.stopPropagation(); setShowVazaoModal(false); }} className="text-slate-300 hover:text-slate-500">
+                        <i className="fa-solid fa-xmark text-xs"></i>
+                      </button>
+                    </div>
+                    <table className="w-full border border-slate-300 text-[10px]">
+                      <thead className="bg-slate-100 text-slate-700 font-bold">
+                        <tr>
+                          <th rowSpan={2} className="border p-1.5 text-center whitespace-nowrap w-1">Nível Socioeconômico</th>
+                          <th colSpan={3} className="border p-1.5 text-center">Zona climática</th>
+                        </tr>
+                        <tr>
+                          <th className="border p-1.5 text-center">Fria</th>
+                          <th className="border p-1.5 text-center">Normal</th>
+                          <th className="border p-1.5 text-center">Quente</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          ["Classe A", "2,1", "1,5", "0,21"],
+                          ["Classe B", "1,5", "1,4", "0,13"],
+                          ["Classe C", "1,1", "0,8", "0,09"],
+                          ["Classe D/E", "0,8", "0,6", "0,04"],
+                        ].map((row, i) => (
+                          <tr key={i} className="hover:bg-slate-50 transition-colors">
+                            <td className="border p-1.5 font-bold text-slate-600 bg-slate-50/50 text-center whitespace-nowrap">{row[0]}</td>
+                            {row.slice(1).map((cell, j) => (
+                              <td
+                                key={j}
+                                className="border p-1.5 text-center cursor-pointer hover:bg-indigo-600 hover:text-white font-black transition-all"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const val = parseFloat(cell.replace(',', '.'));
+                                  setManualCalc(prev => ({ ...prev, unitFlow: val }));
+                                  setShowVazaoModal(false);
+                                }}
+                              >
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {showDiversificacaoModal && (
+                  <div className="absolute right-full top-0 mr-4 z-[1000] w-[350px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 animate-in fade-in zoom-in-95 duration-200 origin-right">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                      <span className="text-[10px] font-black text-[#004080] uppercase tracking-widest">Tabela de Diversificação</span>
+                      <button onClick={(e) => { e.stopPropagation(); setShowDiversificacaoModal(false); }} className="text-slate-300 hover:text-slate-500">
+                        <i className="fa-solid fa-xmark text-xs"></i>
+                      </button>
+                    </div>
+
+                    <div className="overflow-hidden border border-slate-200 rounded-xl shadow-sm">
+                      <table className="w-full border-collapse border border-slate-200">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            <th className="p-2 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 text-center whitespace-nowrap w-1">Número de Economias</th>
+                            <th className="p-2 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 text-center">FD</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {DIVERSIFICACAO_DATA.map((item) => (
+                            <tr
+                              key={item.id}
+                              className="hover:bg-emerald-50 cursor-pointer group transition-all"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setManualCalc(prev => ({ ...prev, diversification: item.fator }));
+                                setShowDiversificacaoModal(false);
+                              }}
+                            >
+                              <td className="p-2 text-[10px] font-bold text-slate-600 group-hover:text-emerald-700 text-center whitespace-nowrap">
+                                {item.faixa.split(' ')[0]} {item.faixa.split(' ')[1]} {item.faixa.split(' ')[2]}
+                              </td>
+                              <td className="p-2 text-[10px] font-black text-slate-400 text-center group-hover:text-emerald-600">
+                                {item.fator.toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-between items-center group">
                   <div className="flex flex-col">
                     <span className="text-[10px] uppercase font-black text-[#004080]">Cálculo Residencial</span>
@@ -2074,15 +2167,18 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
                       Vazão Unitária
                       {calcMode === 'manual' && (
-                        <i 
-                          className="fa-solid fa-circle-info text-indigo-400 cursor-pointer hover:text-indigo-600 transition-colors" 
-                          title="Clique para selecionar da tabela"
-                          onClick={() => setShowVazaoModal(true)}
-                        ></i>
+                        <i
+                          className="fa-solid fa-circle-info text-indigo-400 cursor-pointer hover:text-indigo-600 transition-colors text-[11px]"
+                          onClick={() => {
+                            setShowVazaoModal(!showVazaoModal);
+                            setShowDiversificacaoModal(false);
+                          }}
+                          title="Clique para ver a tabela"
+                        />
                       )}
                     </span>
                     {calcMode === 'auto' ? (
-                      <span className="text-sm font-black text-[#004080]">{currentCalc.unitFlow.toFixed(3)}</span>
+                      <span className="text-sm font-black text-[#004080]">{currentCalc.unitFlow.toFixed(2)}</span>
                     ) : (
                       <input
                         type="number"
@@ -2113,11 +2209,14 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
                       F. Diversificação
                       {calcMode === 'manual' && (
-                        <i 
-                          className="fa-solid fa-circle-info text-indigo-400 cursor-pointer hover:text-indigo-600 transition-colors" 
-                          title="Clique para selecionar da tabela"
-                          onClick={() => setShowDiversificacaoModal(true)}
-                        ></i>
+                        <i
+                          className="fa-solid fa-circle-info text-emerald-400 cursor-pointer hover:text-emerald-600 transition-colors text-[11px]"
+                          onClick={() => {
+                            setShowDiversificacaoModal(!showDiversificacaoModal);
+                            setShowVazaoModal(false);
+                          }}
+                          title="Tabela de Diversificação"
+                        />
                       )}
                     </span>
                     {calcMode === 'auto' ? (
@@ -2145,7 +2244,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   disabled={readOnly || !hasResidentialComponent}
                   onClick={() => {
                     const total = currentCalc.totalFlow;
-                    const summary = `Vazão total para o dimensionamento: ${total.toFixed(3).replace('.', ',')} m³/h (Clientes: ${currentCalc.totalClients} | Qut: ${currentCalc.unitFlow.toFixed(2)} | FP: ${currentCalc.penetration} | FD: ${currentCalc.diversification.toFixed(2)})`;
+                    const summary = `Vazão residencial diversificada adotada para o dimensionamento: ${total.toFixed(3).replace('.', ',')} m³/h`;
 
                     if (onUpdateData) {
                       handleUpdateData({
@@ -2468,14 +2567,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
               <li
                 onClick={() => setShowQCModal(true)}
-                className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${
-                  data.qcData || 
-                  data.status === StudyStatus.CONTROLE_QUALIDADE || 
+                className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${data.qcData ||
+                  data.status === StudyStatus.CONTROLE_QUALIDADE ||
                   data.status === StudyStatus.ENVIADO_SEM_CQ ||
                   data.status === StudyStatus.EM_EXECUCAO ||
                   data.status === StudyStatus.REPROVADO_CQ
-                    ? 'text-purple-600 font-black' : ''
-                }`}
+                  ? 'text-purple-600 font-black' : ''
+                  }`}
               >
                 <i className={`fa-solid ${data.qcData?.qcStatusCQ === 'Reprovado' ? 'fa-triangle-exclamation text-red-500' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'fa-check-circle text-green-500' : 'fa-plus text-[#004080]'}`}></i>
                 {data.qcData?.qcStatusCQ === 'Reprovado' ? 'Ver Motivo da Reprovação CQ' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'Ver Aprovação CQ' : 'Abrir Controle de Qualidade'}
@@ -2599,7 +2697,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <i className="fa-solid fa-folder-tree text-orange-500"></i> Rastreabilidade completa de revisões e anexos
                 </p>
               </div>
-<button onClick={() => setShowHistoryModal(false)} className="py-2.5 px-2.5 rounded-lg bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-all shadow-sm">
+              <button onClick={() => setShowHistoryModal(false)} className="py-2.5 px-2.5 rounded-lg bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-all shadow-sm">
                 <i className="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
@@ -2659,7 +2757,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight">Visualizando: {previewStudy.studyNumber}</h3>
                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Modo de Somente Leitura • Versão Histórica</p>
               </div>
-<button onClick={() => setPreviewStudy(null)} className="py-2.5 px-2.5 rounded-lg bg-white text-slate-400 hover:text-red-500 flex items-center justify-center shadow-sm border border-slate-100 transition-all">
+              <button onClick={() => setPreviewStudy(null)} className="py-2.5 px-2.5 rounded-lg bg-white text-slate-400 hover:text-red-500 flex items-center justify-center shadow-sm border border-slate-100 transition-all">
                 <i className="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
@@ -2850,8 +2948,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
         <div className="flex items-center gap-3">
           <div className="py-2 px-2 bg-slate-100 rounded-lg text-slate-400 hover:text-[#004080] border border-slate-100 flex items-center justify-center transition-all font-black shadow-sm">
-              ?
-            </div>
+            ?
+          </div>
         </div>
       </div>
 
@@ -3217,187 +3315,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           onClose={() => setShowQCModal(false)}
         />
       )}
-      {/* Vazão Unitária Modal */}
-      {showVazaoModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[32px] w-full max-w-2xl shadow-2xl border border-white/20 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-            <div className="p-8 bg-gradient-to-r from-indigo-600 to-blue-700 text-white flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                  <i className="fa-solid fa-droplet text-xs"></i>
-                </div>
-                <div>
-                  <h3 className="text-lg font-black uppercase tracking-tight">Vazão Unitária (m³/h)</h3>
-                  <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mt-0.5">Referência NT-200 - Socioeconômica / Clima</p>
-                </div>
-              </div>
-              <button onClick={() => setShowVazaoModal(false)} className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors">
-                <i className="fa-solid fa-xmark"></i>
-              </button>
-            </div>
-            <div className="p-6 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100">
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Classe Social</label>
-                  <div className="flex flex-wrap gap-2">
-                    {(['CLASSE_A', 'CLASSE_B', 'CLASSE_C', 'CLASSE_DE'] as const).map((level) => (
-                      <button
-                        key={level}
-                        onClick={() => setSelectedSocioeconomicLevel(level)}
-                        className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm ${selectedSocioeconomicLevel === level ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-indigo-500/30' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:border-indigo-300'}`}
-                      >
-                        {level.replace('_', ' ')}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Zona Climática</label>
-                  <div className="flex flex-wrap gap-2">
-                    {(['FRIA', 'NORMAL', 'QUENTE'] as const).map((zone) => (
-                      <button
-                        key={zone}
-                        onClick={() => setSelectedClimateZone(zone)}
-                        className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm ${selectedClimateZone === zone ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-indigo-500/30' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:border-indigo-300'}`}
-                      >
-                        {zone}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="p-0 max-h-[60vh] overflow-y-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
-                    <th className="p-5 text-xs font-bold text-slate-500 uppercase tracking-widest pl-8">Tipo de Consumo</th>
-                    <th className="p-5 text-xs font-bold text-slate-500 uppercase tracking-widest text-right pr-8">Vazão (m³/h)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  <tr 
-                    onClick={() => {
-                      const vaz = getVazaoUnitByClimateZone(selectedSocioeconomicLevel, selectedClimateZone);
-                      setManualCalc(prev => ({ ...prev, unitFlow: vaz }));
-                      setShowVazaoModal(false);
-                      showToast(`Vazão de ${vaz} m³/h selecionada!`, 'success');
-                    }}
-                    className="group cursor-pointer hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100/50 transition-all"
-                  >
-                    <td className="p-6 pl-8">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                          <i className="fa-solid fa-home text-indigo-500"></i>
-                        </div>
-                        <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-700">Residencial</span>
-                      </div>
-                    </td>
-                    <td className="p-6 text-right pr-8">
-                      <span className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-indigo-100 to-indigo-50 group-hover:from-indigo-600 group-hover:to-indigo-700 group-hover:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all">
-                        {getVazaoUnitByClimateZone(selectedSocioeconomicLevel, selectedClimateZone).toFixed(2)}
-                      </span>
-                    </td>
-                  </tr>
-                  <tr 
-                    onClick={() => {
-                      const vaz = VAZAO_UNITARIA_BY_CLIMATE[selectedSocioeconomicLevel][selectedClimateZone].smallCommerce;
-                      setManualCalc(prev => ({ ...prev, unitFlow: vaz }));
-                      setShowVazaoModal(false);
-                      showToast(`Vazão de ${vaz} m³/h selecionada!`, 'success');
-                    }}
-                    className="group cursor-pointer hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100/50 transition-all"
-                  >
-                    <td className="p-6 pl-8">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
-                          <i className="fa-solid fa-store text-slate-500"></i>
-                        </div>
-                        <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-700">Comércio Pequeño</span>
-                      </div>
-                    </td>
-                    <td className="p-6 text-right pr-8">
-                      <span className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-indigo-100 to-indigo-50 group-hover:from-indigo-600 group-hover:to-indigo-700 group-hover:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all">
-                        {VAZAO_UNITARIA_BY_CLIMATE[selectedSocioeconomicLevel][selectedClimateZone].smallCommerce.toFixed(2)}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div className="p-6 bg-slate-50 flex justify-end">
-              <button 
-                onClick={() => setShowVazaoModal(false)}
-                className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Vazão Unitária Modal (Removed as it is now a popover) */}
 
-      {/* Fator de Diversificação Modal */}
-      {showDiversificacaoModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl border border-white/20 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-            <div className="p-8 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                  <i className="fa-solid fa-chart-line text-2xl"></i>
-                </div>
-                <div>
-                  <h3 className="text-xl font-black uppercase tracking-tight">Fator de Diversificação</h3>
-                  <p className="text-xs text-white/70 font-medium uppercase tracking-widest mt-1">Coeficiente de simultaneidade - NT-200</p>
-                </div>
-              </div>
-              <button onClick={() => setShowDiversificacaoModal(false)} className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors">
-                <i className="fa-solid fa-xmark text-xs"></i>
-              </button>
-            </div>
-            <div className="p-0 max-h-[60vh] overflow-y-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100">
-                    <th className="p-5 text-xs font-bold text-emerald-600 uppercase tracking-widest pl-8">Faixa de Unidades</th>
-                    <th className="p-5 text-xs font-bold text-emerald-600 uppercase tracking-widest text-right pr-8">Fator (FD)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {DIVERSIFICACAO_DATA.map((item) => (
-                    <tr 
-                      key={item.id} 
-                      onClick={() => {
-                        setManualCalc(prev => ({ ...prev, diversification: item.fator }));
-                        setShowDiversificacaoModal(false);
-                        showToast(`Fator de Diversificação ${item.fator} aplicado!`, 'success');
-                      }}
-                      className="group cursor-pointer hover:bg-gradient-to-r hover:from-emerald-50 hover:to-emerald-100/50 transition-all"
-                    >
-                      <td className="p-5 pl-8">
-                        <span className="text-sm font-bold text-slate-700 group-hover:text-emerald-700">{item.faixa}</span>
-                      </td>
-                      <td className="p-5 text-right pr-8">
-                        <span className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-emerald-100 to-emerald-50 group-hover:from-emerald-600 group-hover:to-teal-600 group-hover:text-white rounded-xl text-sm font-bold transition-all shadow-sm">
-                          {item.fator.toFixed(2)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="p-6 bg-slate-50 flex justify-end border-t border-slate-100">
-              <button 
-                onClick={() => setShowDiversificacaoModal(false)}
-                className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Fator de Diversificação Modal (Removed as it is now a popover) */}
 
       {/* Off-screen hidden carta for background SVG/PNG export */}
       <div style={{ position: 'fixed', top: 0, left: '-9999px', width: '1200px', pointerEvents: 'none', background: 'white', zIndex: -1 }}>

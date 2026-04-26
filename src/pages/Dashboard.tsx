@@ -45,15 +45,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [newAnalyst, setNewAnalyst] = useState('');
   const [highlightRequestId, setHighlightRequestId] = useState<string | null>(null);
 
-  React.useEffect(() => {
-    if (autoOpenRequestId) {
-      const target = allRequests.find(r => r.id === autoOpenRequestId);
-      if (target) {
-        setHighlightRequestId(autoOpenRequestId);
-        setTimeout(() => setHighlightRequestId(null), 3000);
-      }
-    }
-  }, [autoOpenRequestId, allRequests]);
+  // O efeito de destaque (highlight) foi removido a pedido do usuário
+
 
 
 
@@ -326,13 +319,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return (
           <div className="flex gap-2 justify-end">
             <button
-              onClick={() => setBrowsingRequest(req)}
-              className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 border border-slate-100 hover:bg-slate-600 hover:text-white transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
-              title="Visualizar Arquivos"
-            >
-              <i className="fa-solid fa-folder-open"></i>
-            </button>
-            <button
               onClick={() => {
                 if (canFinalize) {
                   onStatusUpdate(req.id, StudyStatus.CONCLUIDO);
@@ -350,7 +336,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {req.status === StudyStatus.REPROVADO_CQ && (
               <button
                 onClick={() => setQcRequest(req)}
-                className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-50 to-red-100 text-red-600 border-2 border-red-200 hover:from-red-500 hover:to-red-600 hover:text-white hover:border-red-500 hover:shadow-lg hover:shadow-red-500/30 transition-all flex items-center justify-center text-sm font-bold active:scale-95 animate-pulse"
+                className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-50 to-red-100 text-red-600 border border-red-200 hover:from-red-500 hover:to-red-600 hover:text-white hover:border-red-500 transition-all flex items-center justify-center text-xs font-bold active:scale-95 animate-pulse"
                 title="Visualizar Motivos de Reprovação (CQ)"
               >
                 <i className="fa-solid fa-exclamation"></i>

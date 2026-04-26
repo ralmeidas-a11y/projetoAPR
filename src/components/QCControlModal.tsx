@@ -129,7 +129,26 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
 
   // Combine local iterations (from existing.qcIterations) with database history
   const iterations: QCIteration[] = existing.qcIterations || [];
-  const allIterations = [...dbIterations, ...iterations];
+
+  const allIterations = useMemo(() => {
+    const combined = [...dbIterations, ...iterations];
+    // De-duplicate by combination of status and date to be safe
+    const seen = new Set<string>();
+    return combined
+      .filter(it => {
+        if (!it.date) return true;
+        const key = `${it.status}-${it.date}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.date || 0).getTime();
+        const dateB = new Date(b.date || 0).getTime();
+        return dateA - dateB;
+      });
+  }, [dbIterations, iterations]);
+
   const totalRevisions = allIterations.length + (readOnly ? 0 : (qcStatus !== 'Definir' ? 1 : 0));
 
   const totalCritical = Object.values(criticalCounts).reduce<number>((a, b) => a + (Number(b) || 0), 0);
