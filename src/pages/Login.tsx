@@ -172,7 +172,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
             {/* Background Decor */}
             <div className="absolute top-0 right-0 w-80 h-80 bg-slate-50 rounded-full -mr-32 -mt-32 blur-3xl opacity-60"></div>
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-50/20 rounded-full blur-[100px] pointer-events-none"></div>
-            
+
             {/* Logo Section */}
             <div className="relative z-10 pt-4">
               <div className="transform hover:scale-105 transition-all duration-700 ease-out">
@@ -185,14 +185,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
               <div className="space-y-8">
                 <div className="space-y-2">
                   <h1 className="text-4xl md:text-5xl font-[900] tracking-tight leading-[0.9] flex flex-col items-center">
-                    <span className="text-[#004080] uppercase opacity-90">Portal de</span>
-                    <span className="text-orange-500 uppercase drop-shadow-sm">Planificação</span>
+                    <span className="text-[#004080] uppercase opacity-90">Portal de Planificação</span>
+                    <span className="text-orange-500 uppercase drop-shadow-sm"> de Rede  </span>
                   </h1>
                 </div>
-                
+
                 <div className="flex flex-col items-center gap-6">
                   <div className="w-12 h-1 bg-orange-500 rounded-full shadow-lg shadow-orange-200/50"></div>
-                  
+
                   <p className="text-[#004080]/40 text-[9px] md:text-[11px] font-[800] uppercase tracking-[0.5em] leading-none">
                     Área Técnica APR
                   </p>

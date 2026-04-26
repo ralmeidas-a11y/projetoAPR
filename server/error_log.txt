@@ -1,1 +1,71 @@
 
+{
+  "timestamp": "2026-04-25T21:38:21.897Z",
+  "message": "Must declare the scalar variable \"@lastModifiedBy\".",
+  "id": "1",
+  "studyNumber": "PROV-2026000101",
+  "status": "Em Análise",
+  "numericStatus": 330,
+  "stack": "RequestError: Must declare the scalar variable \"@lastModifiedBy\".\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
+}
+---
+{
+  "timestamp": "2026-04-25T21:39:32.281Z",
+  "message": "Must declare the scalar variable \"@lastModifiedBy\".",
+  "id": "1",
+  "studyNumber": "PROV-2026000101",
+  "status": "Em Análise",
+  "numericStatus": 330,
+  "stack": "RequestError: Must declare the scalar variable \"@lastModifiedBy\".\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
+}
+---
+{
+  "timestamp": "2026-04-25T21:41:05.993Z",
+  "message": "Invalid column name 'lastModifiedBy'.",
+  "id": "1",
+  "studyNumber": "PROV-2026000101",
+  "status": "Em Análise",
+  "numericStatus": 330,
+  "stack": "RequestError: Invalid column name 'lastModifiedBy'.\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
+}
+---
+{
+  "timestamp": "2026-04-26T04:07:20.195Z",
+  "message": "The parameter name vazS has already been declared. Parameter names must be unique",
+  "id": "1",
+  "studyNumber": "2026000101",
+  "status": "Aguardando Execução",
+  "numericStatus": 200,
+  "stack": "RequestError: The parameter name vazS has already been declared. Parameter names must be unique\n    at Request.input (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\base\\request.js:129:13)\n    at C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\index.js:1581:22\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+}
+---
+{
+  "timestamp": "2026-04-26T18:33:12.180Z",
+  "message": "The parameter name dtEntregaPrevista has already been declared. Parameter names must be unique",
+  "id": "1",
+  "studyNumber": "2026000101",
+  "status": "Aguardando Execução",
+  "numericStatus": 200,
+  "stack": "RequestError: The parameter name dtEntregaPrevista has already been declared. Parameter names must be unique\n    at Request.input (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\base\\request.js:129:13)\n    at C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\index.js:1707:20\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+}
+---
+{
+  "timestamp": "2026-04-26T19:21:29.444Z",
+  "message": "Invalid column name 'MOTIVO_PAUSA'.",
+  "id": "1",
+  "studyNumber": "2026000101",
+  "status": "Aguardando Execução",
+  "numericStatus": 200,
+  "stack": "RequestError: Invalid column name 'MOTIVO_PAUSA'.\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
+}
+---
+{
+  "timestamp": "2026-04-26T19:21:53.787Z",
+  "message": "Invalid column name 'MOTIVO_PAUSA'.",
+  "id": "1",
+  "studyNumber": "2026000101",
+  "status": "Em Execução",
+  "numericStatus": 205,
+  "stack": "RequestError: Invalid column name 'MOTIVO_PAUSA'.\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
+}
+---

@@ -203,7 +203,7 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
               <ReadOnlyField label="Tipo Arquivos" value={data.fileType} colSpan={6} />
               <ReadOnlyField label="Ponto de Entrega" value={data.deliveryPoint} colSpan={6} />
             </div>
-            
+
             <div className="border-t border-slate-100 pt-4">
               <h5 className="text-[9px] font-black text-[#004080] uppercase tracking-widest mb-4">DADOS TÉCNICOS</h5>
               <div className="grid grid-cols-12 gap-4">
@@ -231,16 +231,7 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
                 {marketOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
               </select>
             </div>
-            <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
-              <label className={`${requiredLabelClass}`}>Unidade de Resposta :</label>
-              <select name="responseUnit" value={data.responseUnit || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`}>
-                <option value="">Selecione...</option>
-                <option value="bar">bar</option>
-                <option value="kpa">kpa</option>
-                <option value="Nm³/h">Nm³/h</option>
-                <option value="m³/h">m³/h</option>
-              </select>
-            </div>
+
             <div className="col-span-12 flex flex-col gap-1">
               <label className={`${requiredLabelClass}`}>Endereço:</label>
               <input name="address" value={data.address || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`} />
@@ -413,8 +404,8 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center gap-3 hover:border-[#FF8000] transition-all cursor-pointer group bg-white"
             >
-              <div className="w-12 h-12 rounded-full bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-[#FF8000] group-hover:bg-white transition-all shadow-sm">
-                <i className="fa-solid fa-cloud-arrow-up text-xl"></i>
+              <div className="w-10 h-10 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-[#FF8000] group-hover:bg-white transition-all shadow-sm">
+                <i className="fa-solid fa-cloud-arrow-up text-xs"></i>
               </div>
               <div className="text-center">
                 <p className="font-bold text-[#004080]">Clique para fazer upload ou arraste arquivos</p>
@@ -436,7 +427,7 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
               {data.selectedFiles.map((file, idx) => (
                 <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
                   <div className="flex items-center gap-3 flex-grow min-w-0">
-                    <i className="fa-solid fa-file-lines text-[#004080] shrink-0"></i>
+                    <i className="fa-solid fa-file-lines text-[#004080] shrink-0 text-xs"></i>
                     <span className="text-xs font-medium text-slate-700 break-all">{file.name}</span>
                     <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
                   </div>
@@ -445,7 +436,7 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
                       onClick={() => removeFile(idx)}
                       className="p-1 hover:text-red-500 transition-colors text-slate-300"
                     >
-                      <i className="fa-solid fa-xmark"></i>
+                      <i className="fa-solid fa-xmark text-xs"></i>
                     </button>
                   )}
                 </div>

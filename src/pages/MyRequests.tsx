@@ -191,6 +191,14 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
     return `PE.00492-FO${foNumber}`;
   };
 
+  const canEdit = (req: FormData) => {
+    if (!currentUser) return false;
+    const isOwner = req.user_id === currentUser.id;
+    const isOwnerByName = req.requesterName === currentUser.name;
+    const isOwnerByEmail = req.email === currentUser.email;
+    return isOwner || isOwnerByName || isOwnerByEmail;
+  };
+
   const canCancel = (req: FormData) => {
     const isOwner = req.user_id === currentUser?.id;
     const isAdm = currentUser?.role === UserRole.ADM;
@@ -555,7 +563,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                               handleOpenFolder(req);
                             }}
                             disabled={isCancelled}
-                            className="flex-1 py-2 bg-green-50 text-green-600 font-black uppercase text-xs tracking-widest rounded-lg hover:bg-green-600 hover:text-white transition-all border border-green-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-2"
+                            className="flex-1 py-2.5 px-4 bg-green-50 text-green-600 font-black uppercase text-xs tracking-widest rounded-lg hover:bg-green-600 hover:text-white transition-all border border-green-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-2"
                             title="Navegador de Arquivos e Formulário"
                           >
                             <i className="fa-solid fa-folder-open text-xs"></i>
@@ -569,10 +577,10 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                                 e.stopPropagation();
                                 setRequestToCancel(req);
                               }}
-                              className="w-10 h-10 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all flex items-center justify-center border border-red-200 active:scale-90"
+                              className="py-2.5 px-2.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all flex items-center justify-center border border-red-200 active:scale-90"
                               title="Cancelar"
                             >
-                              <i className="fa-solid fa-trash text-sm"></i>
+                              <i className="fa-solid fa-trash text-xs"></i>
                             </button>
                           )}
                         </div>
@@ -584,12 +592,12 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                           </div>
                         )}
 
-                        {(req.status === StudyStatus.REJEITADO || req.status === StudyStatus.EM_ANALISE) && (
+                        {(req.status === StudyStatus.REJEITADO || req.status === StudyStatus.EM_ANALISE) && canEdit(req) && (
                           <button
                             type="button"
                             onClick={() => onEditRequest(req)}
                             disabled={isCancelled}
-                            className="w-full py-1.5 bg-orange-50 text-orange-600 border border-orange-200 rounded-lg font-black uppercase text-xs tracking-widest hover:bg-orange-600 hover:text-white transition-all active:scale-95 disabled:opacity-40"
+                            className="w-full py-2.5 px-4 bg-orange-50 text-orange-600 border border-orange-200 rounded-lg font-black uppercase text-xs tracking-widest hover:bg-orange-600 hover:text-white transition-all active:scale-95 disabled:opacity-40"
                           >
                             Editar
                           </button>
@@ -599,7 +607,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                           <button
                             type="button"
                             onClick={() => onRequestRevision(req)}
-                            className="w-full py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg font-black uppercase text-xs tracking-widest hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+                            className="w-full py-2.5 px-4 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg font-black uppercase text-xs tracking-widest hover:bg-blue-600 hover:text-white transition-all active:scale-95"
                           >
                             <i className="fa-solid fa-rotate-left mr-1"></i> Revisão
                           </button>
@@ -618,7 +626,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
             <button
               onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage === 1}
-              className="w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-white hover:text-[#004080] hover:border-[#004080] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 bg-white"
+              className="py-2.5 px-2.5 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-white hover:text-[#004080] hover:border-[#004080] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 bg-white"
             >
               <i className="fa-solid fa-chevron-left text-xs"></i>
             </button>
@@ -631,7 +639,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                   ) : (
                     <button
                       onClick={() => goToPage(Number(page))}
-                      className={`w-10 h-10 rounded-xl text-[11px] font-black transition-all transform ${currentPage === page 
+                      className={`py-2.5 px-2.5 rounded-lg text-[11px] font-black transition-all transform ${currentPage === page 
                         ? 'bg-[#004080] text-white shadow-lg shadow-blue-200 scale-110' 
                         : 'bg-white border border-slate-200 text-slate-500 hover:border-[#004080] hover:text-[#004080]'}`}
                     >
@@ -645,7 +653,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
             <button
               onClick={() => goToPage(currentPage + 1)}
               disabled={currentPage === totalPages}
-              className="w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-white hover:text-[#004080] hover:border-[#004080] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 bg-white"
+              className="py-2.5 px-2.5 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-white hover:text-[#004080] hover:border-[#004080] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 bg-white"
             >
               <i className="fa-solid fa-chevron-right text-xs"></i>
             </button>

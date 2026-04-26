@@ -136,6 +136,8 @@ export interface FormData {
   rejectionReason?: string;
   assignedTo?: string;
   createdAt?: string;
+  userId?: string;
+  lastModifiedBy?: string;
   
   // Dados do Solicitante
   naturgyUnit?: string;
@@ -209,9 +211,12 @@ export interface FormData {
   numClientsCom?: number | '';
   unitFlow?: number | '';
   flowUnitRes?: number | ''; // Added for backward compatibility
+  flowUnitCom?: number | ''; // Added for backward compatibility
   penetrationFactor?: number | '';
   diversificationFactor?: number | '';
   totalFlowRes?: number | '';
+  vazaoSol?: number | '';
+  numEconomias?: number | '';
   totalFlowCom?: number | '';
   totalClients?: number | '';
   penetration?: number | '';

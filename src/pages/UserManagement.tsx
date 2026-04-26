@@ -31,6 +31,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
   const [newArea, setNewArea] = useState('');
   const [newNaturgyUnit, setNewNaturgyUnit] = useState('');
   const [userToReset, setUserToReset] = useState<User | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    'Usuários Ativos': true,
+    'Usuários Inativos': false
+  });
+
+  const toggleGroup = (label: string) => {
+    setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }));
+  };
 
   const handleResetPassword = (user: User) => {
     setUserToReset(user);
@@ -315,19 +323,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                 { label: 'Usuários Inativos', list: users.filter(u => u.role !== UserRole.SOLICITANTE && u.isActive === false), icon: 'fa-user-slash', color: 'text-red-500', bgColor: 'bg-red-50/30' }
               ].map(group => group.list.length > 0 && (
                 <React.Fragment key={group.label}>
-                  <tr className={`${group.bgColor} border-y border-slate-100/50`}>
+                  <tr className={`${group.bgColor} border-y border-slate-100/50 cursor-pointer hover:bg-slate-100/50 transition-colors`} onClick={() => toggleGroup(group.label)}>
                     <td colSpan={7} className="px-8 py-2.5">
                       <div className="flex items-center gap-2">
                         <div className={`w-1.5 h-1.5 rounded-full ${group.color === 'text-[#004080]' ? 'bg-[#004080]' : 'bg-red-500'} animate-pulse`}></div>
                         <i className={`fa-solid ${group.icon} text-[10px] ${group.color} opacity-70`}></i>
                         <span className={`text-[10px] font-black uppercase tracking-widest ${group.color} opacity-80`}>{group.label}</span>
-                        <span className="ml-auto text-[9px] font-bold text-slate-400 uppercase tracking-tighter bg-white/80 px-2 py-0.5 rounded-full border border-slate-100 shadow-sm backdrop-blur-sm">
+                        <span className="ml-2 text-[9px] font-bold text-slate-400 uppercase tracking-tighter bg-white/80 px-2 py-0.5 rounded-full border border-slate-100 shadow-sm backdrop-blur-sm">
                           {group.list.length} {group.list.length === 1 ? 'Usuário' : 'Usuários'}
                         </span>
+                        <div className="ml-auto flex items-center gap-2">
+                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest opacity-60">
+                             {expandedGroups[group.label] ? 'Recolher' : 'Expandir'}
+                           </span>
+                           <i className={`fa-solid ${expandedGroups[group.label] ? 'fa-chevron-up' : 'fa-chevron-down'} text-[10px] text-slate-400 transition-transform duration-300`}></i>
+                        </div>
                       </div>
                     </td>
                   </tr>
-                  {group.list.map(u => (
+                  {expandedGroups[group.label] && group.list.map(u => (
                     <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50/50 group transition-colors duration-200">
                       <td className="px-6 py-3.5">
                         <p className="text-sm font-semibold text-[#004080]">{u.name}</p>
@@ -445,10 +459,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                 Esta ação enviará todos os dados associados para a lixeira e não pode ser desfeita.
               </p>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => setUserToDelete(null)}
-                  className="py-4 px-6 bg-slate-50 text-slate-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all border border-slate-100"
+                  className="py-2.5 px-4 bg-slate-50 text-slate-400 rounded-lg font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all border border-slate-100"
                 >
                   Cancelar
                 </button>
@@ -457,7 +471,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                     onDeleteUser(userToDelete.id);
                     setUserToDelete(null);
                   }}
-                  className="py-4 px-6 bg-red-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-200"
+                  className="py-2.5 px-4 bg-red-500 text-white rounded-lg font-black uppercase text-[10px] tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-200"
                 >
                   Confirmar
                 </button>
@@ -485,16 +499,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                 A senha será definida como <span className="font-black text-amber-600">"123456"</span> e o usuário deverá alterá-la no próximo acesso.
               </p>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => setUserToReset(null)}
-                  className="py-4 px-6 bg-slate-50 text-slate-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all border border-slate-100"
+                  className="py-2.5 px-4 bg-slate-50 text-slate-400 rounded-lg font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all border border-slate-100"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={confirmResetPassword}
-                  className="py-4 px-6 bg-amber-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-amber-600 transition-all shadow-lg shadow-amber-200"
+                  className="py-2.5 px-4 bg-amber-500 text-white rounded-lg font-black uppercase text-[10px] tracking-widest hover:bg-amber-600 transition-all shadow-lg shadow-amber-200"
                 >
                   Confirmar
                 </button>

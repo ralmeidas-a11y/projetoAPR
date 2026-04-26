@@ -234,8 +234,8 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
         <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
           {!readOnly && (
             <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center gap-3 hover:border-[#FF8000] transition-all cursor-pointer group bg-white text-center">
-              <div className="w-12 h-12 rounded-full bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-[#FF8000] group-hover:bg-white transition-all shadow-sm">
-                <i className="fa-solid fa-cloud-arrow-up text-xl"></i>
+              <div className="w-10 h-10 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-slate-400 group-hover:text-[#FF8000] group-hover:bg-white transition-all shadow-sm">
+                <i className="fa-solid fa-cloud-arrow-up text-xs"></i>
               </div>
               <div className="text-center">
                 <p className="font-bold text-[#004080]">Anexe arquivos KMZ ou tabelas de coordenadas</p>
@@ -250,13 +250,13 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
               {data.selectedFiles.map((file, idx) => (
                 <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg animate-in fade-in slide-in-from-left-2 duration-300">
                   <div className="flex items-center gap-3 flex-grow min-w-0">
-                    <i className="fa-solid fa-file-lines text-[#004080] shrink-0"></i>
+                    <i className="fa-solid fa-file-lines text-[#004080] shrink-0 text-xs"></i>
                     <span className="text-xs font-medium text-slate-700 break-all">{file.name}</span>
                     <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
                   </div>
                   {!readOnly && (
                     <button onClick={() => removeFile(idx)} className="p-1 hover:text-red-500 transition-colors text-slate-300">
-                      <i className="fa-solid fa-xmark"></i>
+                      <i className="fa-solid fa-xmark text-xs"></i>
                     </button>
                   )}
                 </div>

@@ -43,16 +43,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const itemsPerPage = 12;
 
   const [newAnalyst, setNewAnalyst] = useState('');
+  const [highlightRequestId, setHighlightRequestId] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (autoOpenRequestId) {
       const target = allRequests.find(r => r.id === autoOpenRequestId);
       if (target) {
-        setViewingHoldReason(target);
-        onModalOpened?.();
+        setHighlightRequestId(autoOpenRequestId);
+        setTimeout(() => setHighlightRequestId(null), 3000);
       }
     }
-  }, [autoOpenRequestId, allRequests, onModalOpened]);
+  }, [autoOpenRequestId, allRequests]);
 
 
 
@@ -212,7 +213,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (!targetRequest || !onStatusUpdate) return;
 
       if (action === 'validate') {
-        const isNewValidation = (targetRequest.status as any) === 330 || targetRequest.status === StudyStatus.PENDENTE;
+        const isNewValidation = (targetRequest.status as any) === 330 || targetRequest.status === StudyStatus.PENDENTE || targetRequest.status === StudyStatus.EM_ANALISE;
         const nextStatus = isNewValidation ? StudyStatus.AGUARDANDO_EXECUCAO : targetRequest.status;
 
         onStatusUpdate(targetRequest.id, nextStatus, undefined, assignedTo, data);
@@ -245,11 +246,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
     try {
       const isMe = isAssignedToMe(req.assignedTo, user);
       const isSystem = isSystemAssigned(req.assignedTo);
-      const isLockedForMe = req.assignedTo && !isMe && !isSystem && !isAdmin && !(isQC && req.status === StudyStatus.CONTROLE_QUALIDADE);
+      const isPRGC = req.assignedTo && req.assignedTo.toLowerCase() === 'prgc';
+      const isLockedForMe = req.assignedTo && !isMe && !isSystem && !isAdmin && !(isQC && req.status === StudyStatus.CONTROLE_QUALIDADE) && !isPRGC;
 
       if (isLockedForMe) {
         return (
-          <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-200 flex items-center justify-center text-xs border border-slate-100 cursor-not-allowed" title="Estudo bloqueado: Atribuído a outro analista">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 text-slate-300 flex items-center justify-center text-lg border-2 border-slate-200 cursor-not-allowed shadow-inner" title="Estudo bloqueado: Atribuído a outro analista">
             <i className="fa-solid fa-lock"></i>
           </div>
         );
@@ -260,7 +262,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex gap-2">
             <button
               onClick={() => { try { onExecute(req); } catch (e) { console.error('Erro:', e); } }}
-              className="w-10 h-10 rounded-xl bg-[#004080] text-white hover:bg-orange-500 transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
+              className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#004080] to-blue-700 text-white hover:from-orange-500 hover:to-orange-600 transition-all flex items-center justify-center text-xs shadow-lg shadow-blue-500/30 active:scale-95"
               title="Abrir Painel de Execução"
             >
               <i className="fa-solid fa-play"></i>
@@ -272,10 +274,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     setHoldInfo('');
                     setHoldingRequest(req);
                   }}
-                  className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 border border-orange-100 hover:bg-orange-500 hover:text-white transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
+                  className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 text-orange-500 border-2 border-orange-200 hover:from-orange-500 hover:to-orange-600 hover:text-white hover:border-orange-500 transition-all flex items-center justify-center text-xs shadow-lg shadow-orange-500/20 active:scale-95"
                   title="Solicitar Informações"
                 >
-                  <i className="fa-solid fa-pause"></i>
+                  <i className="fa-solid fa-circle-question"></i>
                 </button>
               </div>
             )}
@@ -322,21 +324,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
 
         return (
-          <button
-            onClick={() => {
-              if (canFinalize) {
-                onStatusUpdate(req.id, StudyStatus.CONCLUIDO);
-                showToast('Estudo Concluído e E-mail enviado!', 'success');
-              } else {
-                try { onExecute(req); } catch (e) { console.error('Erro:', e); }
-              }
-            }}
-            className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center text-xs shadow-sm active:scale-95 border ${canFinalize ? 'bg-indigo-600 text-white hover:bg-orange-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white'
-              }`}
-            title={canFinalize ? "Clique para Finalizar e Enviar E-mail ao Solicitante" : "Visualizar Painel Técnico"}
-          >
-            <i className={`fa-solid ${canFinalize ? 'fa-paper-plane' : 'fa-eye'}`}></i>
-          </button>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => setBrowsingRequest(req)}
+              className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 border border-slate-100 hover:bg-slate-600 hover:text-white transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
+              title="Visualizar Arquivos"
+            >
+              <i className="fa-solid fa-folder-open"></i>
+            </button>
+            <button
+              onClick={() => {
+                if (canFinalize) {
+                  onStatusUpdate(req.id, StudyStatus.CONCLUIDO);
+                  showToast('Estudo Concluído e E-mail enviado!', 'success');
+                } else {
+                  try { onExecute(req); } catch (e) { console.error('Erro:', e); }
+                }
+              }}
+              className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center text-xs shadow-sm active:scale-95 border ${canFinalize ? 'bg-indigo-600 text-white hover:bg-orange-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white'
+                }`}
+              title={canFinalize ? "Clique para Finalizar e Enviar E-mail ao Solicitante" : "Visualizar Painel Técnico"}
+            >
+              <i className={`fa-solid ${canFinalize ? 'fa-paper-plane' : 'fa-eye'}`}></i>
+            </button>
+            {req.status === StudyStatus.REPROVADO_CQ && (
+              <button
+                onClick={() => setQcRequest(req)}
+                className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-50 to-red-100 text-red-600 border-2 border-red-200 hover:from-red-500 hover:to-red-600 hover:text-white hover:border-red-500 hover:shadow-lg hover:shadow-red-500/30 transition-all flex items-center justify-center text-sm font-bold active:scale-95 animate-pulse"
+                title="Visualizar Motivos de Reprovação (CQ)"
+              >
+                <i className="fa-solid fa-exclamation"></i>
+              </button>
+            )}
+          </div>
         );
       }
 
@@ -378,10 +398,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       className="w-full p-4 border border-red-100 rounded-2xl outline-none focus:border-red-500 bg-red-50/30 text-sm font-bold text-slate-700 min-h-[120px]"
                     />
                     <div className="flex justify-end gap-3 pt-4">
-                      <button onClick={() => setIsRejecting(false)} className="px-6 py-3 text-slate-400 font-black uppercase text-[10px]">Voltar</button>
+                      <button onClick={() => setIsRejecting(false)} className="px-4 py-2.5 text-slate-400 font-black uppercase text-[10px]">Voltar</button>
                       <button
                         onClick={() => handleConfirmAction('reject')}
-                        className="px-8 py-4 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] shadow-lg shadow-red-100 transition-all active:scale-95"
+                        className="px-6 py-2.5 bg-red-600 text-white rounded-lg font-black uppercase text-[10px] shadow-lg shadow-red-100 transition-all active:scale-95"
                       >
                         Confirmar Rejeição
                       </button>
@@ -395,17 +415,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div className="flex flex-col gap-3 mt-4">
                       <button
                         onClick={() => handleConfirmAction('validate')}
-                        className="w-full p-5 bg-green-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center justify-center gap-3"
+                        className="w-full py-2.5 px-4 bg-green-600 text-white rounded-lg font-black uppercase text-xs shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                       >
-                        <i className="fa-solid fa-check-circle"></i> Validar Estudo
+                        <i className="fa-solid fa-check-circle text-xs"></i> Validar Estudo
                       </button>
                       <button
                         onClick={() => setIsRejecting(true)}
-                        className="w-full p-5 bg-white border-2 border-red-100 text-red-600 rounded-2xl font-black uppercase text-xs hover:bg-red-50 transition-all active:scale-95 flex items-center justify-center gap-3"
+                        className="w-full py-2.5 px-4 bg-white border-2 border-red-100 text-red-600 rounded-lg font-black uppercase text-xs hover:bg-red-50 transition-all active:scale-95 flex items-center justify-center gap-2"
                       >
-                        <i className="fa-solid fa-times-circle"></i> Rejeitar Estudo
+                        <i className="fa-solid fa-times-circle text-xs"></i> Rejeitar Estudo
                       </button>
-                      <button onClick={() => setAssigningRequest(null)} className="mt-4 px-6 py-3 text-slate-400 font-black uppercase text-[10px] hover:text-slate-600">Cancelar</button>
+                      <button onClick={() => setAssigningRequest(null)} className="mt-2 py-2.5 px-4 text-slate-400 font-black uppercase text-[10px] hover:text-slate-600">Cancelar</button>
                     </div>
                   </div>
                 )}
@@ -424,9 +444,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   ))}
                 </select>
 
-                <div className="flex justify-end gap-3 mt-10">
-                  <button onClick={() => setAssigningRequest(null)} className="px-6 py-3 text-slate-400 font-black uppercase text-[10px]">Cancelar</button>
-                  <button onClick={() => handleConfirmAction('assign')} className="px-8 py-4 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] shadow-lg shadow-indigo-100 transition-all active:scale-95">Confirmar Atribuição</button>
+                <div className="flex justify-end gap-3 mt-6">
+                  <button onClick={() => setAssigningRequest(null)} className="px-4 py-2.5 text-slate-400 font-black uppercase text-[10px]">Cancelar</button>
+                  <button onClick={() => handleConfirmAction('assign')} className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-black uppercase text-[10px] shadow-lg shadow-indigo-100 transition-all active:scale-95">Confirmar Atribuição</button>
                 </div>
               </div>
             )}
@@ -434,8 +454,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center justify-between gap-6 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="shrink-0 min-w-fit">
+      <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center justify-between gap-6 bg-gradient-to-r from-white to-slate-50 p-6 rounded-2xl border border-slate-200 shadow-lg overflow-hidden relative">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#004080] via-blue-600 to-orange-500"></div>
+        <div className="shrink-0 min-w-fit pt-2">
           <h2 className="text-2xl font-black text-[#004080] uppercase tracking-tight">Painel de Controle APR</h2>
           <p className="text-slate-500 text-sm mt-1">Gerenciamento do fluxo de solicitações.</p>
         </div>
@@ -443,16 +464,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {onCreateRequest && (isAdmin || user.role === UserRole.ANALISTA) && (
           <button
             onClick={() => onCreateRequest('PE.00492-FO.01')}
-            className="px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-green-700 transition-all"
+            className="py-2.5 px-4 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg font-bold text-xs uppercase flex items-center gap-2 hover:from-green-700 hover:to-green-600 hover:shadow-lg hover:shadow-green-500/30 transition-all"
           >
-            <i className="fa-solid fa-plus"></i> Novo Estudo
+            <i className="fa-solid fa-plus text-xs"></i> Novo Estudo
           </button>
         )}
 
         <div className="flex flex-col md:flex-row gap-4 flex-grow max-w-full lg:max-w-none justify-end items-center">
           <div className="relative flex-grow md:max-w-xs lg:max-w-md group">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[#004080] transition-colors">
-              <i className="fa-solid fa-magnifying-glass text-sm"></i>
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[#004080] transition-colors">
+              <i className="fa-solid fa-magnifying-glass text-xs"></i>
             </div>
             <input
               type="text"
@@ -462,7 +483,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 setCurrentPage(1);
               }}
               placeholder="Pesquisar..."
-              className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#004080] focus:bg-white transition-all text-xs font-bold text-slate-700 placeholder:text-slate-400"
+              className="w-full pl-9 py-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:border-[#004080] focus:ring-2 focus:ring-[#004080]/10 transition-all text-xs font-bold text-slate-700 placeholder:text-slate-400"
             />
             {searchTerm && (
               <button
@@ -482,7 +503,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   setFilter(s);
                   setCurrentPage(1);
                 }}
-                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === s ? 'bg-white shadow-sm text-[#004080]' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`py-2 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === s ? 'bg-white shadow-sm text-[#004080]' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 {s}
               </button>
@@ -549,7 +570,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   })();
 
                   return (
-                    <tr key={req.id} className={`transition-all duration-200 ${isUrgent ? 'bg-yellow-50/70 hover:bg-yellow-50' : 'hover:bg-slate-50'}`}>
+                    <tr 
+                      key={req.id} 
+                      className={`transition-all duration-200 ${highlightRequestId === req.id ? 'bg-blue-100 ring-2 ring-blue-400 ring-inset animate-pulse' : (isUrgent ? 'bg-yellow-50/70 hover:bg-yellow-50' : 'hover:bg-slate-50')}`}
+                    >
                       <td className="px-5 py-3.5 text-left">
                         <div className="flex items-center gap-2.5">
                           <span className="bg-[#004080]/90 text-white text-[10px] font-semibold px-2 py-0.5 rounded">{getFO(req.formType)}</span>
@@ -738,11 +762,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           readOnly={false}
           onClose={() => setQcRequest(null)}
           onApprove={(qcData: QCControlData) => {
+            qcData.fromQCModal = true;
             onStatusUpdate(qcRequest.id, StudyStatus.APROVADO_CQ, undefined, undefined, { qcData });
             showToast('Estudo Aprovado pelo CQ! Retornado ao analista para conclusão final.', 'success');
             setQcRequest(null);
           }}
           onReject={(qcData: QCControlData, reason: string) => {
+            qcData.fromQCModal = true;
             onStatusUpdate(qcRequest.id, StudyStatus.REPROVADO_CQ, reason, undefined, { qcData });
             showToast('Estudo Reprovado pelo CQ. Retornado ao analista para correções.', 'info');
             setQcRequest(null);
@@ -785,8 +811,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </p>
               </div>
             </div>
-            <div className="p-8 bg-slate-50 flex gap-4">
-              <button onClick={() => { setHoldingRequest(null); setHoldInfo(''); }} className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors bg-white rounded-2xl border border-slate-100">Cancelar</button>
+            <div className="p-6 bg-slate-50 flex gap-3">
+              <button onClick={() => { setHoldingRequest(null); setHoldInfo(''); }} className="flex-1 py-2.5 px-4 text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors bg-white rounded-lg border border-slate-100">Cancelar</button>
               <button
                 disabled={!holdInfo.trim()}
                 onClick={() => {
@@ -795,7 +821,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   setHoldingRequest(null);
                   setHoldInfo('');
                 }}
-                className={`flex-[2] py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg transition-all ${holdInfo.trim() ? 'bg-orange-500 text-white shadow-orange-200 hover:scale-[1.02] active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                className={`flex-[2] py-2.5 px-4 rounded-lg text-xs font-black uppercase tracking-widest shadow-lg transition-all ${holdInfo.trim() ? 'bg-orange-500 text-white shadow-orange-200 hover:scale-[1.02] active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
               >Confirmar Pausa</button>
             </div>
           </div>
@@ -816,17 +842,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{viewingHoldReason.studyNumber}</p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  if (!viewingHoldReason.holdResponseSeen && viewingHoldReason.holdResponse) {
-                    onStatusUpdate(viewingHoldReason.id, viewingHoldReason.status, undefined, undefined, { holdResponseSeen: true });
-                  }
-                  setViewingHoldReason(null);
-                }}
-                className="p-2 hover:bg-slate-50 rounded-xl transition-colors text-slate-300"
-              >
-                <i className="fa-solid fa-xmark"></i>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (!viewingHoldReason.holdResponseSeen && viewingHoldReason.holdResponse) {
+                      onStatusUpdate(viewingHoldReason.id, viewingHoldReason.status, undefined, undefined, { holdResponseSeen: true });
+                    }
+                    setViewingHoldReason(null);
+                  }}
+                  className="p-2 hover:bg-slate-50 rounded-xl transition-colors text-slate-300"
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
             </div>
             <div className="p-8 space-y-6">
               <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">

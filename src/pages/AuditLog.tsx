@@ -83,6 +83,65 @@ export const AuditLog: React.FC<AuditLogProps> = ({ currentUser }) => {
     return styles[action] || 'bg-slate-100 text-slate-700 border-slate-200';
   };
 
+  const statusCodeToText: Record<string, string> = {
+    '100': 'Em Análise',
+    '200': 'Aguardando Execução',
+    '205': 'Em Execução',
+    '210': 'Concluído',
+    '215': 'Aprovado pelo CQ',
+    '220': 'Cancelado',
+    '225': 'Enviado sem CQ',
+    '240': 'Aguardando Informações',
+    '280': 'Controle de Qualidade',
+    '290': 'Reprovado pelo CQ',
+    '330': 'Em Análise',
+  };
+
+  const extractAuditValue = (value: string, field: string): string => {
+    if (!value || value === 'null' || value === 'Criação') return 'Criação';
+    
+    // Status is stored as JSON for historical reasons
+    if (field === 'status') {
+      if (value.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(value);
+          return parsed.status || '-';
+        } catch { return value; }
+      }
+      return statusCodeToText[value] || value;
+    }
+
+    // Deadlines are ISO strings
+    if (field === 'prazo' && value !== '-') {
+      try {
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString('pt-BR');
+        }
+      } catch { return value; }
+    }
+    
+    return value;
+  };
+
+  const formatAuditChange = (log: AuditEntry) => {
+    const oldRaw = extractAuditValue(log.OldValue, log.FieldChanged);
+    const newRaw = extractAuditValue(log.NewValue, log.FieldChanged);
+    
+    const isCreation = log.ActionType === 'CREATE' || !log.OldValue || log.OldValue === 'null';
+    
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Campo: {log.FieldChanged || 'Geral'}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-red-600 line-through opacity-70">{isCreation ? 'Novo' : oldRaw}</span>
+          <i className="fa-solid fa-arrow-right text-[8px] text-slate-300"></i>
+          <span className="text-green-600 font-bold">{newRaw}</span>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
@@ -191,12 +250,14 @@ export const AuditLog: React.FC<AuditLogProps> = ({ currentUser }) => {
                     <td className="px-5 py-3.5">
                       <div>
                         <p className="text-xs font-medium text-[#004080]">{log.UserName || '-'}</p>
-                        <p className="text-[10px] text-slate-400">{log.UserEmail || '-'}</p>
+                        <p className="text-[10px] text-blue-600">{log.UserEmail || (log.UserId ? log.UserId : '-')}</p>
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="text-[10px]">
-                        {log.OldValue && log.NewValue ? (
+                        {(log.ActionType === 'STATUS_CHANGE' || log.ActionType === 'UPDATE' || log.ActionType === 'CREATE') ? (
+                          formatAuditChange(log)
+                        ) : log.OldValue && log.NewValue ? (
                           <div className="flex flex-col gap-1">
                             <span className="text-slate-500">
                               De: <span className="text-red-600">{String(log.OldValue).substring(0, 100)}</span>

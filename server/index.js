@@ -8,6 +8,55 @@ require('dotenv').config();
 
 const serverStartTime = new Date();
 
+// Helper for legacy OA Date format (used by S_STAHIS)
+function dateToOADate(dateObj) {
+  if (!dateObj || isNaN(dateObj.getTime())) return null;
+  const epoch = new Date(Date.UTC(1899, 11, 30, 0, 0, 0, 0));
+  return (dateObj.getTime() - epoch.getTime()) / (1000 * 60 * 60 * 24);
+}
+
+// Helper to parse DD/MM/YYYY dates (Brazil timezone UTC-3)
+function parseDateBR(dateStr) {
+  if (!dateStr) return null;
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(dateStr)) {
+    const [day, month, year] = dateStr.split('/').map(Number);
+    return new Date(year, month - 1, day);
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day, 3, 0, 0, 0));
+  }
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Convert OADate to ISO string in Brazil timezone (UTC-3)
+function oaDateToISOString(oaDate) {
+  if (!oaDate || oaDate === null) return null;
+  const epoch = new Date(Date.UTC(1899, 11, 30, 0, 0, 0, 0));
+  const jsDate = new Date(epoch.getTime() + oaDate * 86400 * 1000);
+  const year = jsDate.getUTCFullYear();
+  const month = String(jsDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(jsDate.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Helper to resolve analyst name from SAP/ID
+async function resolveAnalystName(id) {
+  if (!id || id === 'ADRSIS' || id === 'SISTEMA') return id || 'SISTEMA';
+  try {
+    const cleanId = String(id).trim();
+    const paddedId = (/^\d+$/.test(cleanId) && cleanId.length < 8) ? cleanId.padStart(8, '0') : cleanId;
+    
+    const result = await sql.query(`SELECT TOP 1 NomeCompleto FROM E_OPEMAN WHERE LTRIM(RTRIM(SAP)) = '${cleanId}' OR LTRIM(RTRIM(SAP)) = '${paddedId}'`);
+    
+    return result.recordset.length > 0 ? result.recordset[0].NomeCompleto : id;
+  } catch (err) {
+    console.warn(`[AnalystLookup] Error resolving name for ${id}:`, err.message);
+    return id;
+  }
+}
+
 const app = express();
 const port = process.env.PORT || 3001;
 
@@ -28,8 +77,8 @@ const sqlConfig = {
     idleTimeoutMillis: 30000
   },
   options: {
-    encrypt: true, 
-    trustServerCertificate: true 
+    encrypt: true,
+    trustServerCertificate: true
   }
 };
 
@@ -58,7 +107,7 @@ async function startServer() {
       });
       return sapToNameMap;
     };
-    
+
     // 1. Auto Create Solicitantes Table
     console.log('[Server] Checking Users_Solicitantes table...');
     await sql.query`
@@ -196,7 +245,7 @@ async function startServer() {
         if (defConstraintRes.recordset[0]) {
           await sql.query`ALTER TABLE T_ESTPLA DROP CONSTRAINT ${sql.raw(defConstraintRes.recordset[0].name)}`;
         }
-        
+
         // Use NULL allowed for easier migration if data exists
         await sql.query`ALTER TABLE T_ESTPLA ALTER COLUMN NRO_ESTUDO VARCHAR(100) NULL`;
         console.log('[Server] T_ESTPLA NRO_ESTUDO migration successful');
@@ -282,6 +331,10 @@ async function startServer() {
           ALTER TABLE Requests ADD formType VARCHAR(50) NULL;
       IF COL_LENGTH('Requests', 'naturgyUnit') IS NULL
           ALTER TABLE Requests ADD naturgyUnit NVARCHAR(50) NULL;
+      IF COL_LENGTH('Requests', 'lastModifiedBy') IS NULL
+          ALTER TABLE Requests ADD lastModifiedBy NVARCHAR(200) NULL;
+      IF COL_LENGTH('Requests', 'userId') IS NULL
+          ALTER TABLE Requests ADD userId NVARCHAR(200) NULL;
     `;
 
     // Ensure T_ESTPLA also has metadata column if it doesn't
@@ -499,7 +552,7 @@ async function startServer() {
     app.post('/api/users', async (req, res) => {
       try {
         const { id, email, name, role, password, department, profileComplete, requiresPasswordChange, permissions, company, roleDescription, gb, sap, phone, area, naturgyUnit, isActive } = req.body;
-        
+
         const request = new sql.Request();
         request.input('id', sql.VarChar, id || '');
         request.input('email', sql.VarChar, email || '');
@@ -525,10 +578,10 @@ async function startServer() {
 
         const r = role ? role.toLowerCase() : '';
         if (r === 'analista' || r === 'adm' || r === 'administrador') {
-            const sapValueToUpdate = sap || gb || '';
-            console.log(`[UserMgmt] 💾 Updating E_OPEMAN for ${email}. SAP: ${sapValueToUpdate}, GB: ${gb}, Active: ${isActive}`);
-            
-            await request.input('sapUpdateFinal', sql.VarChar, sapValueToUpdate).query`
+          const sapValueToUpdate = sap || gb || '';
+          console.log(`[UserMgmt] 💾 Updating E_OPEMAN for ${email}. SAP: ${sapValueToUpdate}, GB: ${gb}, Active: ${isActive}`);
+
+          await request.input('sapUpdateFinal', sql.VarChar, sapValueToUpdate).query`
               UPDATE E_OPEMAN 
               SET [PASSWORD] = @finalPwd,
                   PERMISSOES = @permissions,
@@ -542,7 +595,7 @@ async function startServer() {
                   FUNCIONARIO = @isActiveLegacy
               WHERE EMAIL = @email
             `;
-            // Notice: We purposefully don't return early here anymore. We must update Users_Solicitantes as well!
+          // Notice: We purposefully don't return early here anymore. We must update Users_Solicitantes as well!
         }
 
         await request.query`
@@ -576,7 +629,7 @@ END
     // === Status Translation Mappings (Per User JSON) ===
     const statusTextToCode = {
       'Pendente': '330',              // Pré-Cadastro
-      'Em Análise': '100',            // Em Análise (Requests only)
+      'Em Análise': '330',            // Em Análise (Requests only)
       'Validado': '200',              // Aberto
       'Aguardando Execução': '200',    // Aberto
       'Em Execução': '205',           // Em andamento
@@ -589,7 +642,7 @@ END
       'Rejeitado': '220',              // Cancelado
       'Cancelado': '220'               // Cancelado
     };
-    
+
     // === Study Group Mappings (GRUPO_EST) ===
     const studyGroupToCode = {
       'Expansão de Rede': '100',
@@ -654,7 +707,7 @@ END
       '310': 'Demada Solicitada',
       '320': 'Vencido',
       '325': 'Contratado',
-      '330': 'Pré-Cadastro'
+      '330': 'Em Análise'
     };
 
     const areaCodeToText = {
@@ -692,7 +745,7 @@ END
       // Priority: 1) STATUS column from database (most recent), 2) statusCodeToText mapping, 3) meta.status as fallback
       let displayStatus = statusCodeToText[trimmedStatus] || trimmedStatus || meta.status;
       if (!displayStatus || displayStatus === 'undefined') displayStatus = 'Em Análise';
-      
+
       const sapCode = String(row.respSepla || '').trim();
       // Prioritize respSepla as the ID for assignedTo, and map it to a name
       // Try mapping with padding or without to find the most accurate user name
@@ -721,8 +774,8 @@ END
         studyNumber: row.studyNumber,
         // The source of truth for the assigned analyst is always RESP_SEPLA from T_ESTPLA (mapped as respSepla)
         assignedTo: sapCode || 'ADRSis - SISTEMA',
-        analystName: analystName, 
-        assignedToName: analystName, 
+        analystName: analystName,
+        assignedToName: analystName,
         requesterName: getField('requesterName'),
         requesterArea: displayArea,
         naturgyUnit: displayUnit,
@@ -735,8 +788,8 @@ END
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         requestDate: row.requestDate || meta.requestDate || meta.DAT_IN_SEP,
-        estimatedDeliveryDate: row.estimatedDeliveryDate || meta.estimatedDeliveryDate || meta.dtEntregaPrevista || meta.deliveryDeadline || null,
-        
+        estimatedDeliveryDate: row.estimatedDeliveryDate || meta.estimatedDeliveryDate || (row.rawDeliveryDate ? oaDateToISOString(row.rawDeliveryDate) : meta.dtEntregaPrevista) || meta.deliveryDeadline || null,
+
         rejectionReason: getField('MOTIVO_REJEICAO', 'rejectionReason'),
         holdReason: getField('MOTIVO_PAUSA', 'holdReason'),
         holdResponse: getField('RESPOSTA_PAUSA', 'holdResponse'),
@@ -776,7 +829,7 @@ END
         QDC: getField('QDC'),
         workHours: getField('HoraFunciona', 'workHours'),
         HoraFunciona: getField('HoraFunciona'),
-        
+
         gasPressureLevel: getField('PRESSAO', 'gasPressureLevel'),
         operationStartDate: getField('DATA_SOLIC_OPER', 'operationStartDate'),
         averageFlow: getField('VAZ_MEDIA', 'averageFlow'),
@@ -807,7 +860,7 @@ END
           wherePart1 = ` WHERE (user_id = @uid OR UPPER(LTRIM(RTRIM(SOL_ORGAO))) = UPPER(@areaCode) OR UPPER(LTRIM(RTRIM(SOL_ORGAO))) = UPPER(@areaName)) `;
         }
         // For ADM and Analyst, no WHERE filter - get all requests
-        console.log('[API] GET /api/requests - role:', role, 'userId:', userId, 'area:', area);
+        //console.log('[API] GET /api/requests - role:', role, 'userId:', userId, 'area:', area);
         const resReq = await sqlReq1.query(`
           SELECT 
             id, user_id, formType, meta_data,
@@ -847,7 +900,7 @@ END
             T.TITULO as studyTitle, T.LOCALIZ as address, T.Municipio as city, T.EmailContato as email, T.TEL_SOL as phone,
             ISNULL((SELECT TOP 1 createdAt FROM Requests WHERE id = CAST(T.id as varchar(100))), T.DataCriaReg) as createdAt, 
             T.DataCriaReg as updatedAt, LTRIM(RTRIM(CAST(T.RESP_SEPLA as varchar(50)))) as respSepla,
-            T.DAT_IN_SEP as requestDate, T.dtEntregaPrevista as estimatedDeliveryDate,
+            T.DAT_IN_SEP as requestDate, T.dtEntregaPrevista as rawDeliveryDate,
             NULL as MOTIVO_REJEICAO, NULL as MOTIVO_PAUSA, NULL as RESPOSTA_PAUSA, NULL as LINK_MAPA, NULL as TIPO_ARQUIVO, T.UF, NULL as TIPO_GASIFICACAO,
             T.NOME_CLIENTE, NULL as PONTO_ENTREGA, NULL as INCREMENTO_CONSUMO, NULL as DIAS_TRABALHO_SEMANA, NULL as VAZAO_TOTAL_PREVISTA,
             NULL as PRESSAO_MINIMA, NULL as CODIGO_SAP_ISU, NULL as NOME_INDUSTRIA, NULL as CONSUMO_ATUAL, NULL as PRESSAO_CONTRATUAL, NULL as FAIXA_PRESSAO_ATUAL,
@@ -860,7 +913,7 @@ END
         `);
 
         const combinedMap = new Map();
-         
+
         // 1. First Pass: Legacy T_ESTPLA (Official studies)
         resLeg.recordset.forEach(row => {
           combinedMap.set(String(row.id), row);
@@ -874,7 +927,7 @@ END
           }
         });
 
-        const combined = Array.from(combinedMap.values()).map(row => 
+        const combined = Array.from(combinedMap.values()).map(row =>
           mapStudyRow(row, sapToNameMap, statusCodeToText, areaCodeToText, unitCodeToText)
         );
 
@@ -885,7 +938,7 @@ END
           const numB = b.studyNumber || '';
           return numB.localeCompare(numA, undefined, { numeric: true, sensitivity: 'base' });
         });
-        
+
         res.json(combined);
       } catch (err) {
         console.error('[Server] Fatal Error fetching requests:', err.message);
@@ -907,7 +960,7 @@ END
           FROM Requests 
           WHERE NRO_ESTUDO = @studyNumber
         `;
-        
+
         // T_ESTPLA uses NRO_ESTUDO or IDSIGEP
         const r2 = await sqlReq.query`
           SELECT *, 
@@ -958,7 +1011,7 @@ END
         console.log('[QCHistory] Querying for studyNumber:', studyNumber);
         const sqlReq = new sql.Request();
         sqlReq.input('studyNumber', sql.VarChar, studyNumber);
-        
+
         const result = await sqlReq.query`
           SELECT 
             IDCHKLST,
@@ -975,14 +1028,14 @@ END
           WHERE FK_T_ESTPLA = @studyNumber
           ORDER BY DATA_VALIDACAO DESC
         `;
-        
+
         console.log('[QCHistory] Query returned rows:', result.recordset.length);
-        
+
         const excelToJSDate = (excelDate) => {
           if (!excelDate) return null;
           return new Date((excelDate - 25569) * 86400 * 1000).toISOString();
         };
-        
+
         const history = result.recordset.map(row => ({
           id: row.IDCHKLST,
           studyNumber: row.FK_T_ESTPLA,
@@ -1000,7 +1053,7 @@ END
             13: row.QT_DEFCTO13, 14: row.QT_DEFCTO14, 15: row.QT_DEFCTO15
           }
         }));
-        
+
         res.json(history);
       } catch (err) {
         console.error('[QCHistory] Error fetching QC history:', err.message, err.stack);
@@ -1013,7 +1066,7 @@ END
       console.log('[Audit] Received request to create audit log:', req.body);
       try {
         const { studyNumber, actionType, fieldChanged, oldValue, newValue, userId, userName } = req.body;
-        
+
         const sqlReq = new sql.Request();
         sqlReq.input('studyNumber', sql.VarChar, studyNumber || null);
         sqlReq.input('actionType', sql.VarChar, actionType);
@@ -1023,12 +1076,12 @@ END
         sqlReq.input('userId', sql.VarChar, userId || null);
         sqlReq.input('userName', sql.NVarChar(200), userName || null);
         sqlReq.input('timestamp', sql.DateTime, new Date());
-        
+
         const result = await sqlReq.query`
           INSERT INTO T_AUDIT (StudyNumber, ActionType, FieldChanged, OldValue, NewValue, UserId, UserName, Timestamp)
           VALUES (@studyNumber, @actionType, @fieldChanged, @oldValue, @newValue, @userId, @userName, @timestamp)
         `;
-        
+
         console.log('[Audit] Audit log created successfully');
         res.json({ success: true, message: 'Audit log created' });
       } catch (err) {
@@ -1037,25 +1090,75 @@ END
       }
     });
 
+    // 9c. GET - Fetch Interconnections (I_ESTPLA)
+    app.get('/api/interconnections/:studyNumber', async (req, res) => {
+      try {
+        const { studyNumber } = req.params;
+        console.log('[I_ESTPLA] Fetching connections for study:', studyNumber);
+        
+        const sqlReq = new sql.Request();
+        sqlReq.input('studyNumber', sql.VarChar, studyNumber || '');
+        
+        const result = await sqlReq.query`
+          SELECT OID, IDSIGEP, NRO_ESTUDO, PRESSAO, MATERIAL, DIAMETRO, LOGRADOURO, INDICACAO
+          FROM I_ESTPLA 
+          WHERE NRO_ESTUDO = @studyNumber OR CAST(IDSIGEP AS VARCHAR) = @studyNumber
+          ORDER BY OID
+        `;
+        
+        console.log('[I_ESTPLA] Found:', result.recordset.length, 'connections');
+        res.json({ success: true, data: result.recordset });
+      } catch (err) {
+        console.error('[I_ESTPLA] Error:', err.message);
+        res.status(500).json({ error: 'Erro ao buscar interconexões', details: err.message });
+      }
+    });
+
+    // 9d. GET - Fetch QC History (T_CHKLST)
+    app.get('/api/qc-history/:studyNumber', async (req, res) => {
+      try {
+        const { studyNumber } = req.params;
+        console.log('[T_CHKLST] Fetching QC history for study:', studyNumber);
+        
+        const sqlReq = new sql.Request();
+        sqlReq.input('studyNumber', sql.VarChar, studyNumber || '');
+        
+        const result = await sqlReq.query`
+          SELECT IDCHKLST, FK_T_ESTPLA, STATUSCHK, OPERADOR_VALIDACAO, COMENTARIOS, DataValidacao
+          FROM T_CHKLST 
+          WHERE FK_T_ESTPLA = @studyNumber
+          ORDER BY DataValidacao DESC
+        `;
+        
+        console.log('[T_CHKLST] Found:', result.recordset.length, 'records');
+        res.json({ success: true, data: result.recordset });
+      } catch (err) {
+        console.error('[T_CHKLST] Error:', err.message);
+        res.status(500).json({ error: 'Erro ao buscar histórico de QC', details: err.message });
+      }
+    });
+
     // 9b. GET - Fetch Audit Logs
     app.get('/api/audit', async (req, res) => {
       console.log('[Audit] Received request to fetch audit logs', req.query);
       try {
         const { studyNumber, actionType, userId, limit = 100 } = req.query;
-        
+
         console.log('[Audit] Filters - studyNumber:', studyNumber, 'actionType:', actionType, 'userId:', userId);
-        
+
         // Join com E_OPEMAN para obter email do usuário
         let query = `
           SELECT TOP(@limit) 
             A.ID, A.StudyNumber, A.ActionType, A.FieldChanged, A.OldValue, A.NewValue,
-            A.UserId, A.UserName, A.Timestamp, E.EMAIL as UserEmail
+            A.UserId, A.UserName, A.Timestamp, 
+            COALESCE(E.EMAIL, U.EMAIL) as UserEmail
           FROM T_AUDIT A
           LEFT JOIN E_OPEMAN E ON UPPER(LTRIM(RTRIM(A.UserName))) = UPPER(LTRIM(RTRIM(E.NOME)))
+          LEFT JOIN Users_Solicitantes U ON A.UserId = U.id
           WHERE 1=1
         `;
         const params = [];
-        
+
         if (studyNumber) {
           query += ' AND A.StudyNumber = @studyNumber';
           params.push({ name: 'studyNumber', type: sql.VarChar, value: studyNumber });
@@ -1068,24 +1171,24 @@ END
           query += ' AND A.UserId = @userId';
           params.push({ name: 'userId', type: sql.VarChar, value: userId });
         }
-        
+
         query += ' ORDER BY A.Timestamp DESC';
         params.push({ name: 'limit', type: sql.Int, value: parseInt(limit) });
-        
+
         const sqlReq = new sql.Request();
         params.forEach(p => sqlReq.input(p.name, p.type, p.value));
-        
+
         const result = await sqlReq.query(query);
-        
+
         console.log('[Audit] Query result records:', result.recordset.length);
-        console.log('[Audit] Sample records:', result.recordset.slice(0, 3).map(r => ({ 
-          ID: r.ID, 
-          StudyNumber: r.StudyNumber, 
+        console.log('[Audit] Sample records:', result.recordset.slice(0, 3).map(r => ({
+          ID: r.ID,
+          StudyNumber: r.StudyNumber,
           ActionType: r.ActionType,
           UserName: r.UserName,
           UserEmail: r.UserEmail
         })));
-        
+
         console.log('[Audit] Fetched audit logs:', result.recordset.length);
         res.json(result.recordset);
       } catch (err) {
@@ -1099,16 +1202,16 @@ END
       console.log('[Audit] Received request for study audit:', req.params.studyNumber);
       try {
         const { studyNumber } = req.params;
-        
+
         const sqlReq = new sql.Request();
         sqlReq.input('studyNumber', sql.VarChar, studyNumber);
-        
+
         const result = await sqlReq.query`
           SELECT * FROM T_AUDIT 
           WHERE StudyNumber = @studyNumber
           ORDER BY Timestamp DESC
         `;
-        
+
         console.log('[Audit] Fetched study audit logs:', result.recordset.length);
         res.json(result.recordset);
       } catch (err) {
@@ -1137,269 +1240,298 @@ END
       'Cancelado': 220,               // Cancelado
     };
 
-  const requestLocks = new Set();
+    const requestLocks = new Set();
 
-  app.post('/api/requests', async (req, res) => {
-    console.log(`[Server] 📥 Received POST /api/requests - ID: ${req.body?.id}, Status: ${req.body?.status}, StudyNumber: ${req.body?.studyNumber}`);
-    const data = req.body;
-    
-    if (!data || Object.keys(data).length === 0) {
-      return res.status(400).json({ error: 'Dados ausentes' });
-    }
+    app.post('/api/requests', async (req, res) => {
+      console.log(`[Server] 📥 Received POST /api/requests - ID: ${req.body?.id}, Status: ${req.body?.status}, StudyNumber: ${req.body?.studyNumber}`);
+      console.log(`[Server] 👤 User fields: userId="${req.body?.userId}", user_id="${req.body?.user_id}", lastModifiedBy="${req.body?.lastModifiedBy}", requesterName="${req.body?.requesterName}", assignedTo="${req.body?.assignedTo}"`);
+      const data = req.body;
 
-    if (!data.user_id && !data.userId) {
-      return res.status(400).json({ error: 'Usuário não identificado' });
-    }
-
-    const lockKey = 'global_save_lock';
-    while (requestLocks.has(lockKey)) {
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    requestLocks.add(lockKey);
-
-    try {
-
-    let numericStatus = textToStatusCode[data.status] || 330;
-    console.log(`[Server] 🔍 textToStatusCode lookup: "${data.status}" -> ${numericStatus}`);
-
-    // --- Status Override for Quality Control (T_CHKLST -> T_ESTPLA Synchronization) ---
-    // Rule: Derive technical status from QC results ONLY when the status being sent is a QC result
-    // PRIORITY: Check if sending to QC (new request) first, before checking existing QC results
-    
-    // Primeiro, verificar se o status sendo enviado é um status de CQ (resultado)
-    const isQCResultStatus = ['Controle de Qualidade', 'Aprovado pelo CQ', 'Reprovado pelo CQ', 'Em Execução'].includes(data.status);
-    
-    if (data.status === 'Controle de Qualidade') {
-      // Se o status sendo enviado é "Controle de Qualidade" (nova revisão), garantir 280
-      numericStatus = 280;
-    } else if (data.status === 'Em Execução') {
-      // Em Execução deve ser 205, não 290 - IGNORAR qcData da revisão anterior
-      numericStatus = 205;
-    } else if ((data.status === 'Aprovado pelo CQ' || data.status === 'Reprovado pelo CQ') && data.qcData && data.qcData.qcStatusCQ) {
-      // Apenas substituir se o status sendo enviado é Aprovado/Reprovado E tem resultado de QC
-      const qcResult = data.qcData.qcStatusCQ;
-      if (qcResult === 'Reprovado') {
-        numericStatus = 290;
-      } else if (qcResult === 'Aprovado') {
-        numericStatus = 215;
+      if (!data || Object.keys(data).length === 0) {
+        return res.status(400).json({ error: 'Dados ausentes' });
       }
-    } else if (data.qcData && data.qcData.qcStatusCQ && !isQCResultStatus) {
-      // Se tem qcData mas o status NÃO é um status de CQ, IGNORAR o qcData e usar o status enviado
-      // Isso evita que dados de revisões anteriores sobrescrevam o status atual
-      // numericStatus já tem o valor correto de textToStatusCode
-    }
-    
-    // Explicit override for "Em Análise" or "Pendente" to ensure 330
-    // Only apply if the status is actually "Em Análise" or "Pendente", not "Aguardando Execução"
-    if ((data.status === 'Em Análise' || data.status === 'Em Analise' || data.status === 'Pendente') && 
-        !data.status.includes('Aguardando') && !data.status.includes('Exec')) {
-      numericStatus = 330;
-    }
-    
-    // Rule: Move to T_ESTPLA if status is validated (2xx) OR if it ALREADY exists there (Sync corrections)
-    let shouldMoveToT_ESTPLA = numericStatus >= 200 && numericStatus < 300;
-    
-    // Check if it already exists in T_ESTPLA to ensure status sync for corrections (Status 330)
-    if (!shouldMoveToT_ESTPLA && data.id) {
-       try {
-         const checkRes = await sql.query`SELECT 1 FROM T_ESTPLA WHERE id = ${String(data.id)}`;
-         if (checkRes.recordset.length > 0) {
-           console.log(`[StatusSync] 🔄 ID ${data.id} existing in T_ESTPLA. Enabling sync for status ${numericStatus}.`);
-           shouldMoveToT_ESTPLA = true;
-         }
-       } catch (err) {
-         console.warn('[StatusSync] Error checking T_ESTPLA existence', err.message);
-       }
-    }
 
-    console.log(`[StatusSync] 🔄 Incoming: "${data.status}" -> Code: ${numericStatus} | shouldMoveToT_ESTPLA: ${shouldMoveToT_ESTPLA} | ID: ${data.id}`);
+      if (!data.user_id && !data.userId) {
+        return res.status(400).json({ error: 'Usuário não identificado' });
+      }
 
-    const statusVal = numericStatus;
-    const now = new Date();
-    // Always use current date for submissions/edits as requested by the user
-    const effectiveRequestDate = now; 
+      const lockKey = 'global_save_lock';
+      while (requestLocks.has(lockKey)) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      requestLocks.add(lockKey);
 
-    // Formatting Helpers
-    const toTitleCase = (str) => {
-      if (!str) return '';
-      return String(str)
-        .toLowerCase()
-        .split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-    };
+      try {
 
-    // Field Mappings for Legacy T_ESTPLA persistence
-    const areaMapping = {
-      "ADR-Análise e Dimensionamento de Rede": "942",
-      "BDG - Balanço de Gás": "955",
-      "CCAU - Centro de Controle e Atendimento a Urgência": "943",
-      "CCOR-Centro de Controle e Operação da Rede": "952",
-      "CCR NovaDutra": "947",
-      "Coordenação de Mercado Termoelétrico": "936",
-      "Delegação Centro Sul": "929",
-      "Delegação Comercial Lagos e Zona Fluminense": "928",
-      "Delegação Leste": "921",
-      "Delegação Leste Fluminense Litorânea": "935",
-      "Delegação Leste Fluminense Serrana": "938",
-      "Delegação Norte": "930",
-      "Delegação Norte Fluminense Litorânea": "934",
-      "Delegação Oeste": "922",
-      "Delegação Sul Fluminense e Baixada": "927",
-      "GENE - Gerência de Novas Edificações": "923",
-      "GERAT-Regulação e Aprovisionamento de Tarifas": "925",
-      "Gerência Comercial - GNSPS": "829",
-      "Gerência de Gestão de Ativos": "940",
-      "GESET - Gerência de Serviços Técnicos Rio": "924",
-      "GESET-LE - Gerência de Serviços Técnicos LESTE": "926",
-      "Gestão de Energia": "953",
-      "GGC-Gerência de Grandes Clientes": "230",
-      "GGCSPS - Grandes Clientes": "944",
-      "GNF/SPS - Vendas Industriais": "932",
-      "Grandes Clientes e Soluções Energéticas Sul": "941",
-      "Operacional - SPS": "931",
-      "Operacional - SPS": "931",
-      "Operações Centrais de Rede": "933",
-      "PMI – Planificação da Manutenção e Integridade": "954",
-      "Planificação da Expansão": "948",
-      "ST Zona Metropolitana RJ": "950",
-      "Soluções de Mobilidade": "945"
-    };
+        let numericStatus;
+        if (data.status && !isNaN(data.status)) {
+          numericStatus = parseInt(data.status);
+          console.log(`[Server] 🔢 Status is already numeric: ${data.status} -> ${numericStatus}`);
+        } else {
+          numericStatus = textToStatusCode[data.status] || 330;
+          console.log(`[Server] 🔍 textToStatusCode lookup: "${data.status}" -> ${numericStatus}`);
+        }
 
-    const difficultyMapping = {
-      "FACIL": 1, "Fácil": 1, "Facil": 1,
-      "MEDIO": 2, "Médio": 2, "Medio": 2,
-      "DIFICIL": 3, "Difícil": 3, "Dificil": 3
-    };
+        // --- Status Override for Quality Control (T_CHKLST -> T_ESTPLA Synchronization) ---
+        // Rule: Derive technical status from QC results ONLY when the status being sent is a QC result
+        // PRIORITY: Check if sending to QC (new request) first, before checking existing QC results
 
-    const studyGroupMapping = {
-      "Expansão de Rede": "100", "Expansão": "100",
-      "Renovação de Rede": "110", "Renovação": "110",
-      "Operação de Rede": "120",
-      "Confiabilidade da Rede": "140",
-      "Conversão GN": "150",
-      "Solicitação Gerencial": "170",
-      "Saturação": "180",
-      "Modelos de Cálculo": "190",
-      "Reforço": "200",
-      "Remanejamento": "210",
-      "Incremento de Vazão": "220",
-      "GNNC": "230",
-      "Setorização ERDs": "240",
-      "Expansão GNV": "250",
-      "Outra": "160"
-    };
+        // Primeiro, verificar se o status sendo enviado é um status de CQ (resultado)
+        const isQCResultStatus = ['Controle de Qualidade', 'Aprovado pelo CQ', 'Reprovado pelo CQ', 'Em Execução'].includes(data.status);
 
-    const studySubTypeMapping = {
-      "Comercial": "300",
-      "Residencial": "310",
-      "Industrial": "315",
-      "Climatização": "320",
-      "Termogeração": "325",
-      "GNV": "330",
-      "MECOM": "335",
-      "Gaseificação Total": "340",
-      "Gaseificação Parcial": "370",
-      "Emergencial": "345",
-      "Programado": "350",
-      "Simulação": "355",
-      "Cogeração": "360",
-      "Levantamento de Dados": "380",
-      "Consulta Avulsas": "390",
-      "Grande Comércio": "400",
-      "GNC": "410",
-      "Infra-estrutura": "420",
-      "Renovação": "430",
-      "GNV Frota": "440",
-      "Geração": "450",
-      "Geração de Emergência": "460",
-      "Reforço": "470",
-      "Remanejamento": "480",
-      "Residencial/Comercial": "490",
-      "Industrial/Geração Continua": "491",
-      "Geração de Ponta": "492",
-      "Geração Contínua": "493"
-    };
+        if (data.status === 'Controle de Qualidade') {
+          // Se o status sendo enviado é "Controle de Qualidade" (nova revisão), garantir 280
+          numericStatus = 280;
+        } else if (data.status === 'Em Execução') {
+          // Em Execução deve ser 205, não 290 - IGNORAR qcData da revisão anterior
+          numericStatus = 205;
+        } else if ((data.status === 'Aprovado pelo CQ' || data.status === 'Reprovado pelo CQ') && data.qcData && data.qcData.qcStatusCQ) {
+          // Apenas substituir se o status sendo enviado é Aprovado/Reprovado E tem resultado de QC
+          const qcResult = data.qcData.qcStatusCQ;
+          if (qcResult === 'Reprovado') {
+            numericStatus = 290;
+          } else if (qcResult === 'Aprovado') {
+            numericStatus = 215;
+          }
+        } else if (data.qcData && data.qcData.qcStatusCQ && !isQCResultStatus) {
+          // Se tem qcData mas o status NÃO é um status de CQ, IGNORAR o qcData e usar o status enviado
+          // Isso evita que dados de revisões anteriores sobrescrevam o status atual
+          // numericStatus já tem o valor correto de textToStatusCode
+        }
 
-    const gasTypeMapping = {
-      "GN": "GN", "Gás Natural": "GN",
-      "GLP": "GP", "GP": "GP",
-      "GNL": "GL",
-      "GNC": "GC"
-    };
+        // Explicit override for "Em Análise" or "Pendente" to ensure 330
+        // Only apply if the status is actually "Em Análise" or "Pendente", not "Aguardando Execução"
+        if ((data.status === 'Em Análise' || data.status === 'Em Analise' || data.status === 'Pendente') &&
+          !data.status.includes('Aguardando') && !data.status.includes('Exec')) {
+          numericStatus = 330;
+        }
 
-    const gniTypeMapping = {
-       "Residencial/Comercial - Estudo de Viabilidade Técnica": 1,
-       "Winflow": 2, "Actualización Red y consumos": 2,
-       "Grandes Clientes (IND/GNV/GER/ETC) - Estudo de Viabilidade Técnica": 3,
-       "Planificação de Novos municípios": 4,
-       "Planificação Reforços/Religamento MP/BP": 5,
-       "Planificação Reforços/Religamento AP": 6,
-       "Abastecimento Novos Municípios GNC": 7,
-       "Estudos Especiais": 8,
-       "Estudos GNNC / Manobras": 9
-    };
+        // Rule: Move to T_ESTPLA if status is validated (2xx-2xx except 220 rejected) OR if it ALREADY exists there (Sync corrections)
+        // Exclude 220 (Rejected/Canceled) from T_ESTPLA
+        let shouldMoveToT_ESTPLA = numericStatus >= 200 && numericStatus < 300 && numericStatus !== 220;
 
-    const formMapping = {
-      'PE.00492-FO.01': 1,
-      'PE.00492-FO.02': 2,
-      'PE.00492-FO.03': 3,
-      'PE.00492-FO.04': 4
-    };
+        // Check if it already exists in T_ESTPLA to ensure status sync for corrections (Status 330)
+        if (!shouldMoveToT_ESTPLA && data.id) {
+          try {
+            const checkRes = await sql.query`SELECT 1 FROM T_ESTPLA WHERE id = ${String(data.id)}`;
+            if (checkRes.recordset.length > 0) {
+              console.log(`[StatusSync] 🔄 ID ${data.id} existing in T_ESTPLA. Enabling sync for status ${numericStatus}.`);
+              shouldMoveToT_ESTPLA = true;
+            }
+          } catch (err) {
+            console.warn('[StatusSync] Error checking T_ESTPLA existence', err.message);
+          }
+        }
 
-    const unitMapping = {
-      "CEG": 1, "Capital": 1,
-      "CEG RIO": 2, "Interior": 2,
-      "SPS": 3, "CEG SPS": 3
-    };
+        console.log(`[StatusSync] 🔄 Incoming: "${data.status}" -> Code: ${numericStatus} | shouldMoveToT_ESTPLA: ${shouldMoveToT_ESTPLA} | ID: ${data.id}`);
 
-    const mappedArea = areaMapping[data.requesterArea] || data.requesterArea || '';
-    const mappedForm = formMapping[data.formType] || data.formType || '';
-    const mappedUnit = unitMapping[data.empresa || data.naturgyUnit] || data.empresa || data.naturgyUnit || '';
-    const mappedCity = data.city ? toTitleCase(data.city).trim() : '';
+        const statusVal = numericStatus;
+        const now = new Date();
+        // Always use current date for submissions/edits as requested by the user
+        const effectiveRequestDate = now;
 
-    try {
-      // Helper to handle legacy FLOAT dates (OADate format)
-      const dateToOADate = (dateObj) => {
-        if (!dateObj || isNaN(dateObj.getTime())) return null;
-        const epoch = new Date(1899, 11, 30);
-        return (dateObj.getTime() - epoch.getTime()) / (1000 * 60 * 60 * 24);
-      };
+        // Formatting Helpers
+        const toTitleCase = (str) => {
+          if (!str) return '';
+          return String(str)
+            .toLowerCase()
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+        };
 
-      // Robust Numeric Parsing Helpers
-      const safeParseFloat = (val) => {
-        if (val === null || val === undefined || val === '') return null;
-        if (typeof val === 'number') return val;
-        const clean = String(val).replace(',', '.').trim();
-        const p = parseFloat(clean);
-        return isNaN(p) ? null : p;
-      };
+        // Field Mappings for Legacy T_ESTPLA persistence
+        const areaMapping = {
+          "ADR-Análise e Dimensionamento de Rede": "942",
+          "BDG - Balanço de Gás": "955",
+          "CCAU - Centro de Controle e Atendimento a Urgência": "943",
+          "CCOR-Centro de Controle e Operação da Rede": "952",
+          "CCR NovaDutra": "947",
+          "Coordenação de Mercado Termoelétrico": "936",
+          "Delegação Centro Sul": "929",
+          "Delegação Comercial Lagos e Zona Fluminense": "928",
+          "Delegação Leste": "921",
+          "Delegação Leste Fluminense Litorânea": "935",
+          "Delegação Leste Fluminense Serrana": "938",
+          "Delegação Norte": "930",
+          "Delegação Norte Fluminense Litorânea": "934",
+          "Delegação Oeste": "922",
+          "Delegação Sul Fluminense e Baixada": "927",
+          "GENE - Gerência de Novas Edificações": "923",
+          "GERAT-Regulação e Aprovisionamento de Tarifas": "925",
+          "Gerência Comercial - GNSPS": "829",
+          "Gerência de Gestão de Ativos": "940",
+          "GESET - Gerência de Serviços Técnicos Rio": "924",
+          "GESET-LE - Gerência de Serviços Técnicos LESTE": "926",
+          "Gestão de Energia": "953",
+          "GGC-Gerência de Grandes Clientes": "230",
+          "GGCSPS - Grandes Clientes": "944",
+          "GNF/SPS - Vendas Industriais": "932",
+          "Grandes Clientes e Soluções Energéticas Sul": "941",
+          "Operacional - SPS": "931",
+          "Operacional - SPS": "931",
+          "Operações Centrais de Rede": "933",
+          "PMI – Planificação da Manutenção e Integridade": "954",
+          "Planificação da Expansão": "948",
+          "ST Zona Metropolitana RJ": "950",
+          "Soluções de Mobilidade": "945"
+        };
 
-      const safeParseInt = (val) => {
-        if (val === null || val === undefined || val === '') return 0;
-        if (typeof val === 'number') return Math.floor(val);
-        const clean = String(val).replace(/[^0-9]/g, '').trim();
-        const p = parseInt(clean);
-        return isNaN(p) ? 0 : p;
-      };
-      
-      const safeFloat = safeParseFloat;
-      const safeInt = safeParseInt;
+        const difficultyMapping = {
+          "FACIL": 1, "Fácil": 1, "Facil": 1,
+          "MEDIO": 2, "Médio": 2, "Medio": 2,
+          "DIFICIL": 3, "Difícil": 3, "Dificil": 3
+        };
 
-      // 1. Resolve Analyst ID (SAP lookup)
-      let respSeplaValue = String(data.assignedTo || '');
-      if (respSeplaValue) {
+        const studyGroupMapping = {
+          "Expansão de Rede": "100", "Expansão": "100",
+          "Renovação de Rede": "110", "Renovação": "110",
+          "Operação de Rede": "120",
+          "Confiabilidade da Rede": "140",
+          "Conversão GN": "150",
+          "Solicitação Gerencial": "170",
+          "Saturação": "180",
+          "Modelos de Cálculo": "190",
+          "Reforço": "200",
+          "Remanejamento": "210",
+          "Incremento de Vazão": "220",
+          "GNNC": "230",
+          "Setorização ERDs": "240",
+          "Expansão GNV": "250",
+          "Outra": "160"
+        };
+
+        const studySubTypeMapping = {
+          "Comercial": "300",
+          "Residencial": "310",
+          "Industrial": "315",
+          "Climatização": "320",
+          "Termogeração": "325",
+          "GNV": "330",
+          "MECOM": "335",
+          "Gaseificação Total": "340",
+          "Gaseificação Parcial": "370",
+          "Emergencial": "345",
+          "Programado": "350",
+          "Simulação": "355",
+          "Cogeração": "360",
+          "Levantamento de Dados": "380",
+          "Consulta Avulsas": "390",
+          "Grande Comércio": "400",
+          "GNC": "410",
+          "Infra-estrutura": "420",
+          "Renovação": "430",
+          "GNV Frota": "440",
+          "Geração": "450",
+          "Geração de Emergência": "460",
+          "Reforço": "470",
+          "Remanejamento": "480",
+          "Residencial/Comercial": "490",
+          "Industrial/Geração Continua": "491",
+          "Geração de Ponta": "492",
+          "Geração Contínua": "493"
+        };
+
+        const gasTypeMapping = {
+          "GN": "GN", "Gás Natural": "GN",
+          "GLP": "GP", "GP": "GP",
+          "GNL": "GL",
+          "GNC": "GC"
+        };
+
+        const gniTypeMapping = {
+          "Residencial/Comercial - Estudo de Viabilidade Técnica": 1,
+          "Winflow": 2, "Actualización Red y consumos": 2,
+          "Grandes Clientes (IND/GNV/GER/ETC) - Estudo de Viabilidade Técnica": 3,
+          "Planificação de Novos municípios": 4,
+          "Planificação Reforços/Religamento MP/BP": 5,
+          "Planificação Reforços/Religamento AP": 6,
+          "Abastecimento Novos Municípios GNC": 7,
+          "Estudos Especiais": 8,
+          "Estudos GNNC / Manobras": 9
+        };
+
+        const formMapping = {
+          'PE.00492-FO.01': 1,
+          'PE.00492-FO.02': 2,
+          'PE.00492-FO.03': 3,
+          'PE.00492-FO.04': 4
+        };
+
+        const unitMapping = {
+          "CEG": 1, "Capital": 1,
+          "CEG RIO": 2, "Interior": 2,
+          "SPS": 3, "CEG SPS": 3
+        };
+
+        const mappedArea = areaMapping[data.requesterArea] || data.requesterArea || '';
+        const mappedForm = formMapping[data.formType] || data.formType || '';
+        const mappedCity = data.city ? toTitleCase(data.city).trim() : '';
+
+        // Buscar EMPRESA de G_MUNEST conforme município/cidade escolhido
+        let empresaFromMunest = '';
         try {
-          console.log(`[SAP Lookup] 🔍 Attempting to resolve SAP for: ${respSeplaValue}`);
-          const cleanId = respSeplaValue.trim();
-          const paddedId = (/^\d+$/.test(cleanId) && cleanId.length < 8) ? cleanId.padStart(8, '0') : cleanId;
-          
-          const sapReq = new sql.Request();
-          sapReq.input('cleanId', sql.VarChar, cleanId);
-          sapReq.input('upperCleanId', sql.VarChar, cleanId.toUpperCase());
-          sapReq.input('paddedId', sql.VarChar, paddedId);
+          if (mappedCity) {
+            const munestRes = await sql.query`
+              SELECT TOP 1 RTRIM(LTRIM(EMPRESA)) as emp 
+              FROM G_MUNEST 
+              WHERE NOME = ${mappedCity} OR RTRIM(LTRIM(NOME)) = ${mappedCity}
+            `;
+            if (munestRes.recordset.length > 0) {
+              empresaFromMunest = munestRes.recordset[0].emp || '';
+            }
+          }
+        } catch (munestErr) {
+          console.warn('[T_ESTPLA] Error fetching EMPRESA from G_MUNEST:', munestErr.message);
+        }
 
-          const userSapResult = await sapReq.query(`
+        // Se encontró EMPRESA en G_MUNEST, usar; sino usar mapeamento tradicional
+        const mappedUnit = empresaFromMunest 
+          ? empresaFromMunest 
+          : (unitMapping[data.empresa || data.naturgyUnit] || data.empresa || data.naturgyUnit || '');
+
+        try {
+          // Helper to handle legacy FLOAT dates (OADate format)
+          const dateToOADate = (dateObj) => {
+            if (!dateObj || isNaN(dateObj.getTime())) return null;
+            const epoch = new Date(1899, 11, 30);
+            return (dateObj.getTime() - epoch.getTime()) / (1000 * 60 * 60 * 24);
+          };
+
+          // Robust Numeric Parsing Helpers
+          const safeParseFloat = (val) => {
+            if (val === null || val === undefined || val === '') return null;
+            if (typeof val === 'number') return val;
+            const clean = String(val).replace(',', '.').trim();
+            const p = parseFloat(clean);
+            return isNaN(p) ? null : p;
+          };
+
+          const safeParseInt = (val) => {
+            if (val === null || val === undefined || val === '') return 0;
+            if (typeof val === 'number') return Math.floor(val);
+            const clean = String(val).replace(/[^0-9]/g, '').trim();
+            const p = parseInt(clean);
+            return isNaN(p) ? 0 : p;
+          };
+
+          const safeFloat = safeParseFloat;
+          const safeInt = safeParseInt;
+
+          // 1. Resolve Analyst ID (SAP lookup)
+          let respSeplaValue = String(data.assignedTo || '');
+          if (respSeplaValue) {
+            try {
+              console.log(`[SAP Lookup] 🔍 Attempting to resolve SAP for: ${respSeplaValue}`);
+              const cleanId = respSeplaValue.trim();
+              const paddedId = (/^\d+$/.test(cleanId) && cleanId.length < 8) ? cleanId.padStart(8, '0') : cleanId;
+
+              const sapReq = new sql.Request();
+              sapReq.input('cleanId', sql.VarChar, cleanId);
+              sapReq.input('upperCleanId', sql.VarChar, cleanId.toUpperCase());
+              sapReq.input('paddedId', sql.VarChar, paddedId);
+
+              const userSapResult = await sapReq.query(`
             SELECT TOP 1 RTRIM(LTRIM(SAP)) as SAP, NomeCompleto 
             FROM E_OPEMAN 
             WHERE UPPER(LTRIM(RTRIM(Email))) = @upperCleanId
@@ -1409,165 +1541,206 @@ END
                OR LTRIM(RTRIM(SAP)) = @cleanId
                OR LTRIM(RTRIM(SAP)) = @paddedId
           `);
-          if (userSapResult.recordset.length > 0 && userSapResult.recordset[0].SAP) {
-            respSeplaValue = userSapResult.recordset[0].SAP;
-            console.log(`[SAP Lookup] ✅ Resolved: ${userSapResult.recordset[0].NomeCompleto} (SAP: ${respSeplaValue})`);
-          } else {
-            console.warn(`[SAP Lookup] ⚠️ Could not resolve SAP for "${respSeplaValue}". Keeping original value.`);
+              if (userSapResult.recordset.length > 0 && userSapResult.recordset[0].SAP) {
+                respSeplaValue = userSapResult.recordset[0].SAP;
+                console.log(`[SAP Lookup] ✅ Resolved: ${userSapResult.recordset[0].NomeCompleto} (SAP: ${respSeplaValue})`);
+              } else {
+                console.warn(`[SAP Lookup] ⚠️ Could not resolve SAP for "${respSeplaValue}". Keeping original value.`);
+              }
+            } catch (sapErr) {
+              console.error(`[SAP Lookup] ❌ Error resolving SAP for ${respSeplaValue}:`, sapErr.message);
+            }
           }
-        } catch (sapErr) {
-          console.error(`[SAP Lookup] ❌ Error resolving SAP for ${respSeplaValue}:`, sapErr.message);
-        }
-      }
 
-      // Final safeguard: Never save an email to RESP_SEPLA
-      if (respSeplaValue && respSeplaValue.includes('@')) {
-        console.warn(`[SAP Lookup] 🛑 Blocking email storage in RESP_SEPLA: "${respSeplaValue}". Defaulting to ADRSIS.`);
-        respSeplaValue = 'ADRSIS';
-      }
+          // Final safeguard: Never save an email to RESP_SEPLA
+          if (respSeplaValue && respSeplaValue.includes('@')) {
+            console.warn(`[SAP Lookup] 🛑 Blocking email storage in RESP_SEPLA: "${respSeplaValue}". Defaulting to ADRSIS.`);
+            respSeplaValue = 'ADRSIS';
+          }
 
-      if (shouldMoveToT_ESTPLA) {
-        // Migration to Technical System (T_ESTPLA)
-        // ============================================================
-        const sqlReq = new sql.Request();
-        const requestId = String(data.id);
-        const effectiveUserId = data.user_id || data.userId || '';
-        const effectiveFormType = String(mappedForm);
-        const rawNro = data.studyNumber || data.nro || '';
-        let effectiveNro = String(rawNro);
-        if (typeof rawNro === 'object' && rawNro !== null) {
-          effectiveNro = String(rawNro.nextNumber || rawNro.studyNumber || rawNro.nro || '');
-        }
-        if (effectiveNro === '[object Object]') effectiveNro = '';
+          if (shouldMoveToT_ESTPLA) {
+            // Migration to Technical System (T_ESTPLA)
+            // ============================================================
+            const sqlReq = new sql.Request();
+            const requestId = String(data.id);
+            const effectiveUserId = data.user_id || data.userId || '';
+            const effectiveFormType = String(mappedForm);
+            const rawNro = data.studyNumber || data.nro || '';
+            let effectiveNro = String(rawNro);
+            if (typeof rawNro === 'object' && rawNro !== null) {
+              effectiveNro = String(rawNro.nextNumber || rawNro.studyNumber || rawNro.nro || '');
+            }
+            if (effectiveNro === '[object Object]') effectiveNro = '';
 
-        sqlReq.input('id', sql.VarChar, requestId);
-        sqlReq.input('user_id', sql.VarChar, effectiveUserId);
-        sqlReq.input('formType', sql.VarChar, String(effectiveFormType));
-        sqlReq.input('nro', sql.VarChar, effectiveNro);
-        sqlReq.input('status', sql.VarChar, String(statusVal));
-        sqlReq.input('meta', sql.NVarChar, JSON.stringify(data));
-        sqlReq.input('now', sql.DateTime, now);
+            sqlReq.input('id', sql.VarChar, requestId);
+            sqlReq.input('user_id', sql.VarChar, effectiveUserId);
+            sqlReq.input('formType', sql.VarChar, String(effectiveFormType));
+            sqlReq.input('nro', sql.VarChar, effectiveNro);
+            sqlReq.input('status', sql.VarChar, String(statusVal));
+            sqlReq.input('meta', sql.NVarChar, JSON.stringify(data));
+            sqlReq.input('now', sql.DateTime, now);
 
-        // Technical fields (FO.01 - FO.04 mapping)
-        sqlReq.input('emp', sql.VarChar, String(mappedUnit));
-        sqlReq.input('org', sql.VarChar, String(mappedArea));
-        sqlReq.input('resp', sql.VarChar, data.requesterName || '');
-        sqlReq.input('tit', sql.VarChar, data.studyTitle || data.clientName || data.uteName || '');
-        sqlReq.input('pres', sql.Float, safeFloat(data.pressure || data.gasPressureLevel || data.suggestedPressureRange));
-        sqlReq.input('obs', sql.VarChar, (data.comments || '') + (data.validatorObservations ? `\n--- Validação: ${data.validatorObservations}` : ''));
-        sqlReq.input('bairro', sql.VarChar, data.neighborhood || data.bairro || '');
-        sqlReq.input('muni', sql.VarChar, mappedCity);
-        sqlReq.input('numE', sql.Int, safeInt(data.numClientsRes || 0));
-        const effectiveVazS = (mappedForm == 2) ? (data.totalFlowRes || 0) : (data.totalFlow || data.peakFlow || data.averageFlow || 0);
-        sqlReq.input('vazS', sql.Float, safeFloat(effectiveVazS));
-        sqlReq.input('vazI', sql.Float, safeFloat(data.instantFlow || 0));
-        sqlReq.input('cons', sql.Float, safeFloat(data.monthlyConsumption || 0));
+            // Technical fields (FO.01 - FO.04 mapping)
+            sqlReq.input('emp', sql.VarChar, String(mappedUnit));
+            sqlReq.input('org', sql.VarChar, String(mappedArea));
+            sqlReq.input('resp', sql.VarChar, data.requesterName || '');
+            sqlReq.input('tit', sql.VarChar, data.studyTitle || data.clientName || data.uteName || '');
+            sqlReq.input('pres', sql.Float, safeFloat(data.pressure || data.gasPressureLevel || data.suggestedPressureRange));
+            sqlReq.input('obs', sql.VarChar, (data.comments || '') + (data.validatorObservations ? `\n--- Validação: ${data.validatorObservations}` : ''));
+            sqlReq.input('motivoPausa', sql.VarChar, data.holdReason || '');
+            sqlReq.input('bairro', sql.VarChar, data.neighborhood || data.bairro || '');
+            sqlReq.input('muni', sql.VarChar, mappedCity);
+            sqlReq.input('vazI', sql.Float, safeFloat(data.instantFlow || 0));
+            sqlReq.input('cons', sql.Float, safeFloat(data.monthlyConsumption || 0));
 
-        sqlReq.input('pMax', sql.Float, safeFloat(data.presSolMax || 0));
-        sqlReq.input('pMin', sql.Float, safeFloat(data.presSolMin || 0));
-        sqlReq.input('hIn', sql.VarChar, String(data.horOpeIni || ''));
-        sqlReq.input('hFin', sql.VarChar, String(data.horOpeFin || ''));
-        sqlReq.input('dMes', sql.Int, safeInt(data.workDaysPerWeek || 0) * 4);
-        sqlReq.input('mail', sql.VarChar, data.email || '');
-        sqlReq.input('numE2', sql.Int, safeInt(data.numClientsCom || 0));
-        sqlReq.input('vazS2', sql.Float, safeFloat(data.totalFlowCom || 0));
-        
-        sqlReq.input('respSepla', sql.VarChar, respSeplaValue);
-        sqlReq.input('localiz', sql.VarChar, (data.address || '') + (data.number ? ' ' + data.number : ''));
-        sqlReq.input('tel', sql.VarChar, data.phone || '');
-        sqlReq.input('entradaReal', sql.Float, data.validationDate ? dateToOADate(new Date(data.validationDate)) : null);
-        sqlReq.input('datEnSep', sql.Float, data.createdAt ? dateToOADate(new Date(data.createdAt)) : dateToOADate(effectiveRequestDate));
-        sqlReq.input('datInSep', sql.Float, data.startedAt ? dateToOADate(new Date(data.startedAt)) : null);
-        sqlReq.input('datSaSep', sql.Float, data.completedAt ? dateToOADate(new Date(data.completedAt)) : null);
-        const numericIDSIGEP = parseInt((data.studyNumber || '').replace(/[^0-9]/g, '')) || 0;
-        sqlReq.input('idsigep', sql.BigInt, numericIDSIGEP);
-        
-        const isRevision = data.studyType === 'Revisão Técnica';
-        sqlReq.input('nroAn', sql.VarChar, isRevision ? (data.previousStudy || '') : '');
-        
-        const pressureToNormalize = data.suggestedPressureRange || data.pressure || '';
-        const normalizedPressure = pressureToNormalize.substring(0, 2).toUpperCase();
-        
-        sqlReq.input('grupoEst', sql.VarChar, studyGroupMapping[data.studyType] || studyGroupMapping[data.studyGroup] || data.studyGroup || '0');
-        sqlReq.input('tipoEst', sql.VarChar, studySubTypeMapping[data.studySubType] || data.tipoEst || data.studySubType || '0');
-        sqlReq.input('tipEs', sql.Int, gniTypeMapping[data.gniName] || gniTypeMapping[data.studySubType] || safeInt(data.gniType || '0'));
-        sqlReq.input('grauDif', sql.Int, difficultyMapping[data.difficulty] || safeInt(data.difficultyLevel || '0'));
-        sqlReq.input('tpgass', sql.VarChar, gasTypeMapping[data.gasType] || data.gasType || '');
-        sqlReq.input('presSolOrig', sql.VarChar, normalizedPressure);
-        sqlReq.input('croqui', sql.VarChar, data.mapReceived ? 'VERDADEIRO' : 'FALSO');
-        sqlReq.input('estudoRelev', sql.VarChar, data.relevantStudy ? 'VERDADEIRO' : 'FALSO');
-        sqlReq.input('dataOper', sql.DateTime, data.operationStartDate ? new Date(data.operationStartDate) : null);
-        sqlReq.input('vazMedia', sql.Float, safeFloat(data.averageFlow || 0));
-        sqlReq.input('vazPico', sql.Float, safeFloat(data.peakFlow || 0));
-        
-        // Technical mappings updated per user specification
-        sqlReq.input('presGas', sql.VarChar, data.responsePressureBase || ''); 
-        sqlReq.input('presClieMax', sql.Float, safeFloat(data.responseMaxPo || data.responseMaxPressure || 0));
-        sqlReq.input('presClieMin', sql.Float, safeFloat(data.responseMin || data.responseMinPressure || 0));
-        sqlReq.input('presClieGarant', sql.Float, safeFloat(data.responseGarantia || data.responseGarantiaPressure || 0));
-        sqlReq.input('observaResp', sql.NVarChar, data.responseObservations || '');
-        sqlReq.input('numEconomias', sql.Int, safeInt(data.totalClients || data.numClientsRes || 0));
-        sqlReq.input('vu', sql.Float, safeFloat(data.unitFlow || 0));
-        sqlReq.input('fp', sql.Float, safeFloat(data.penetrationFactor || data.penetration || 0));
-        sqlReq.input('fd', sql.Float, safeFloat(data.diversificationFactor || data.diversification || 0));
-        sqlReq.input('diversificar', sql.Float, safeFloat(data.totalFlowRes || data.totalFlow || 0));
-        
-        // Detailed technical response parameters
-        sqlReq.input('statusEntrega', sql.VarChar, data.deliveryStatus || '');
-        sqlReq.input('regulardoSN', sql.VarChar, data.regSizingActive ? 'VERDADEIRO' : 'FALSO');
-        sqlReq.input('reguladroVazao', sql.Int, safeInt(data.regSizingFlow || 0));
-        sqlReq.input('horaFunciona', sql.Int, safeInt(data.workHours || 0));
-        
-        // Additional sizing info
-        sqlReq.input('pressaoResposta', sql.VarChar, data.responsePressureBase || '');
-        sqlReq.input('custoRegulador', sql.Int, safeInt(data.regSizingCost || 0));
-        sqlReq.input('pressaoEntrada', sql.VarChar, String(data.regSizingInPress || ''));
-        sqlReq.input('unidPresEnt', sql.VarChar, data.unidPresEnt || 'bar');
-        sqlReq.input('pressaoSaida', sql.Int, safeInt(data.regSizingOutPress || 0));
-        sqlReq.input('unidPresSai', sql.VarChar, data.unidPresSai || 'mbar');
-        sqlReq.input('vazaoFutura', sql.Int, safeInt(data.regSizingFutureFlow || 0));
-        sqlReq.input('presSol', sql.VarChar, data.pressureUnit || '');
-        sqlReq.input('unidSol', sql.VarChar, data.flowUnit || 'm³/h');
-        sqlReq.input('qdc', sql.Int, safeInt(data.qdc || 0));
-        sqlReq.input('emailEnviado', sql.VarChar, data.emailSent ? 'VERDADEIRO' : 'FALSO');
-        
-        // Memo fields
-        sqlReq.input('memoResposta', sql.NVarChar, data.responseMemo || '');
-        // User requested to leave calculated pressure in meta_data, so we stop mapping it to PRESCALC column
-        sqlReq.input('prescalc', sql.NVarChar, null); 
-        sqlReq.input('grupored', sql.Int, safeInt(data.networkGroup || '0'));
-        sqlReq.input('prazEstConst', sql.VarChar, String(data.prazEstConst || ''));
-        sqlReq.input('consumoEstimado', sql.Int, safeInt(data.consumoEstimado || 0));
-        sqlReq.input('pressaoInicial', sql.Float, safeFloat(data.pressaoInicial || 0));
-        sqlReq.input('pressaoFinal', sql.Int, safeInt(data.pressaoFinal || 0));
-        sqlReq.input('pressaoAbsoluta', sql.Float, safeFloat(data.pressaoAbsoluta || 0));
-        sqlReq.input('pressaoAtm', sql.Int, safeInt(data.pressaoAtm || 0));
-        sqlReq.input('codigoPasta', sql.VarChar, String(data.codigoPasta || ''));
-        
-        sqlReq.input('simulacao', sql.Float, safeFloat(data.simulacao || 0));
-        sqlReq.input('supervision', sql.Float, safeFloat(data.supervision || 0));
-        sqlReq.input('tempo', sql.Float, safeFloat(data.tempo || 0));
-        sqlReq.input('tempoEstimado', sql.Float, safeFloat(data.tempoEstimado || 0));
-        sqlReq.input('preparacion', sql.Float, safeFloat(data.preparacion || 0));
-        
-        // Network extensions
-        sqlReq.input('redeExtTotal', sql.Int, safeInt(data.totalNetworkExtension || 0));
-        
-        // Priority / Dates
-        const dStr = data.deliveryDeadline || data.dtEntregaPrevista || '';
-        sqlReq.input('dtEntregaPrevista', sql.Float, dStr ? dateToOADate(new Date(dStr)) : null);
+            sqlReq.input('pMax', sql.Float, safeFloat(data.presSolMax || 0));
+            sqlReq.input('pMin', sql.Float, safeFloat(data.presSolMin || 0));
+            sqlReq.input('hIn', sql.VarChar, String(data.horOpeIni || ''));
+            sqlReq.input('hFin', sql.VarChar, String(data.horOpeFin || ''));
+            sqlReq.input('dMes', sql.Int, safeInt(data.workDaysPerWeek || 0) * 4);
+            sqlReq.input('mail', sql.VarChar, data.email || '');
 
-        // UPSERT Query with correct ID handling (Direct string comparison)
-        console.log(`[T_ESTPLA] 🔧 Executing UPSERT for ID=${requestId}, STATUS=${statusVal}`);
-        try {
-          await sqlReq.query(`
+            sqlReq.input('respSepla', sql.VarChar, respSeplaValue);
+            sqlReq.input('lastModifiedBy', sql.VarChar, data.lastModifiedBy || data.userId || '');
+            sqlReq.input('localiz', sql.VarChar, (data.address || '') + (data.number ? ' ' + data.number : ''));
+            sqlReq.input('tel', sql.VarChar, data.phone || '');
+            sqlReq.input('entradaReal', sql.Float, data.validationDate ? dateToOADate(new Date(data.validationDate)) : null);
+            sqlReq.input('datEnSep', sql.Float, data.createdAt ? dateToOADate(new Date(data.createdAt)) : dateToOADate(effectiveRequestDate));
+            // Use validationDate for DAT_IN_SEP as per user requirement (date moved to 200)
+            sqlReq.input('datInSep', sql.Float, data.validationDate ? dateToOADate(new Date(data.validationDate)) : (data.startedAt ? dateToOADate(new Date(data.startedAt)) : null));
+            sqlReq.input('datSaSep', sql.Float, data.completedAt ? dateToOADate(new Date(data.completedAt)) : null);
+            // dtEntregaPrevista: data definida no validation panel (estimatedDeliveryDate)
+            const entregaStr = data.estimatedDeliveryDate || data.deliveryDeadline || '';
+            const entregaDate = parseDateBR(entregaStr);
+            sqlReq.input('dtEntregaPrevista', sql.Float, entregaDate ? dateToOADate(entregaDate) : null);
+            const numericIDSIGEP = parseInt((data.studyNumber || '').replace(/[^0-9]/g, '')) || 0;
+            sqlReq.input('idsigep', sql.BigInt, numericIDSIGEP);
+
+            const isRevision = data.studyType === 'Revisão Técnica';
+            sqlReq.input('nroAn', sql.VarChar, isRevision ? (data.previousStudy || '') : (effectiveNro || '')); // NRO_EST_AN = previousStudy ou próprio studyNumber
+
+            const pressureToNormalize = data.suggestedPressureRange || data.pressure || '';
+            const normalizedPressure = pressureToNormalize.substring(0, 2).toUpperCase();
+
+            const studyTypeStr = String(data.studyType || '');
+            const studySubTypeStr = String(data.studySubType || '');
+            const gniNameStr = String(data.gniName || '');
+
+            sqlReq.input('grupoEst', sql.VarChar, studyGroupToCode[studyTypeStr] || studyGroupToCode[data.studyGroup] || data.studyGroup || '0');
+            sqlReq.input('tipoEst', sql.VarChar, studySubTypeToCode[studySubTypeStr] || data.tipoEst || studySubTypeStr || '0');
+            sqlReq.input('tipEs', sql.Int, gniTypeToCode[gniNameStr] || gniTypeToCode[studySubTypeStr] || safeInt(data.gniType || '0'));
+            sqlReq.input('grauDif', sql.Int, difficultyMapping[data.difficulty] || safeInt(data.difficultyLevel || '0'));
+            sqlReq.input('tpgass', sql.VarChar, gasTypeMapping[data.gasType] || data.gasType || '');
+            sqlReq.input('presSolOrig', sql.VarChar, normalizedPressure);
+            sqlReq.input('croqui', sql.VarChar, data.mapReceived ? 'VERDADEIRO' : 'FALSO');
+            sqlReq.input('estudoRelev', sql.VarChar, data.relevantStudy ? 'VERDADEIRO' : 'FALSO');
+            sqlReq.input('dataOper', sql.DateTime, data.operationStartDate ? new Date(data.operationStartDate) : null);
+            sqlReq.input('vazMedia', sql.Float, safeFloat(data.averageFlow || 0));
+            sqlReq.input('vazPico', sql.Float, safeFloat(data.peakFlow || 0));
+
+            // Technical mappings updated per user specification
+            sqlReq.input('presGas', sql.VarChar, data.responsePressureBase || '');
+            sqlReq.input('presClieMax', sql.Float, safeFloat(data.responseMaxPo || data.responseMaxPressure || 0));
+            sqlReq.input('presClieMin', sql.Float, safeFloat(data.responseMin || data.responseMinPressure || 0));
+            sqlReq.input('presClieGarant', sql.Float, safeFloat(data.responseGarantia || data.responseGarantiaPressure || 0));
+            sqlReq.input('observaResp', sql.NVarChar, data.responseObservations || '');
+
+            const isFO04 = String(effectiveFormType).includes('FO.04');
+            const isFO02 = String(effectiveFormType).includes('FO.02');
+
+            if (isFO04) {
+              sqlReq.input('vazS', sql.Float, 0);
+              sqlReq.input('numE', sql.Int, 0);
+              sqlReq.input('numE2', sql.Int, 1);
+              sqlReq.input('vazS2', sql.Float, safeFloat(data.averageFlow || 0));
+              sqlReq.input('vu', sql.Float, 0);
+              sqlReq.input('fp', sql.Float, 0);
+              sqlReq.input('fd', sql.Float, 0);
+              sqlReq.input('diversificar', sql.Float, 0);
+            } else if (isFO02 && data.gridDataFO02) {
+              let sumResNum = 0, sumResFlow = 0, sumComNum = 0, sumComFlow = 0;
+              Object.entries(data.gridDataFO02).forEach(([key, row]) => {
+                const isRes = key.toLowerCase().includes('residencial');
+                const rowTotal = safeInt(row.atuais) + safeInt(row.y2) + safeInt(row.y5) + safeInt(row.y20);
+                if (isRes) {
+                  sumResNum += rowTotal;
+                  sumResFlow += safeFloat(row.totalQ);
+                } else {
+                  sumComNum += rowTotal;
+                  sumComFlow += safeFloat(row.totalQ);
+                }
+              });
+              sqlReq.input('vazS', sql.Float, sumResFlow);
+              sqlReq.input('numE', sql.Int, sumResNum);
+              sqlReq.input('numE2', sql.Int, sumComNum);
+              sqlReq.input('vazS2', sql.Float, sumComFlow);
+              sqlReq.input('vu', sql.Float, safeFloat(data.unitFlow || 0));
+              sqlReq.input('fp', sql.Float, safeFloat(data.penetrationFactor || data.penetration || 0));
+              sqlReq.input('fd', sql.Float, safeFloat(data.diversificationFactor || data.diversification || 0));
+              sqlReq.input('diversificar', sql.Float, sumResFlow);
+            } else {
+              sqlReq.input('vazS', sql.Float, safeFloat(data.totalFlowRes || data.totalFlow || 0));
+              sqlReq.input('numE', sql.Int, safeInt(data.totalClients || data.numClientsRes || 0));
+              sqlReq.input('numE2', sql.Int, safeInt(data.numClientsCom || 0));
+              sqlReq.input('vazS2', sql.Float, safeFloat(data.totalFlowCom || 0));
+              sqlReq.input('vu', sql.Float, safeFloat(data.unitFlow || 0));
+              sqlReq.input('fp', sql.Float, safeFloat(data.penetrationFactor || data.penetration || 0));
+              sqlReq.input('fd', sql.Float, safeFloat(data.diversificationFactor || data.diversification || 0));
+              sqlReq.input('diversificar', sql.Float, safeFloat(data.totalFlowRes || data.totalFlow || 0));
+            }
+
+            // Detailed technical response parameters
+            sqlReq.input('statusEntrega', sql.VarChar, data.deliveryStatus || '');
+            sqlReq.input('regulardoSN', sql.VarChar, data.regSizingActive ? 'VERDADEIRO' : 'FALSO');
+            sqlReq.input('reguladroVazao', sql.Int, safeInt(data.regSizingFlow || 0));
+            sqlReq.input('horaFunciona', sql.Int, safeInt(data.workHours || 0));
+
+            // Additional sizing info
+            sqlReq.input('pressaoResposta', sql.VarChar, data.responsePressureBase || '');
+            sqlReq.input('custoRegulador', sql.Int, safeInt(data.regSizingCost || 0));
+            sqlReq.input('pressaoEntrada', sql.VarChar, String(data.regSizingInPress || ''));
+            sqlReq.input('unidPresEnt', sql.VarChar, data.unidPresEnt || 'bar');
+            sqlReq.input('pressaoSaida', sql.Int, safeInt(data.regSizingOutPress || 0));
+            sqlReq.input('unidPresSai', sql.VarChar, data.unidPresSai || 'mbar');
+            sqlReq.input('vazaoFutura', sql.Int, safeInt(data.regSizingFutureFlow || 0));
+            sqlReq.input('presSol', sql.VarChar, data.suggestedPressureRange || data.pressureUnit || '');
+            sqlReq.input('unidSol', sql.VarChar, data.flowUnit || 'm³/h');
+            sqlReq.input('qdc', sql.Int, safeInt(data.qdc || 0));
+            sqlReq.input('emailEnviado', sql.VarChar, data.emailSent ? 'VERDADEIRO' : 'FALSO');
+
+            // Memo fields
+            sqlReq.input('memoResposta', sql.NVarChar, data.responseMemo || '');
+            // User requested to leave calculated pressure in meta_data, so we stop mapping it to PRESCALC column
+            sqlReq.input('prescalc', sql.NVarChar, null);
+            sqlReq.input('grupored', sql.Int, safeInt(data.networkGroup || '0'));
+            sqlReq.input('prazEstConst', sql.VarChar, String(data.prazEstConst || ''));
+            sqlReq.input('consumoEstimado', sql.Int, safeInt(data.consumoEstimado || 0));
+            sqlReq.input('pressaoInicial', sql.Float, safeFloat(data.pressaoInicial || 0));
+            sqlReq.input('pressaoFinal', sql.Int, safeInt(data.pressaoFinal || 0));
+            sqlReq.input('pressaoAbsoluta', sql.Float, safeFloat(data.pressaoAbsoluta || 0));
+            sqlReq.input('pressaoAtm', sql.Int, safeInt(data.pressaoAtm || 0));
+            sqlReq.input('codigoPasta', sql.VarChar, String(data.codigoPasta || ''));
+
+            sqlReq.input('simulacao', sql.Float, safeFloat(data.simulacao || 0));
+            sqlReq.input('supervision', sql.Float, safeFloat(data.supervision || 0));
+            sqlReq.input('tempo', sql.Float, safeFloat(data.tempo || 0));
+            sqlReq.input('tempoEstimado', sql.Float, safeFloat(data.tempoEstimado || 0));
+            sqlReq.input('preparacion', sql.Float, safeFloat(data.preparacion || 0));
+
+            // Network extensions
+            sqlReq.input('redeExtTotal', sql.Int, safeInt(data.totalNetworkExtension || 0));
+
+            // UPSERT Query with correct ID handling (Direct string comparison)
+            console.log(`[T_ESTPLA] 🔧 Executing UPSERT for ID=${requestId}, STATUS=${statusVal}`);
+            try {
+              await sqlReq.query(`
             IF EXISTS (SELECT 1 FROM T_ESTPLA WHERE id = @id)
             BEGIN
               UPDATE T_ESTPLA SET
-                EMPRESA = @emp, SOL_ORGAO = @org, DAT_EN_SEP = @datEnSep, SOL_RESPON = @resp,
+                EMPRESA = @emp, SOL_ORGAO = @org, DAT_EN_SEP = @datEnSep, DAT_IN_SEP = @datInSep, SOL_RESPON = @resp,
                 RESP_SEPLA = @respSepla, OPERADOR_M = @respSepla, FK_MODELO = @formType,
                 STATUS = @status, meta_data = @meta, TITULO = @tit, NOME_CLIENTE = @tit,
-                ObsEstudSol = @obs, Bairro = @bairro,
+                ObsEstudSol = @obs, Bairro = @bairro, OBSERVS = @obs,
                 Municipio = @muni, NumEconomias = @numE, VazaoSol = @vazS,
                 VazaoInsta = @vazI, ConsMens = @cons, PresSolMax = @pMax,
                 PresSolMin = @pMin, HorOpeIni = @hIn, HorOpeFin = @hFin,
@@ -1576,7 +1749,7 @@ END
                 EntradaReal = @entradaReal, IDSIGEP = @idsigep, NRO_EST_AN = @nroAn,
                 NRO_ESTUDO = @nro, GRUPO_EST = @grupoEst, TIPO_EST = @tipoEst, TIP_ES = @tipEs,
                 GrauDificult = @grauDif, TPGASS = @tpgass, 
-                CROQUI = @croqui, ESTUDO_RELEV = @estudoRelev, DATA_SOLIC_OPER = @dataOper,
+                CROQUI = @croqui, ESTUDO_RELEV = @estudoRelev, EstudoRelevante = @estudoRelev, DATA_SOLIC_OPER = @dataOper,
                 VAZ_MEDIA = @vazMedia, VAZ_PICO = @vazPico, PRESGAS = @presGas,
                 PresClieMax = @presClieMax, PresClieMin = @presClieMin,
                 PresClieGarant = @presClieGarant, ObservaResp = @observaResp,
@@ -1594,126 +1767,132 @@ END
                 PRESSAO_ATM = @pressaoAtm, CODIGO_PASTA = @codigoPasta, Simulacao = @simulacao,
                 Supervision = @supervision, Tempo = @tempo, TempoEstimado = @tempoEstimado,
                 Preparacion = @preparacion, RedeExtTotal = @redeExtTotal,
-                dtEntregaPrevista = @dtEntregaPrevista
+                dtEntregaPrevista = @dtEntregaPrevista, MOTIVO_PAUSA = @motivoPausa
               WHERE id = @id
             END
             ELSE
             BEGIN
               INSERT INTO T_ESTPLA (
-                id, EMPRESA, SOL_ORGAO, DAT_EN_SEP, SOL_RESPON, RESP_SEPLA, OPERADOR_M, FK_MODELO, STATUS, meta_data,
+                id, EMPRESA, SOL_ORGAO, DAT_EN_SEP, DAT_IN_SEP, SOL_RESPON, RESP_SEPLA, OPERADOR_M, FK_MODELO, STATUS, meta_data,
                 TITULO, NOME_CLIENTE, LOCALIZ, Bairro, Municipio,
                 NumEconomias, VazaoSol, VazaoInsta, ConsMens, PresSolMax, PresSolMin,
                 HorOpeIni, HorOpeFin, DiaOpeMes, EmailContato, NumEconomiasComIndEtc,
                 VazaoSolComIndEtc, TEL_SOL, EntradaReal, IDSIGEP, NRO_EST_AN, NRO_ESTUDO,
-                GRUPO_EST, TIPO_EST, TIP_ES, GrauDificult, TPGASS, CROQUI, ESTUDO_RELEV,
+                GRUPO_EST, TIPO_EST, TIP_ES, GrauDificult, TPGASS, CROQUI, ESTUDO_RELEV, EstudoRelevante,
                 DATA_SOLIC_OPER, VAZ_MEDIA, VAZ_PICO, PRESGAS, PresClieMax, PresClieMin,
                 PresClieGarant, ObservaResp, vu, fp, fd, Diversificar, StatusEntrega,
                 RegulardoSN, ReguladroVazao, HoraFunciona, PressaoResposta, CustoRegulador,
                 PressaoEntrada, unidPresEnt, PressaoSaida, unidPresSai, VazaoFutura,
-                PRESSAO, UnidSol, QDC, EMAIL_ENVIADO, MEMO_RESPOSTA, PRESCALC, GRUPORED,
+                PRESSAO, UnidSol, QDC, EMAIL_ENVIADO, MEMO_RESPOSTA, OBSERVS, PRESCALC, GRUPORED,
                 PRAZ_EST_CONST, CONSUMO_ESTIMADO, PRESSAO_INICIAL, PRESSAO_FINAL,
                 PRESSAO_ABSOLUTA, PRESSAO_ATM, CODIGO_PASTA, Simulacao, Supervision,
-                Tempo, TempoEstimado, Preparacion, RedeExtTotal, dtEntregaPrevista
+                Tempo, TempoEstimado, Preparacion, RedeExtTotal, dtEntregaPrevista, MOTIVO_PAUSA
               ) VALUES (
-                @id, @emp, @org, @datEnSep, @resp, @respSepla, @respSepla, @formType, @status, @meta,
+                @id, @emp, @org, @datEnSep, @datInSep, @resp, @respSepla, @respSepla, @formType, @status, @meta,
                 @tit, @tit, @localiz, @bairro, @muni, @numE, @vazS, @vazI, @cons,
                 @pMax, @pMin, @hIn, @hFin, @dMes, @mail, @numE2, @vazS2, @tel, @entradaReal,
                 @idsigep, @nroAn, @nro, @grupoEst, @tipoEst, @tipEs, @grauDif, @tpgass,
-                @croqui, @estudoRelev, @dataOper, @vazMedia, @vazPico, @presGas, @presClieMax,
+                @croqui, @estudoRelev, @estudoRelev, @dataOper, @vazMedia, @vazPico, @presGas, @presClieMax,
                 @presClieMin, @presClieGarant, @observaResp, @vu, @fp, @fd, @diversificar,
                 @statusEntrega, @regulardoSN, @reguladroVazao, @horaFunciona, @pressaoResposta,
                 @custoRegulador, @pressaoEntrada, @unidPresEnt, @pressaoSaida, @unidPresSai,
-                @vazaoFutura, @presSol, @unidSol, @qdc, @emailEnviado, @memoResposta,
+                @vazaoFutura, @presSol, @unidSol, @qdc, @emailEnviado, @memoResposta, @obs,
                 @prescalc, @grupored, @prazEstConst, @consumoEstimado, @pressaoInicial,
                 @pressaoFinal, @pressaoAbsoluta, @pressaoAtm, @codigoPasta, @simulacao,
-                @supervision, @tempo, @tempoEstimado, @preparacion, @redeExtTotal, @dtEntregaPrevista
+                @supervision, @tempo, @tempoEstimado, @preparacion, @redeExtTotal, @dtEntregaPrevista, @motivoPausa
               )
             END
           `);
-          console.log(`[T_ESTPLA] ✅ UPSERT completed for ID=${requestId}, STATUS=${statusVal}`);
-          
-// --- QC Persistence (T_CHKLST) ---
-          // SÓ criar registro em T_CHKLST quando o QCControlModal é preenchido no frontend
-          // e enviado para o backend com a flag fromQCModal=true
-          // NÃO criar quando apenas verifica status 215/290 no banco
-          console.log(`[QC] 🔍 Checking QC conditions - numericStatus: ${numericStatus}, qcData: ${!!data.qcData}, fromQCModal: ${data.qcData?.fromQCModal}`);
-          
-          const numericStatusNum = Number(numericStatus);
-          const isQCApprovalResult = (numericStatusNum === 215 || numericStatusNum === 290);
-          
-          // Só cria T_CHKLST se a flag fromQCModal estiver presente (indica ação explícita do modal)
-          const isFromQCModal = data.qcData && data.qcData.fromQCModal === true;
-          
-          console.log(`[QC] 🔍 isQCApprovalResult: ${isQCApprovalResult}, isFromQCModal: ${isFromQCModal}`);
-          
-          // Só cria T_CHKLST se Vier do Modal de CQ (ação explícita do usuário)
-          if (isQCApprovalResult && isFromQCModal) {
-            try {
-              // Definir effectiveNro para o registro
-              const rawNroQC = data.studyNumber || data.nro || '';
-              let effectiveNroQC = String(rawNroQC);
-              if (typeof rawNroQC === 'object' && rawNroQC !== null) {
-                effectiveNroQC = String(rawNroQC.nextNumber || rawNroQC.studyNumber || rawNroQC.nro || '');
-              }
-              if (effectiveNroQC === '[object Object]') effectiveNroQC = '';
-              
-              console.log(`[QC] 🔍 Processing QC approval/rejection for Study: ${effectiveNroQC || requestId}`);
-              
-              // 1. Resolve Status Code (User's dynamic workflow)
-              // Mapping: T_CHKLST 200 (Fail), 300 (Pass), 400 (Pass w/ Res)
-              let chklstStatus = 300; // Default: Aprovado
-              const qcResult = data.qcData?.qcStatusCQ;
-              const hasFailures = (Object.values(data.qcData?.qcCriticalFailures || {}).some(v => Number(v) > 0)) ||
-                                 (Object.values(data.qcData?.qcSecondaryFailures || {}).some(v => Number(v) > 0));
+              console.log(`[T_ESTPLA] ✅ UPSERT completed for ID=${requestId}, STATUS=${statusVal}`);
 
-              if (qcResult === 'Reprovado') {
-                chklstStatus = 200;
-              } else if (qcResult === 'Aprovado') {
-                chklstStatus = hasFailures ? 400 : 300;
-                if (data.qcData?.qcFinalStatus) {
-                   chklstStatus = parseInt(data.qcData.qcFinalStatus);
-                }
-              }
+              // --- QC Persistence (T_CHKLST) ---
+              // SÓ criar registro em T_CHKLST quando o QCControlModal é preenchido no frontend
+              // e enviado para o backend com a flag fromQCModal=true
+              // NÃO criar quando apenas verifica status 215/290 no banco
+              console.log(`[QC] 🔍 Checking QC conditions - numericStatus: ${numericStatus}, qcData: ${!!data.qcData}, fromQCModal: ${data.qcData?.fromQCModal}`);
 
-              // 2. Resolve Operator SAP (Reviewer)
-              let operatorSap = data.qcData?.qcSupervisor || data.assignedTo || '';
-              if (operatorSap) {
-                const opResult = await sql.query`
+              const numericStatusNum = Number(numericStatus);
+              const isQCApprovalResult = (numericStatusNum === 215 || numericStatusNum === 290);
+
+              // Verificar se veio do QC Modal (suporta múltiplas formas de detecção)
+              const qcDataObj = data.qcData;
+              const isFromQCModal = qcDataObj && (
+                qcDataObj.fromQCModal === true || 
+                qcDataObj.fromQCModal === 'true' || 
+                qcDataObj.qcStatusCQ === 'Aprovado' || 
+                qcDataObj.qcStatusCQ === 'Reprovado'
+              );
+
+              console.log(`[QC] 🔍 isQCApprovalResult: ${isQCApprovalResult}, isFromQCModal: ${isFromQCModal}, qcStatus: ${qcDataObj?.qcStatusCQ}`);
+
+              // Só cria T_CHKLST se Vier do Modal de CQ (ação explícita do usuário)
+              if (isQCApprovalResult && isFromQCModal) {
+                try {
+                  // Definir effectiveNro para o registro
+                  const rawNroQC = data.studyNumber || data.nro || '';
+                  let effectiveNroQC = String(rawNroQC);
+                  if (typeof rawNroQC === 'object' && rawNroQC !== null) {
+                    effectiveNroQC = String(rawNroQC.nextNumber || rawNroQC.studyNumber || rawNroQC.nro || '');
+                  }
+                  if (effectiveNroQC === '[object Object]') effectiveNroQC = '';
+
+                  console.log(`[QC] 🔍 Processing QC approval/rejection for Study: ${effectiveNroQC || requestId}`);
+
+                  // 1. Resolve Status Code (User's dynamic workflow)
+                  // Mapping: T_CHKLST 200 (Fail), 300 (Pass), 400 (Pass w/ Res)
+                  let chklstStatus = 300; // Default: Aprovado
+                  const qcResult = data.qcData?.qcStatusCQ;
+                  const hasFailures = (Object.values(data.qcData?.qcCriticalFailures || {}).some(v => Number(v) > 0)) ||
+                    (Object.values(data.qcData?.qcSecondaryFailures || {}).some(v => Number(v) > 0));
+
+                  if (qcResult === 'Reprovado') {
+                    chklstStatus = 200;
+                  } else if (qcResult === 'Aprovado') {
+                    chklstStatus = hasFailures ? 400 : 300;
+                    if (data.qcData?.qcFinalStatus) {
+                      chklstStatus = parseInt(data.qcData.qcFinalStatus);
+                    }
+                  }
+
+                  // 2. Resolve Operator SAP (Reviewer)
+                  let operatorSap = data.qcData?.qcSupervisor || data.assignedTo || '';
+                  if (operatorSap) {
+                    const opResult = await sql.query`
                   SELECT TOP 1 RTRIM(LTRIM(SAP)) as SAP 
                   FROM E_OPEMAN 
                   WHERE email = ${operatorSap.trim()} 
                      OR NomeCompleto = ${operatorSap.trim()}
                      OR NOME = ${operatorSap.trim()}
                 `;
-                if (opResult.recordset.length > 0) {
-                  operatorSap = opResult.recordset[0].SAP;
-                }
-              }
+                    if (opResult.recordset.length > 0) {
+                      operatorSap = opResult.recordset[0].SAP;
+                    }
+                  }
 
-              // 3. Get Next IDCHKLST
-              const idResult = await sql.query`SELECT ISNULL(MAX(IDCHKLST), 0) + 1 as nextId FROM T_CHKLST`;
-              const nextId = idResult.recordset[0].nextId;
+                  // 3. Get Next IDCHKLST
+                  const idResult = await sql.query`SELECT ISNULL(MAX(IDCHKLST), 0) + 1 as nextId FROM T_CHKLST`;
+                  const nextId = idResult.recordset[0].nextId;
 
-              // 4. Build Insert Query
-              const qcSql = new sql.Request();
-              qcSql.input('id', sql.Int, nextId);
-              qcSql.input('fkEst', sql.VarChar, effectiveNroQC || requestId);
-              qcSql.input('status', sql.Int, chklstStatus);
-              qcSql.input('operador', sql.VarChar, operatorSap);
-              qcSql.input('comments', sql.NVarChar, data.qcData?.qcComments || '');
-              qcSql.input('solDate', sql.Float, data.qcData?.qcRequestDate ? dateToOADate(new Date(data.qcData.qcRequestDate)) : null);
-              qcSql.input('valDate', sql.Float, dateToOADate(new Date()));
+                  // 4. Build Insert Query
+                  const qcSql = new sql.Request();
+                  qcSql.input('id', sql.Int, nextId);
+                  qcSql.input('fkEst', sql.VarChar, effectiveNroQC || requestId);
+                  qcSql.input('status', sql.Int, chklstStatus);
+                  qcSql.input('operador', sql.VarChar, operatorSap);
+                  qcSql.input('comments', sql.NVarChar, data.qcData?.qcComments || '');
+                  qcSql.input('solDate', sql.Float, data.qcData?.qcRequestDate ? dateToOADate(new Date(data.qcData.qcRequestDate)) : null);
+                  qcSql.input('valDate', sql.Float, dateToOADate(new Date()));
 
-              // Map Defect Counts (1-15)
-              for (let i = 1; i <= 15; i++) {
-                const count = (i <= 12) 
-                  ? (Number(data.qcData?.qcCriticalFailures?.[String(i)]) || 0)
-                  : (Number(data.qcData?.qcSecondaryFailures?.[String(i)]) || 0);
-                qcSql.input(`q${i}`, sql.Int, count);
-                qcSql.input(`c${i}`, sql.Int, i);
-              }
+                  // Map Defect Counts (1-15)
+                  for (let i = 1; i <= 15; i++) {
+                    const count = (i <= 12)
+                      ? (Number(data.qcData?.qcCriticalFailures?.[String(i)]) || 0)
+                      : (Number(data.qcData?.qcSecondaryFailures?.[String(i)]) || 0);
+                    qcSql.input(`q${i}`, sql.Int, count);
+                    qcSql.input(`c${i}`, sql.Int, i);
+                  }
 
-              await qcSql.query(`
+                  await qcSql.query(`
                 INSERT INTO T_CHKLST (
                   IDCHKLST, FK_T_ESTPLA, STATUSCHK, OPERADOR_VALIDACAO, COMENTARIOS,
                   DATA_SOLICITACAO, DATA_VALIDACAO,
@@ -1730,190 +1909,303 @@ END
                   @q13, @c13, @q14, @c14, @q15, @c15
                 )
               `);
-              console.log(`[QC] ✅ Record created in T_CHKLST: ID ${nextId}, Status ${chklstStatus}`);
-            } catch (qcErr) {
-              console.error(`[QC] ❌ Error persisting to T_CHKLST:`, qcErr.message);
-            }
-          }
+                  console.log(`[QC] ✅ Record created in T_CHKLST: ID ${nextId}, Status ${chklstStatus}`);
+                } catch (qcErr) {
+                  console.error(`[QC] ❌ Error persisting to T_CHKLST:`, qcErr.message);
+                }
+              }
 
-          // Sync Child Tables (I_ESTPLA and G_PRTRER)
-          if (numericIDSIGEP) {
-            console.log(`[StatusSync] 🔄 Syncing child tables for IDSIGEP: ${numericIDSIGEP}`);
-            // 1. Sync I_ESTPLA (Interconnections)
-            await sql.query`DELETE FROM I_ESTPLA WHERE IDSIGEP = ${numericIDSIGEP}`;
-            const interconnections = data.interconnectionPoints || [];
-            
-            if (interconnections.length > 0) {
-              const maxOidRes = await sql.query`SELECT ISNULL(MAX(OID), 0) as maxOid FROM I_ESTPLA`;
-              let nextOid = (maxOidRes.recordset[0].maxOid || 0) + 1;
+              // Sync Child Tables (I_ESTPLA and G_PRTRER)
+              if (numericIDSIGEP) {
+                console.log(`[StatusSync] 🔄 Syncing child tables for IDSIGEP: ${numericIDSIGEP}`);
+                // 1. Sync I_ESTPLA (Interconnections)
+                await sql.query`DELETE FROM I_ESTPLA WHERE IDSIGEP = ${numericIDSIGEP}`;
+                const interconnections = data.interconnectionPoints || [];
 
-              for (const point of interconnections) {
-                const ptSql = new sql.Request();
-                ptSql.input('oid', sql.Int, nextOid++);
-                ptSql.input('idsigep', sql.Int, numericIDSIGEP);
-                ptSql.input('nro', sql.Int, numericIDSIGEP); 
-                ptSql.input('pres', sql.VarChar, point.pressure || '');
-                ptSql.input('mat', sql.VarChar, point.material || '');
-                ptSql.input('dia', sql.VarChar, point.diameter || '');
-                ptSql.input('logradouro', sql.VarChar, point.location || point.address || '');
-                ptSql.input('indicacao', sql.VarChar, point.comment || '');
-                await ptSql.query(`
+                if (interconnections.length > 0) {
+                  const maxOidRes = await sql.query`SELECT ISNULL(MAX(OID), 0) as maxOid FROM I_ESTPLA`;
+                  let nextOid = (maxOidRes.recordset[0].maxOid || 0) + 1;
+
+                  for (const point of interconnections) {
+                    const ptSql = new sql.Request();
+                    ptSql.input('oid', sql.Int, nextOid++);
+                    ptSql.input('idsigep', sql.Int, numericIDSIGEP);
+                    ptSql.input('nro', sql.Int, numericIDSIGEP);
+                    ptSql.input('pres', sql.VarChar, point.pressure || '');
+                    ptSql.input('mat', sql.VarChar, point.material || '');
+                    ptSql.input('dia', sql.VarChar, point.diameter || '');
+                    ptSql.input('logradouro', sql.VarChar, point.location || point.address || '');
+                    ptSql.input('indicacao', sql.VarChar, point.comment || '');
+                    await ptSql.query(`
                   INSERT INTO I_ESTPLA (OID, IDSIGEP, NRO_ESTUDO, PRESSAO, MATERIAL, DIAMETRO, LOGRADOURO, INDICACAO)
                   VALUES (@oid, @idsigep, @nro, @pres, @mat, @dia, @logradouro, @indicacao)
                 `);
-              }
-            }
+                  }
+                }
 
-            // 2. Sync G_PRTRER (Planned Extensions)
-            await sql.query`DELETE FROM G_PRTRER WHERE IDSIGEP = ${numericIDSIGEP}`;
-            const extensions = data.plannedExtensions || [];
-            
-            if (extensions.length > 0) {
-              const maxObjRes = await sql.query`SELECT ISNULL(MAX(OBJECTID), 0) as maxObj FROM G_PRTRER`;
-              let nextObj = (maxObjRes.recordset[0].maxObj || 0) + 1;
+                // 2. Sync G_PRTRER (Planned Extensions)
+                await sql.query`DELETE FROM G_PRTRER WHERE IDSIGEP = ${numericIDSIGEP}`;
+                const extensions = data.plannedExtensions || [];
 
-              const extensionTypeMap = { 'DESCONHECIDO': 1, 'REDE EXTERNA': 2, 'REDE INTERNA': 3, 'RAMAL': 4 };
-              const extensionStatusMap = { 'EM SERVIÇO': 2, 'ESTUDO (ABANDONAR)': 9, 'ESTUDO (CONSTRUIR)': 5, 'ENERGIZADO': 8 };
+                if (extensions.length > 0) {
+                  const maxObjRes = await sql.query`SELECT ISNULL(MAX(OBJECTID), 0) as maxObj FROM G_PRTRER`;
+                  let nextObj = (maxObjRes.recordset[0].maxObj || 0) + 1;
 
-              for (const ext of extensions) {
-                const extSql = new sql.Request();
-                extSql.input('object', sql.Int, nextObj++);
-                extSql.input('idsigep', sql.Int, numericIDSIGEP);
-                extSql.input('nro', sql.Int, numericIDSIGEP);
-                extSql.input('mat', sql.VarChar, ext.material || '');
-                const numDiameter = parseInt(String(ext.diameter).replace(/[^0-9]/g, '')) || 0;
-                extSql.input('dia', sql.Int, numDiameter);
-                extSql.input('extensao', sql.Int, safeInt(ext.extension || 0));
-                extSql.input('tipred', sql.Int, extensionTypeMap[(ext.networkType || ext.type)?.toUpperCase()] || 1);
-                extSql.input('valvulas', sql.Int, safeInt(ext.valves || 0));
-                extSql.input('pres', sql.VarChar, ext.pressure || '');
-                extSql.input('gas', sql.VarChar, ext.gasType || 'GN');
-                extSql.input('status', sql.Int, extensionStatusMap[String(ext.status).toUpperCase()] || 5);
+                  const extensionTypeMap = { 'DESCONHECIDO': 1, 'REDE EXTERNA': 2, 'REDE INTERNA': 3, 'RAMAL': 4 };
+                  const extensionStatusMap = { 'EM SERVIÇO': 2, 'ESTUDO (ABANDONAR)': 9, 'ESTUDO (CONSTRUIR)': 5, 'ENERGIZADO': 8 };
 
-                await extSql.query(`
+                  for (const ext of extensions) {
+                    const extSql = new sql.Request();
+                    extSql.input('object', sql.Int, nextObj++);
+                    extSql.input('idsigep', sql.Int, numericIDSIGEP);
+                    extSql.input('nro', sql.Int, numericIDSIGEP);
+                    extSql.input('mat', sql.VarChar, ext.material || '');
+                    const numDiameter = parseInt(String(ext.diameter).replace(/[^0-9]/g, '')) || 0;
+                    extSql.input('dia', sql.Int, numDiameter);
+                    extSql.input('extensao', sql.Int, safeInt(ext.extension || 0));
+                    extSql.input('tipred', sql.Int, extensionTypeMap[(ext.networkType || ext.type)?.toUpperCase()] || 1);
+                    extSql.input('valvulas', sql.Int, safeInt(ext.valves || 0));
+                    extSql.input('pres', sql.VarChar, ext.pressure || '');
+                    extSql.input('gas', sql.VarChar, ext.gasType || 'GN');
+                    extSql.input('status', sql.Int, extensionStatusMap[String(ext.status).toUpperCase()] || 5);
+
+                    await extSql.query(`
                   INSERT INTO G_PRTRER (OBJECTID, IDSIGEP, NRO_ESTUDO, MATERIAL, DIAMETRO, Extensao, TIPRED, QT_VALVULAS, Pressao, TipGas, status)
                   VALUES (@object, @idsigep, @nro, @mat, @dia, @extensao, @tipred, @valvulas, @pres, @gas, @status)
                 `);
+                  }
+                }
+                console.log(`[StatusSync] 🚀 Record ${requestId} synced in T_ESTPLA: ${interconnections.length} pts, ${extensions.length} exts`);
               }
+            } catch (dbErr) {
+              console.error(`[StatusSync] ❌ Error saving to T_ESTPLA (ID: ${requestId}):`, dbErr.message);
+              throw dbErr;
             }
-            console.log(`[StatusSync] 🚀 Record ${requestId} synced in T_ESTPLA: ${interconnections.length} pts, ${extensions.length} exts`);
           }
-        } catch (dbErr) {
-          console.error(`[StatusSync] ❌ Error saving to T_ESTPLA (ID: ${requestId}):`, dbErr.message);
-          throw dbErr;
-        }
-      }
 
-    // REGARDLESS of T_ESTPLA move, always update/insert the Requests table
-      // This ensures the status is identical in both locations and prevents UI sync issues.
-        const sqlReq = new sql.Request();
-        const requestId = String(data.id);
-        const effectiveUserId = data.user_id || data.userId || '';
-        const rawNro = data.studyNumber || data.nro || '';
-        let effectiveNro = String(rawNro);
-        if (typeof rawNro === 'object' && rawNro !== null) {
-          effectiveNro = String(rawNro.nextNumber || rawNro.studyNumber || rawNro.nro || '');
-        }
-        if (effectiveNro === '[object Object]') effectiveNro = '';
+          // REGARDLESS of T_ESTPLA move, always update/insert the Requests table
+          // This ensures the status is identical in both locations and prevents UI sync issues.
+          const sqlReq = new sql.Request();
+          const requestId = String(data.id);
+          const effectiveUserId = data.user_id || data.userId || '';
+          const rawNro = data.studyNumber || data.nro || '';
+          let effectiveNro = String(rawNro);
+          if (typeof rawNro === 'object' && rawNro !== null) {
+            effectiveNro = String(rawNro.nextNumber || rawNro.studyNumber || rawNro.nro || '');
+          }
+          if (effectiveNro === '[object Object]') effectiveNro = '';
 
-        sqlReq.input('id', sql.VarChar, requestId);
-        sqlReq.input('user_id', sql.VarChar, effectiveUserId);
-        sqlReq.input('formType', sql.VarChar, String(mappedForm));
-        sqlReq.input('nro', sql.VarChar, effectiveNro);
-        sqlReq.input('status', sql.VarChar, String(statusVal));
-        sqlReq.input('meta', sql.NVarChar, JSON.stringify(data));
-        sqlReq.input('now', sql.DateTime, now);
-        sqlReq.input('datEnSep', sql.DateTime, effectiveRequestDate);
+          // *** AUDIT: Capture previous record BEFORE the update overwrites it ***
+          let previousRecord = null;
+          try {
+            const prevRes = await sql.query`SELECT STATUS, RESP_SEPLA, requestDate, IDSIGEP, NRO_ESTUDO FROM Requests WHERE id = ${String(requestId)}`;
+            if (prevRes.recordset.length > 0) {
+              previousRecord = prevRes.recordset[0];
+              console.log(`[Audit] 📋 Previous record captured: Status=${previousRecord.STATUS}, Resp=${previousRecord.RESP_SEPLA}, SIGEP=${previousRecord.IDSIGEP}`);
+            }
+          } catch (e) {
+            console.warn('[Audit] Could not fetch previous record:', e.message);
+          }
 
-        // Additional columns for Requests (mirroring T_ESTPLA)
-        sqlReq.input('emp', sql.VarChar, String(mappedUnit));
-        sqlReq.input('org', sql.VarChar, String(mappedArea));
-        sqlReq.input('resp', sql.VarChar, data.requesterName || '');
-        sqlReq.input('tit', sql.VarChar, data.studyTitle || data.clientName || data.uteName || '');
-        sqlReq.input('bairro', sql.VarChar, data.neighborhood || data.bairro || '');
-        sqlReq.input('muni', sql.VarChar, mappedCity);
-        sqlReq.input('localiz', sql.VarChar, (data.address || '') + (data.number ? ' ' + data.number : ''));
-        sqlReq.input('natUnit', sql.VarChar, data.naturgyUnit || '');
-        sqlReq.input('respSepla', sql.VarChar, respSeplaValue || '');
+          sqlReq.input('id', sql.VarChar, requestId);
+          sqlReq.input('user_id', sql.VarChar, effectiveUserId);
+          sqlReq.input('formType', sql.VarChar, String(mappedForm));
+          sqlReq.input('nro', sql.VarChar, effectiveNro);
+          sqlReq.input('status', sql.VarChar, String(statusVal));
+          sqlReq.input('meta', sql.NVarChar, JSON.stringify(data));
+          sqlReq.input('now', sql.DateTime, now);
+          sqlReq.input('datEnSep', sql.DateTime, effectiveRequestDate);
 
-        await sqlReq.query(`
+          // Additional columns for Requests (mirroring T_ESTPLA)
+          sqlReq.input('emp', sql.VarChar, String(mappedUnit));
+          sqlReq.input('org', sql.VarChar, String(mappedArea));
+          sqlReq.input('resp', sql.VarChar, data.requesterName || '');
+          sqlReq.input('tit', sql.VarChar, data.studyTitle || data.clientName || data.uteName || '');
+          sqlReq.input('bairro', sql.VarChar, data.neighborhood || data.bairro || '');
+          sqlReq.input('muni', sql.VarChar, mappedCity);
+          sqlReq.input('localiz', sql.VarChar, (data.address || '') + (data.number ? ' ' + data.number : ''));
+          sqlReq.input('natUnit', sql.VarChar, data.naturgyUnit || '');
+          sqlReq.input('respSepla', sql.VarChar, respSeplaValue || '');
+          sqlReq.input('lastModifiedBy', sql.VarChar, data.lastModifiedBy || data.userId || '');
+          sqlReq.input('userId', sql.VarChar, data.userId || data.user_id || '');
+          sqlReq.input('idsigep', sql.BigInt, data.idsigep || data.sigep || (previousRecord ? previousRecord.IDSIGEP : null));
+
+          await sqlReq.query(`
           IF EXISTS (SELECT 1 FROM Requests WHERE id = @id)
           BEGIN
             UPDATE Requests SET
-              user_id = @user_id, formType = @formType, NRO_ESTUDO = @nro, STATUS = @status,
+              user_id = @user_id, userId = @userId, formType = @formType, NRO_ESTUDO = @nro, STATUS = @status,
               meta_data = @meta, updatedAt = @now, requestDate = @datEnSep,
               EMPRESA = @emp, SOL_ORGAO = @org, SOL_RESPON = @resp, TITULO = @tit, 
               BAIRRO = @bairro, MUNICIPIO = @muni, LOCALIZ = @localiz,
-              naturgyUnit = @natUnit, RESP_SEPLA = @respSepla
+              naturgyUnit = @natUnit, RESP_SEPLA = @respSepla,
+              lastModifiedBy = @lastModifiedBy, IDSIGEP = @idsigep
             WHERE id = @id
           END
           ELSE
           BEGIN
             INSERT INTO Requests (
-              id, user_id, formType, NRO_ESTUDO, STATUS,
+              id, user_id, userId, formType, NRO_ESTUDO, STATUS,
               meta_data, createdAt, updatedAt, requestDate,
-              EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, BAIRRO, MUNICIPIO, LOCALIZ, naturgyUnit, RESP_SEPLA
+              EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, BAIRRO, MUNICIPIO, LOCALIZ, naturgyUnit, RESP_SEPLA, lastModifiedBy, IDSIGEP
             )
             VALUES (
-              @id, @user_id, @formType, @nro, @status,
+              @id, @user_id, @userId, @formType, @nro, @status,
               @meta, @now, @now, @datEnSep,
-              @emp, @org, @resp, @tit, @bairro, @muni, @localiz, @natUnit, @respSepla
+              @emp, @org, @resp, @tit, @bairro, @muni, @localiz, @natUnit, @respSepla, @lastModifiedBy, @idsigep
             )
           END
         `);
 
-        console.log(`[StatusSync] ✅ Record ${requestId} synchronized in Requests with STATUS=${statusVal}`);
-        
-        // Create audit log entry
-        try {
-          const auditReq = new sql.Request();
-          const isNewStudy = !data.studyNumber || data.studyNumber === '';
-          auditReq.input('studyNumber', sql.VarChar, data.studyNumber || null);
-          auditReq.input('actionType', sql.VarChar, isNewStudy ? 'CREATE' : 'UPDATE');
-          auditReq.input('fieldChanged', sql.VarChar, 'study');
-          auditReq.input('oldValue', sql.NVarChar(sql.MAX), isNewStudy ? null : JSON.stringify({ status: 'previous', studyNumber: data.studyNumber }));
-          auditReq.input('newValue', sql.NVarChar(sql.MAX), JSON.stringify({ status: data.status, studyNumber: data.studyNumber }));
-          auditReq.input('userId', sql.VarChar, data.user_id || data.userId || null);
-          auditReq.input('userName', sql.NVarChar(200), data.requesterName || null);
-          auditReq.input('timestamp', sql.DateTime, new Date());
-          
-          await auditReq.query`
-            INSERT INTO T_AUDIT (StudyNumber, ActionType, FieldChanged, OldValue, NewValue, UserId, UserName, Timestamp)
-            VALUES (@studyNumber, @actionType, @fieldChanged, @oldValue, @newValue, @userId, @userName, @timestamp)
-          `;
-          console.log('[Audit] Study created/updated logged successfully');
-        } catch (auditErr) {
-          console.warn('[Audit] Failed to log audit entry:', auditErr.message);
-        }
-      
-        res.status(200).json(data);
-    } catch (err) {
-      const errorDetails = {
-        timestamp: new Date().toISOString(),
-        message: err.message,
-        id: data?.id,
-        studyNumber: data?.studyNumber || data?.nro,
-        status: data?.status,
-        numericStatus: numericStatus,
-        stack: err.stack?.split('\n').slice(0, 5).join('\n')
-      };
-      console.error('Error saving/moving request:', errorDetails);
-      
-      // Error logging
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const logFile = path.join(__dirname, 'error_log.txt');
-        const logEntry = JSON.stringify(errorDetails, null, 2) + '\n---\n';
-        fs.appendFileSync(logFile, logEntry);
-      } catch (logErr) {}
+          console.log(`[StatusSync] ✅ Record ${requestId} synchronized in Requests with STATUS=${statusVal}`);
 
-      res.status(500).json({ error: 'Erro ao salvar/mover solicitação', message: err.message, details: errorDetails });
-    }
-    } finally {
-      requestLocks.delete(lockKey);
-    }
-  });
+          // *** AUDIT: Detect and log changes ***
+          const isNewStudy = !data.studyNumber || data.studyNumber === '';
+          const changes = [];
+          if (isNewStudy && !previousRecord) {
+            if (data.previousStudy) {
+              changes.push({ field: 'revisão', old: data.previousStudy, new: effectiveNro, type: 'REVISION_REQUEST' });
+              changes.push({ field: 'status', old: null, new: data.status || statusVal, type: 'STATUS_CHANGE' });
+            } else {
+              changes.push({ field: 'status', old: null, new: data.status || statusVal, type: 'CREATE' });
+            }
+          } else if (previousRecord) {
+            // 1. Status Change
+            const oldS = String(previousRecord.STATUS || '');
+            const newS = String(statusVal || '');
+            
+            // Normalize: treat 100 and 330 as equivalent (both mean 'Em Análise')
+            const normalizedOld = (oldS === '100' ? '330' : oldS);
+            const normalizedNew = (newS === '100' ? '330' : newS);
+            
+            if (normalizedOld !== normalizedNew) {
+              changes.push({ field: 'status', old: oldS, new: newS, type: 'STATUS_CHANGE' });
+            }
+             
+            // 2. Responsible Change - only log when changing FROM system/ADRSis to another analyst
+            const oldResp = String(previousRecord.RESP_SEPLA || '');
+            const newResp = String(respSeplaValue || '');
+
+            // Only log if OLD was system/ADRSis and NEW is different
+            const isSystemOld = oldResp.toUpperCase().includes('SISTEMA') || oldResp.toUpperCase().includes('ADRSIS');
+            const isSystemNew = newResp.toUpperCase().includes('SISTEMA') || newResp.toUpperCase().includes('ADRSIS');
+
+            if (isSystemOld && !isSystemNew && oldResp !== newResp) {
+              changes.push({ field: 'responsável', old: oldResp, new: newResp, type: 'UPDATE' });
+            }
+
+            // 3. Deadline Change
+            const oldDate = previousRecord.requestDate ? new Date(previousRecord.requestDate).toISOString().split('T')[0] : '';
+            const newDate = effectiveRequestDate ? new Date(effectiveRequestDate).toISOString().split('T')[0] : '';
+            if (oldDate !== newDate) {
+              changes.push({ field: 'prazo', old: previousRecord.requestDate, new: effectiveRequestDate, type: 'UPDATE' });
+            }
+
+          }
+
+          // Mapping de código para texto de status (used for logging compatibility)
+          const codeToTextMap = {
+            '330': 'Em Análise', '100': 'Em Análise', '200': 'Aguardando Execução',
+            '205': 'Em Execução', '210': 'Concluído', '215': 'Aprovado pelo CQ',
+            '220': 'Rejeitado', '225': 'Enviado sem CQ', '240': 'Aguardando Informações',
+            '280': 'Controle de Qualidade', '290': 'Reprovado pelo CQ',
+          };
+
+          for (const change of changes) {
+            try {
+              const auditReq = new sql.Request();
+              auditReq.input('studyNumber', sql.VarChar, data.studyNumber || null);
+              auditReq.input('actionType', sql.VarChar, change.type);
+              auditReq.input('fieldChanged', sql.VarChar, change.field);
+              
+              let oldV = change.old;
+              let newV = change.new;
+
+              // If it's status, wrap in JSON for frontend compatibility
+              if (change.field === 'status') {
+                oldV = JSON.stringify({ status: oldV ? (codeToTextMap[oldV] || oldV) : null, studyNumber: data.studyNumber });
+                newV = JSON.stringify({ status: newV ? (codeToTextMap[newV] || newV) : null, studyNumber: data.studyNumber });
+              } else if (change.field === 'prazo') {
+                oldV = oldV ? new Date(oldV).toISOString() : null;
+                newV = newV ? new Date(newV).toISOString() : null;
+              } else if (change.field === 'responsável') {
+                // Resolve names for responsible analysts instead of showing IDs
+                oldV = await resolveAnalystName(oldV);
+                newV = await resolveAnalystName(newV);
+              }
+
+              auditReq.input('oldValue', sql.NVarChar(sql.MAX), oldV);
+              auditReq.input('newValue', sql.NVarChar(sql.MAX), newV);
+              const authorID = data.lastModifiedBy || data.userId || data.user_id;
+              const authorName = await resolveAnalystName(authorID);
+              auditReq.input('userId', sql.VarChar, authorID || null);
+              auditReq.input('userName', sql.VarChar, authorName || authorID || null);
+              auditReq.input('timestamp', sql.DateTime, new Date());
+
+              await auditReq.query`
+                INSERT INTO T_AUDIT (StudyNumber, ActionType, FieldChanged, OldValue, NewValue, UserId, UserName, Timestamp)
+                VALUES (@studyNumber, @actionType, @fieldChanged, @oldValue, @newValue, @userId, @userName, @timestamp)
+              `;
+              
+              // *** S_STAHIS: Legacy status history log ***
+              if (change.field === 'status') {
+                try {
+                  const staReq = new sql.Request();
+                  const oaDate = dateToOADate(new Date());
+                  const usuarioRaw = String(data.lastModifiedBy || data.userId || data.user_id || '').trim();
+                  const isNumber = /^\d+$/.test(usuarioRaw);
+                  const usuario = isNumber ? usuarioRaw.padStart(8, '0') : usuarioRaw;
+                  
+                  staReq.input('nro', sql.VarChar, effectiveNro || (previousRecord ? previousRecord.NRO_ESTUDO : ''));
+                  staReq.input('status', sql.VarChar, String(change.new));
+                  staReq.input('data', sql.Float, oaDate);
+                  staReq.input('usuario', sql.VarChar, usuario);
+                  staReq.input('idsigep', sql.VarChar, String(effectiveNro || data.studyNumber || data.idsigep || ''));
+
+                  await staReq.query`
+                    INSERT INTO S_STAHIS (NRO_ESTUDO, STATUS, DATA, USUARIO, IDSIGEP)
+                    VALUES (@nro, @status, @data, @usuario, @idsigep)
+                  `;
+                  console.log(`[StatusSync] 📜 Logged to S_STAHIS for record ${requestId}`);
+                } catch (staErr) {
+                  console.warn('[StatusSync] ⚠️ Failed to log to S_STAHIS:', staErr.message);
+                }
+              }
+
+              console.log(`[Audit] Logged ${change.field} change successfully`);
+            } catch (auditErr) {
+              console.warn(`[Audit] Failed to log ${change.field} change:`, auditErr.message);
+            }
+          }
+
+          res.status(200).json(data);
+        } catch (err) {
+          const errorDetails = {
+            timestamp: new Date().toISOString(),
+            message: err.message,
+            id: data?.id,
+            studyNumber: data?.studyNumber || data?.nro,
+            status: data?.status,
+            numericStatus: numericStatus,
+            stack: err.stack?.split('\n').slice(0, 5).join('\n')
+          };
+          console.error('Error saving/moving request:', errorDetails);
+
+          // Error logging
+          try {
+            const fs = require('fs');
+            const path = require('path');
+            const logFile = path.join(__dirname, 'error_log.txt');
+            const logEntry = JSON.stringify(errorDetails, null, 2) + '\n---\n';
+            fs.appendFileSync(logFile, logEntry);
+          } catch (logErr) { }
+
+          res.status(500).json({ error: 'Erro ao salvar/mover solicitação', message: err.message, details: errorDetails });
+        }
+      } finally {
+        requestLocks.delete(lockKey);
+      }
+    });
 
     app.get('/api/requests/next-number', async (req, res) => {
       try {
@@ -1929,7 +2221,7 @@ END
         const normalizedNeighborhood = (neighborhood || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
         if (normalizedAddr.length > 8 || normalizedTitle.length > 5) {
-           const checkResult = await sql.query`
+          const checkResult = await sql.query`
              SELECT TOP 1 NRO_ESTUDO, STATUS, Municipio, LOCALIZ, TITULO, BAIRRO
              FROM (
                SELECT NRO_ESTUDO, STATUS, Municipio, LOCALIZ, TITULO, BAIRRO 
@@ -1942,6 +2234,7 @@ END
                    TITULO = ${title} 
                    OR (REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TITULO, ' ', ''), '.', ''), ',', ''), '-', ''), '/', '') LIKE ${'%' + normalizedTitle + '%'})
                  )
+                 AND (STATUS IS NULL OR STATUS <> '220')
                )
                UNION ALL
                SELECT 
@@ -1956,52 +2249,53 @@ END
                    TITULO = ${title} 
                    OR (REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TITULO, ' ', ''), '.', ''), ',', ''), '-', ''), '/', '') LIKE ${'%' + normalizedTitle + '%'})
                  )
+                 AND (STATUS IS NULL OR STATUS NOT IN ('220', 220))
                )
              ) AS Combined
              ORDER BY NRO_ESTUDO DESC
            `;
-           
-           if (checkResult.recordset[0]) {
-             const existingNro = String(checkResult.recordset[0].NRO_ESTUDO);
-             const matchedAddr = checkResult.recordset[0].LOCALIZ;
-             const matchedTitle = checkResult.recordset[0].TITULO;
-             
-             const base8 = existingNro.replace(/^PROV-/, '').substring(0, 8);
-             const lastRev = parseInt(existingNro.substring(8, 10)) || 0;
-             const nextRev = String(lastRev + 1).padStart(2, '0');
-             
-             console.log(`[DuplicateCheck] 🔍 Match found: ${existingNro} for ${matchedAddr} / ${matchedTitle}`);
-             
-             // Convert numeric status code to readable text
-const statusCodeToText = {
-                '100': 'Em Análise',
-                '200': 'Aguardando Execução',
-                '205': 'Em Execução',
-                '210': 'Concluído',
-                '215': 'Aprovado pelo CQ',
-                '220': 'Cancelado',
-                '225': 'Enviado sem CQ',
-                '240': 'Aguardando Informações',
-                '280': 'Controle de Qualidade',
-                '290': 'Reprovado pelo CQ',
-                '330': 'Em Análise'
-              };
-             const rawStatus = String(checkResult.recordset[0].STATUS || '');
-             const statusText = statusCodeToText[rawStatus] || rawStatus;
 
-             return res.json({ 
-                nextNumber: `PROV-${base8}${nextRev}`,
-                isRevision: true,
-                previousStudy: existingNro,
-                matchedAddress: matchedAddr,
-                matchedTitle: matchedTitle,
-                status: statusText,
-                city: checkResult.recordset[0].Municipio
-             });
-           }
+          if (checkResult.recordset[0]) {
+            const existingNro = String(checkResult.recordset[0].NRO_ESTUDO);
+            const matchedAddr = checkResult.recordset[0].LOCALIZ;
+            const matchedTitle = checkResult.recordset[0].TITULO;
+
+            const base8 = existingNro.replace(/^PROV-/, '').substring(0, 8);
+            const lastRev = parseInt(existingNro.substring(8, 10)) || 0;
+            const nextRev = String(lastRev + 1).padStart(2, '0');
+
+            console.log(`[DuplicateCheck] 🔍 Match found: ${existingNro} for ${matchedAddr} / ${matchedTitle}`);
+
+            // Convert numeric status code to readable text
+            const statusCodeToText = {
+              '100': 'Em Análise',
+              '200': 'Aguardando Execução',
+              '205': 'Em Execução',
+              '210': 'Concluído',
+              '215': 'Aprovado pelo CQ',
+              '220': 'Cancelado',
+              '225': 'Enviado sem CQ',
+              '240': 'Aguardando Informações',
+              '280': 'Controle de Qualidade',
+              '290': 'Reprovado pelo CQ',
+              '330': 'Em Análise'
+            };
+            const rawStatus = String(checkResult.recordset[0].STATUS || '');
+            const statusText = statusCodeToText[rawStatus] || rawStatus;
+
+            return res.json({
+              nextNumber: `PROV-${base8}${nextRev}`,
+              isRevision: true,
+              previousStudy: existingNro,
+              matchedAddress: matchedAddr,
+              matchedTitle: matchedTitle,
+              status: statusText,
+              city: checkResult.recordset[0].Municipio
+            });
+          }
         }
 
-        
+
         // 2. Manual Revision logic
         if (type === 'revision' && baseStudyNumber) {
           const base8 = String(baseStudyNumber).replace('PROV-', '').substring(0, 8);
@@ -2028,11 +2322,11 @@ const statusCodeToText = {
           ) t
           WHERE ISNUMERIC(SUBSTRING(nro, 5, 4)) = 1
         `;
-        
+
         const maxYearSeq = sequenceResult.recordset[0]?.maxYearSeq || 0;
         const nextSeq = String(maxYearSeq + 1).padStart(4, '0');
         const initialRev = '01';
-        
+
         // Final format: PROV-YYYYXXXXRR (10 digits after PROV-)
         const nextNumber = `PROV-${yearPrefix}${nextSeq}${initialRev}`;
         res.json({ nextNumber });
@@ -2050,7 +2344,7 @@ const statusCodeToText = {
           requests: reqR.recordset,
           t_estpla: tR.recordset
         });
-      } catch(err) {
+      } catch (err) {
         res.status(500).json({ error: err.message });
       }
     });
@@ -2091,98 +2385,98 @@ const statusCodeToText = {
 }
 
 
-    // --- Attachments Endpoints ---
+// --- Attachments Endpoints ---
 
-    app.post('/api/attachments', async (req, res) => {
-      try {
-        const { requestId, fileName, fileType, category, contentBase64 } = req.body;
-        if (!requestId || !fileName || !contentBase64) {
-          return res.status(400).json({ error: 'Missing required fields' });
-        }
+app.post('/api/attachments', async (req, res) => {
+  try {
+    const { requestId, fileName, fileType, category, contentBase64 } = req.body;
+    if (!requestId || !fileName || !contentBase64) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
-        const buffer = Buffer.from(contentBase64, 'base64');
-        const sqlReq = new sql.Request();
-        sqlReq.input('requestId', sql.VarChar, String(requestId));
-        sqlReq.input('fileName', sql.NVarChar, fileName);
-        sqlReq.input('fileContent', sql.VarBinary(sql.MAX), buffer);
-        sqlReq.input('fileType', sql.NVarChar, fileType || 'application/octet-stream');
-        sqlReq.input('category', sql.NVarChar, category || 'Solicitacao');
+    const buffer = Buffer.from(contentBase64, 'base64');
+    const sqlReq = new sql.Request();
+    sqlReq.input('requestId', sql.VarChar, String(requestId));
+    sqlReq.input('fileName', sql.NVarChar, fileName);
+    sqlReq.input('fileContent', sql.VarBinary(sql.MAX), buffer);
+    sqlReq.input('fileType', sql.NVarChar, fileType || 'application/octet-stream');
+    sqlReq.input('category', sql.NVarChar, category || 'Solicitacao');
 
-        // PREVENT DUPLICATES: Delete old file with same metadata before inserting
-        await sqlReq.query(`
+    // PREVENT DUPLICATES: Delete old file with same metadata before inserting
+    await sqlReq.query(`
           DELETE FROM RequestAttachments 
           WHERE requestId = @requestId AND fileName = @fileName AND category = @category
         `);
 
-        await sqlReq.query(`
+    await sqlReq.query(`
           INSERT INTO RequestAttachments (requestId, fileName, fileContent, fileType, category)
           VALUES (@requestId, @fileName, @fileContent, @fileType, @category)
         `);
 
-        res.status(201).json({ message: 'Attachment saved successfully' });
-      } catch (err) {
-        console.error('[Attachments] Error saving attachment:', err);
-        res.status(500).json({ error: 'Internal server error', details: err.message });
-      }
-    });
+    res.status(201).json({ message: 'Attachment saved successfully' });
+  } catch (err) {
+    console.error('[Attachments] Error saving attachment:', err);
+    res.status(500).json({ error: 'Internal server error', details: err.message });
+  }
+});
 
-    app.get('/api/attachments/:requestId', async (req, res) => {
-      try {
-        const { requestId } = req.params;
-        const { category } = req.query;
-        const sqlReq = new sql.Request();
-        sqlReq.input('requestId', sql.VarChar, String(requestId));
-        
-        let query = 'SELECT id, fileName as name, fileType as type, category, DATALENGTH(fileContent) as size, createdAt FROM RequestAttachments WHERE requestId = @requestId';
-        if (category) {
-          sqlReq.input('category', sql.NVarChar, category);
-          query += ' AND category = @category';
-        }
+app.get('/api/attachments/:requestId', async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { category } = req.query;
+    const sqlReq = new sql.Request();
+    sqlReq.input('requestId', sql.VarChar, String(requestId));
 
-        const result = await sqlReq.query(query);
-        res.json(result.recordset);
-      } catch (err) {
-        console.error('[Attachments] Error listing attachments:', err);
-        res.status(500).json({ error: 'Internal server error' });
-      }
-    });
+    let query = 'SELECT id, fileName as name, fileType as type, category, DATALENGTH(fileContent) as size, createdAt FROM RequestAttachments WHERE requestId = @requestId';
+    if (category) {
+      sqlReq.input('category', sql.NVarChar, category);
+      query += ' AND category = @category';
+    }
 
-    app.get('/api/attachments/download/:fileId', async (req, res) => {
-      try {
-        const { fileId } = req.params;
-        const sqlReq = new sql.Request();
-        sqlReq.input('id', sql.Int, parseInt(fileId));
+    const result = await sqlReq.query(query);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('[Attachments] Error listing attachments:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
-        const result = await sqlReq.query('SELECT fileName, fileContent, fileType FROM RequestAttachments WHERE id = @id');
-        if (result.recordset.length === 0) {
-          return res.status(404).json({ error: 'File not found' });
-        }
+app.get('/api/attachments/download/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const sqlReq = new sql.Request();
+    sqlReq.input('id', sql.Int, parseInt(fileId));
 
-        const file = result.recordset[0];
-        const isDownload = req.query.download === '1' || req.query.download === 'true';
-        const disposition = isDownload ? 'attachment' : 'inline';
-        
-        res.setHeader('Content-Type', file.fileType || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.fileName)}"`);
-        res.send(file.fileContent);
-      } catch (err) {
-        console.error('[Attachments] Error downloading file:', err);
-        res.status(500).json({ error: 'Internal server error' });
-      }
-    });
+    const result = await sqlReq.query('SELECT fileName, fileContent, fileType FROM RequestAttachments WHERE id = @id');
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'File not found' });
+    }
 
-    app.delete('/api/attachments/:fileId', async (req, res) => {
-      try {
-        const { fileId } = req.params;
-        const sqlReq = new sql.Request();
-        sqlReq.input('id', sql.Int, parseInt(fileId));
-        await sqlReq.query('DELETE FROM RequestAttachments WHERE id = @id');
-        res.json({ message: 'Attachment deleted successfully' });
-      } catch (err) {
-        console.error('[Attachments] Error deleting attachment:', err);
-        res.status(500).json({ error: 'Internal server error' });
-      }
-    });
+    const file = result.recordset[0];
+    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    const disposition = isDownload ? 'attachment' : 'inline';
+
+    res.setHeader('Content-Type', file.fileType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(file.fileName)}"`);
+    res.send(file.fileContent);
+  } catch (err) {
+    console.error('[Attachments] Error downloading file:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/attachments/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const sqlReq = new sql.Request();
+    sqlReq.input('id', sql.Int, parseInt(fileId));
+    await sqlReq.query('DELETE FROM RequestAttachments WHERE id = @id');
+    res.json({ message: 'Attachment deleted successfully' });
+  } catch (err) {
+    console.error('[Attachments] Error deleting attachment:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 
 startServer();

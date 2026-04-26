@@ -399,17 +399,17 @@ const App: React.FC = () => {
         const deadline = normalizeDate(r.estimatedDeliveryDate);
         if ([StudyStatus.CONCLUIDO, StudyStatus.CANCELADO, StudyStatus.REJEITADO].includes(r.status)) return;
         if (['Concluído', 'Cancelado', 'Rejeitado'].includes(String(r.status))) return;
-        
+
         // Debug: Log para entender o que está acontecendo com cada estudo
         console.log(`[Debug] Study ${r.id} (${r.studyNumber}): deadline=${deadline}, threshold=${threshold}, status=${r.status}, assignedTo=${r.assignedTo}`);
-        
+
         if (!deadline) return;
 
         if (deadline <= threshold) {
           const isMe = isAssignedToMe(r.assignedTo, user);
           const isSystem = isSystemAssigned(r.assignedTo);
           console.log(`[Debug] Study ${r.id}: isMe=${isMe}, isSystem=${isSystem}, user.role=${user.role}`);
-          
+
           if (isMe) expiringMyRequests.push({ req: r, deadline });
           else if (isSystem) expiringCommonQueue.push({ req: r, deadline });
           else if (user.role === UserRole.ADM) {
@@ -613,9 +613,9 @@ const App: React.FC = () => {
   };
 
   const handleRefreshData = async () => {
-    console.log('[Refresh] Starting data refresh...');
+    console.log('[Refresh] Starting FULL data refresh...');
     setIsSyncing(true);
-    setSyncStatus('Atualizando...');
+    setSyncStatus('Atualizando dados...');
     try {
       isUpdatingRef.current = true;
 
@@ -627,18 +627,22 @@ const App: React.FC = () => {
         setSyncStatus(msg);
       });
 
-      // Depois atualiza os dados do banco
-      setSyncStatus('Atualizando dados...');
+      // Atualiza Users
+      setSyncStatus('Atualizando usuários...');
       console.log('[Refresh] Fetching users...');
       const users = await StorageService.getUsers();
       console.log('[Refresh] Users fetched:', users.length);
-      
+
+      // Update Users state
+      setAllUsers(users);
+
+      // Atualiza Requests (Tabela principal)
+      setSyncStatus('Atualizando solicitações...');
       console.log('[Refresh] Fetching requests, user:', user?.id, 'role:', user?.role, 'area:', user?.area);
       const requests = await StorageService.getRequests(user?.id, user?.role, user?.area);
-      console.log('[Refresh] Requests fetched from API:', requests.length, 'samples:', requests.slice(0, 3).map(r => ({ id: r.id, studyNumber: r.studyNumber, status: r.status })));
-      
-      console.log('[Refresh] All current requests in state:', allRequests.length, 'samples:', allRequests.slice(0, 3).map(r => ({ id: r.id, studyNumber: r.studyNumber, status: r.status })));
+      console.log('[Refresh] Requests fetched from API:', requests.length);
 
+      // Merge com updates pendentes locales
       const mergedRequests = requests.map(req => {
         const pending = pendingUpdatesRef.current[req.id];
         const currentLocal = allRequests.find(r => r.id === req.id);
@@ -659,14 +663,13 @@ const App: React.FC = () => {
       });
 
       console.log('[Refresh] Setting merged requests:', mergedRequests.length);
-      console.log('[Refresh] First 3 requests to set:', mergedRequests.slice(0, 3).map(r => ({ id: r.id, studyNumber: r.studyNumber, status: r.status })));
       setAllRequests(mergedRequests);
-      setAllUsers(users);
-      console.log('[Refresh] setAllRequests called with', mergedRequests.length, 'items');
-      showToast('Dados atualizados com sucesso!', 'success');
+      console.log('[Refresh] ✅ All data updated successfully');
+
+      showToast('Dados atualizados!', 'success');
     } catch (err) {
       console.error('[Refresh] Erro ao atualizar dados:', err);
-      showToast('Erro ao atualizar dados.', 'error');
+      showToast('Erro ao atualizar dados: ' + (err?.message || 'Erro desconhecido'), 'error');
     } finally {
       isUpdatingRef.current = false;
       setIsSyncing(false);
@@ -707,7 +710,7 @@ const App: React.FC = () => {
             status,
             studyNumber,
             rejectionReason: status === StudyStatus.REJEITADO ? (reason || req.rejectionReason) : req.rejectionReason,
-            holdReason: status === StudyStatus.AGUARDANDO_INFORMACAO ? (reason || req.holdReason) : req.holdReason,
+            holdReason: status === StudyStatus.AGUARDANDO_INFORMACAO ? (reason || req.holdReason) : (req.status === StudyStatus.AGUARDANDO_INFORMACAO ? null : req.holdReason),
             holdResponse: (status === StudyStatus.AGUARDANDO_INFORMACAO && req.status !== StudyStatus.AGUARDANDO_INFORMACAO) ? null : req.holdResponse,
             holdResponseSeen: (status === StudyStatus.AGUARDANDO_INFORMACAO && req.status !== StudyStatus.AGUARDANDO_INFORMACAO) ? false : (additionalData?.holdResponseSeen !== undefined ? additionalData.holdResponseSeen : req.holdResponseSeen),
             holdRequestSeen: (status === StudyStatus.AGUARDANDO_INFORMACAO && req.status !== StudyStatus.AGUARDANDO_INFORMACAO) ? false : (additionalData?.holdRequestSeen !== undefined ? additionalData.holdRequestSeen : req.holdRequestSeen),
@@ -717,7 +720,9 @@ const App: React.FC = () => {
             completedAt: status === StudyStatus.CONCLUIDO ? (req.completedAt || new Date().toISOString()) : req.completedAt,
             qcRequestDate: status === StudyStatus.CONTROLE_QUALIDADE ? (req.qcRequestDate || new Date().toISOString()) : req.qcRequestDate,
             updatedAt: new Date().toISOString(),
-            estimatedDeliveryDate: req.estimatedDeliveryDate
+            estimatedDeliveryDate: additionalData?.estimatedDeliveryDate !== undefined ? additionalData.estimatedDeliveryDate : req.estimatedDeliveryDate,
+            userId: user?.email || req.userId,
+            lastModifiedBy: user?.name || req.lastModifiedBy
           };
 
           // Limpar dados de QC da revisão anterior quando enviando para nova revisão de CQ
@@ -782,12 +787,18 @@ const App: React.FC = () => {
 
       setAllRequests(updatedList);
 
-      // Track this update as "pending" for 10s to prevent sync reversion
-      pendingUpdatesRef.current[id] = {
-        status,
-        assignedTo: assignedTo !== undefined ? assignedTo : originalRequest?.assignedTo,
-        timestamp: Date.now()
-      };
+      // Track this update as "pending" to prevent sync reversion, but only if status or analyst changed.
+      // This prevents background updates (like alert acknowledgments) from locking the UI status.
+      const isStatusChange = status !== originalRequest?.status;
+      const isAnalystChange = assignedTo !== undefined && assignedTo !== originalRequest?.assignedTo;
+
+      if (isStatusChange || isAnalystChange) {
+        pendingUpdatesRef.current[id] = {
+          status,
+          assignedTo: assignedTo !== undefined ? assignedTo : originalRequest?.assignedTo,
+          timestamp: Date.now()
+        };
+      }
 
       const updatedReq = updatedList.find(r => r.id === id);
       const needsRename = (status === StudyStatus.AGUARDANDO_EXECUCAO || status === StudyStatus.VALIDADO) && updatedReq?.previousStudy?.startsWith('PROV-');
@@ -806,8 +817,8 @@ const App: React.FC = () => {
           await StorageService.addRequest(updatedReq);
 
           // NEW: Upload any NEW files attached during status update (e.g. from Execution)
-          // CONFORME SOLICITADO: Pular upload se status for Em Análise (100/330), Pendente (240) ou Rejeitado (290)
-          const skipUploadStatus = ['100', '330', '240', '290'];
+          // CONFORME SOLICITADO: Pular upload se status for Em Análise, Pendente ou Rejeitado
+          const skipUploadStatus = ['100', '330', '240', '290', 'Em Análise', 'Pendente', 'Rejeitado'];
           const currentStatus = String(updatedReq.status);
 
           if (!skipUploadStatus.includes(currentStatus)) {
@@ -1368,7 +1379,13 @@ const App: React.FC = () => {
         const prevStatus = existingRequest.status;
         // Se estava rejeitado, volta para Em Análise ao reenviar
         const status = prevStatus === StudyStatus.REJEITADO ? StudyStatus.EM_ANALISE : prevStatus;
-        finalRequest = { ...newRequest, status, rejectionReason: undefined };
+        finalRequest = {
+          ...newRequest,
+          status,
+          rejectionReason: undefined,
+          userId: user?.email || newRequest.userId,
+          lastModifiedBy: user?.name || newRequest.lastModifiedBy
+        };
       } else {
         // 2. É um NOVO estudo - Gerar Metadados (StudyNumber via Servidor)
         const newAddress = normalize(newRequest.address);
@@ -1394,7 +1411,9 @@ const App: React.FC = () => {
             studyNumber,
             status: StudyStatus.EM_ANALISE,
             previousStudy: baseRef,
-            user_id: user?.id || ''
+            user_id: user?.id || '',
+            userId: user?.email || newRequest.userId,
+            lastModifiedBy: user?.name || newRequest.lastModifiedBy
           };
         } else {
           // Novo estudo - Pedir próximo número global ao servidor
@@ -1405,7 +1424,9 @@ const App: React.FC = () => {
             ...newRequest,
             studyNumber,
             status: StudyStatus.EM_ANALISE,
-            user_id: user?.id || ''
+            user_id: user?.id || '',
+            userId: user?.email || newRequest.userId,
+            lastModifiedBy: user?.name || newRequest.lastModifiedBy
           };
         }
       }
@@ -1602,7 +1623,7 @@ const App: React.FC = () => {
                 <span className="text-[10px] font-semibold text-orange-800">{syncStatus}</span>
               </div>
             )}
-<nav className="flex items-center gap-2 mr-4 pr-4 border-r border-slate-200">
+            <nav className="flex items-center gap-2 mr-4 pr-4 border-r border-slate-200">
               <button
                 onClick={handleRefreshData}
                 disabled={isSyncing}
@@ -1650,8 +1671,8 @@ const App: React.FC = () => {
                 </div>
               )}
               <div className="text-right hidden sm:block">
-<p className="text-xs font-semibold text-[#004080] leading-none">{user?.name}</p>
-              <p className="text-[10px] text-slate-400 mt-1">{user?.role}</p>
+                <p className="text-xs font-semibold text-[#004080] leading-none">{user?.name}</p>
+                <p className="text-[10px] text-slate-400 mt-1">{user?.role}</p>
               </div>
               <button onClick={handleLogout} className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center" title="Logout">
                 <i className="fa-solid fa-power-off"></i>
@@ -1763,6 +1784,14 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={handleRefreshData}
+                    disabled={isSyncing}
+                    className="w-9 h-9 rounded-xl bg-green-50 text-green-500 hover:bg-green-500 hover:text-white transition-all flex items-center justify-center text-sm active:scale-90"
+                    title="Atualizar dados"
+                  >
+                    <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'fa-spin' : ''}`}></i>
+                  </button>
+                  <button
                     onClick={() => setShowNotifBox(false)}
                     className="w-9 h-9 rounded-xl bg-slate-50 text-slate-400 hover:text-[#004080] hover:bg-slate-100 transition-all flex items-center justify-center text-sm active:scale-90"
                   >
@@ -1848,8 +1877,8 @@ const App: React.FC = () => {
                                   >
                                     <i className="fa-solid fa-clock-rotate-left text-xs"></i>
                                     <span className="text-[9px] font-semibold text-left">
-                                      {n.type === 'Comum' 
-                                        ? `${new Set(acks.map(a => a.name?.trim() || 'Sistema')).size} Viram` 
+                                      {n.type === 'Comum'
+                                        ? `${new Set(acks.map(a => a.name?.trim() || 'Sistema')).size} Viram`
                                         : 'Visto'} · <span className="text-green-600">Histórico</span>
                                     </span>
                                   </button>
@@ -1908,67 +1937,60 @@ const App: React.FC = () => {
                 <i className="fa-solid fa-times text-sm"></i>
               </button>
             </div>
-            <div className="p-4 max-h-[60vh] overflow-y-auto space-y-3 bg-slate-50/50">
-              {historyModalAlert.type === 'Comum' ? (
-                (() => {
-                  const grouped = new Map<string, { time: string; status: string }[]>();
-                  historyModalAlert.acks.forEach(a => {
-                    // Normalizar nome para evitar duplicatas (trim + lowercase para key)
-                    const normalizedName = a.name ? a.name.trim() : 'Sistema';
-                    const existing = grouped.get(normalizedName) || [];
-                    existing.push({ time: a.time, status: a.status });
-                    grouped.set(normalizedName, existing);
-                  });
-                  return Array.from(grouped.entries()).map(([analystName, entries], gIdx) => (
-                    <div key={gIdx} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                      <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border-b border-slate-100">
-                        <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-                          <i className="fa-solid fa-user text-xs"></i>
-                        </div>
-                        <div className="flex-1">
-                          <span className="text-[10px] font-semibold text-slate-700">{analystName}</span>
-                          <span className="text-[8px] text-slate-400 ml-2">({entries.length} visualização{entries.length > 1 ? 'ões' : ''})</span>
-                        </div>
+            <div className="p-4 max-h-[60vh] overflow-y-auto space-y-4 bg-slate-50/50">
+              {(() => {
+                const grouped = new Map<string, { time: string; status: string }[]>();
+                historyModalAlert.acks.forEach(a => {
+                  const normalizedName = a.name ? a.name.trim() : 'Sistema';
+                  const existing = grouped.get(normalizedName) || [];
+                  existing.push({ time: a.time, status: a.status });
+                  grouped.set(normalizedName, existing);
+                });
+
+                if (grouped.size === 0) {
+                  return (
+                    <div className="text-center py-8">
+                      <p className="text-xs text-slate-400">Nenhum registro de visualização encontrado.</p>
+                    </div>
+                  );
+                }
+
+                return Array.from(grouped.entries()).map(([analystName, entries], gIdx) => (
+                  <div key={gIdx} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50/80 border-b border-slate-100">
+                      <div className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 text-[10px]">
+                        <i className="fa-solid fa-user"></i>
                       </div>
-                      <div className="divide-y divide-slate-50">
-                        {entries.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).map((entry, tIdx) => (
-                          <div key={tIdx} className="flex items-center justify-between gap-2 px-4 py-2">
-                            <div className="flex items-center gap-2">
-                              <i className="fa-solid fa-eye text-[9px] text-green-500"></i>
-                              <span className="text-[9px] text-slate-600">
-                                {new Date(entry.time).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                            </div>
-                            {entry.status && (
-                              <span className="text-[7px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 font-medium border border-purple-100">
-                                {entry.status}
-                              </span>
-                            )}
+                      <div className="flex-1 flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-700 uppercase">{analystName}</span>
+                        <span className="text-[8px] text-slate-400 font-bold bg-white px-2 py-0.5 rounded-full border border-slate-100">
+                          {entries.length} {entries.length > 1 ? 'Vistas' : 'Vista'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-50">
+                      {entries.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).map((entry, tIdx) => (
+                        <div key={tIdx} className="flex items-center justify-between gap-2 px-4 py-2 hover:bg-slate-50/30 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <i className="fa-solid fa-clock text-[9px] text-green-500"></i>
+                            <span className="text-[9px] font-medium text-slate-600">
+                              {new Date(entry.time).toLocaleString('pt-BR', {
+                                day: '2-digit', month: '2-digit', year: 'numeric',
+                                hour: '2-digit', minute: '2-digit', second: '2-digit'
+                              })}
+                            </span>
                           </div>
-                        ))}
-                      </div>
+                          {entry.status && (
+                            <span className="text-[7px] px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-600 font-black border border-purple-100 uppercase tracking-tighter">
+                              {entry.status}
+                            </span>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ));
-                })()
-              ) : (
-                historyModalAlert.acks
-                  .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-                  .map((a, aIdx) => (
-                    <div key={aIdx} className="flex items-center justify-between gap-2 bg-white p-3 rounded-xl shadow-sm border border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <i className="fa-solid fa-eye text-[9px] text-green-500"></i>
-                        <span className="text-[9px] text-slate-600">
-                          {new Date(a.time).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      {a.status && (
-                        <span className="text-[7px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 font-medium border border-purple-100">
-                          {a.status}
-                        </span>
-                      )}
-                    </div>
-                  ))
-              )}
+                  </div>
+                ));
+              })()}
             </div>
           </div>
         </div>

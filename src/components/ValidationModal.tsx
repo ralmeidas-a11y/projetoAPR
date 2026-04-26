@@ -88,9 +88,14 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
   const [studySubType, setStudySubType] = useState(initialData?.studySubType || '');
   const [difficulty, setDifficulty] = useState(initialData?.difficulty || '');
   const [validatorObservations, setValidatorObservations] = useState(initialData?.validatorObservations || '');
+  const isValidISODate = (dateStr: string | undefined | null): boolean => {
+    if (!dateStr) return false;
+    return /^\d{4}-\d{2}-\d{2}/.test(dateStr) && !isNaN(new Date(dateStr).getTime());
+  };
   const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState(
-    initialData?.estimatedDeliveryDate ||
-    calculateDeadline(initialData?.requestDate, initialData?.formType || '')
+    isValidISODate(initialData?.estimatedDeliveryDate)
+      ? initialData.estimatedDeliveryDate
+      : calculateDeadline(initialData?.requestDate, initialData?.formType || '')
   );
 
   const handleConfirm = () => {

@@ -71,17 +71,26 @@ export const FormContainer: React.FC<FormContainerProps> = ({
           ...defaults,
           ...initialData,
           requestDate: getGMT3ISOString().split('T')[0],
-          readOnly: false  // NEW STUDIES ARE ALWAYS EDITABLE FOR ALL ROLES
+          readOnly: false,  // NEW STUDIES ARE ALWAYS EDITABLE FOR ALL ROLES
+          // Fill requester data when currentUser is SOLICITANTE
+          ...(currentUser?.role === UserRole.SOLICITANTE ? {
+            naturgyUnit: currentUser.naturgyUnit || defaults.naturgyUnit,
+            requesterName: currentUser.name || defaults.requesterName,
+            requesterArea: currentUser.area || defaults.requesterArea,
+            phone: currentUser.phone || defaults.phone,
+            email: currentUser.email || defaults.email,
+          } : {}),
         };
       }
 
-      // Rule: Only the owner can edit existing studies. 
+      // Rule: Only the owner can edit existing studies.
       // Strict Update: Even Admins/Analysts are Read-Only if they didn't create this specific record.
       const isOwner = initialData.user_id === userId;
       // Allow assignedTo to edit when study is REPROVADO_CQ (needs corrections)
       const isAssignedAnalyst = initialData.assignedTo === userId;
       const isReprovadoCQ = initialData.status === StudyStatus.REPROVADO_CQ;
-      const canEdit = isOwner || (isAssignedAnalyst && isReprovadoCQ);
+      const isRejeitado = initialData.status === StudyStatus.REJEITADO || String(initialData.status) === '220';
+      const canEdit = isOwner || (isAssignedAnalyst && isReprovadoCQ) || isRejeitado;
 
       return {
         ...defaults,
@@ -96,6 +105,20 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         readOnly: !canEdit // STRICT: No Admin/Analyst bypass for existing studies
       };
     }
+
+    // Sem initialData: criar novo estudo. Apenas SOLICITANTE tem dados preenchidos automaticamente.
+    // Analista/ADM deixam campos vazios para preenchimento manual do solicitante.
+    if (currentUser?.role === UserRole.SOLICITANTE) {
+      return {
+        ...defaults,
+        naturgyUnit: currentUser.naturgyUnit || defaults.naturgyUnit,
+        requesterName: currentUser.name || defaults.requesterName,
+        requesterArea: currentUser.area || defaults.requesterArea,
+        phone: currentUser.phone || defaults.phone,
+        email: currentUser.email || defaults.email,
+      };
+    }
+
     return defaults;
   });
 
@@ -512,6 +535,16 @@ export const FormContainer: React.FC<FormContainerProps> = ({
     }
   };
 
+  const handleBack = () => {
+    if (duplicateDecision === 'viewing') {
+      // Clear decision and show modal again
+      setDuplicateDecision(null);
+      setShowDuplicateModal(true);
+    } else {
+      onBack();
+    }
+  };
+
   const handleSolicitarRevisaoAction = (precedent: any) => {
     if (!precedent) return;
 
@@ -530,6 +563,11 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       delete cleanClone.approvedAt;
       delete cleanClone.history;
 
+      // Only prefill requester data if current user is SOLICITANTE.
+      // Otherwise, leave empty for manual entry (or admin/analyst to fill).
+      const shouldPrefillRequesterForRevision =
+        currentUser?.role === UserRole.SOLICITANTE;
+
       return {
         ...cleanClone, // Start with everything from the previous study
         id: 0,
@@ -540,12 +578,12 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         studyType: 'Revisão de Estudo',
         previousStudy: precedent.studyNumber,
 
-        // Keep current user as the one requesting the revision
-        naturgyUnit: currentUser?.naturgyUnit || prev.naturgyUnit,
-        requesterName: currentUser?.name || prev.requesterName,
-        requesterArea: currentUser?.area || prev.requesterArea,
-        phone: currentUser?.phone || prev.phone,
-        email: currentUser?.email || prev.email,
+        // Fill requester data conditionally based on ownership
+        naturgyUnit: shouldPrefillRequesterForRevision ? (currentUser?.naturgyUnit || prev.naturgyUnit) : '',
+        requesterName: shouldPrefillRequesterForRevision ? (currentUser?.name || prev.requesterName) : '',
+        requesterArea: shouldPrefillRequesterForRevision ? (currentUser?.area || prev.requesterArea) : '',
+        phone: shouldPrefillRequesterForRevision ? (currentUser?.phone || prev.phone) : '',
+        email: shouldPrefillRequesterForRevision ? (currentUser?.email || prev.email) : '',
 
         // Cleanup execution/quality data that shouldn't be in a new revision
         assignedTo: undefined,
@@ -598,10 +636,11 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   // Analistas vêem o que é deles ou o que está na fila (exceto se atribuído a outro)
   const isAssigned = isAssignedToMe(initialData?.assignedTo, currentUser);
   const isOwnerForBlocking = initialData?.user_id === userId;
-  const isRestricted = readOnly && initialData?.assignedTo && !isOwnerForBlocking && !isAdmin && !isAssigned;
+  const isPRGCAssigned = initialData?.assignedTo && initialData.assignedTo.toLowerCase() === 'prgc';
+  const isRestricted = readOnly && initialData?.assignedTo && !isOwnerForBlocking && !isAdmin && !isAssigned && !isPRGCAssigned;
 
   // Solicitante não vê detalhes técnicos enquanto está em execução (EXCEPT if they're the owner - then they can edit)
-  const showInProgressMessage = isRequesterView && isPendingExecution && readOnly && !isOwnerForBlocking;
+  const showInProgressMessage = isRequesterView && isPendingExecution && readOnly && !isOwnerForBlocking && duplicateDecision !== 'viewing';
 
   if (showInProgressMessage) {
     return (
@@ -616,8 +655,8 @@ export const FormContainer: React.FC<FormContainerProps> = ({
             <span className="relative bg-clip-text text-transparent bg-gradient-to-r from-green-600 to-emerald-500">concluído</span>
           </span>.
         </p>
-        <button onClick={onBack} className="px-12 py-4 bg-[#004080] text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-orange-500 transition-all shadow-lg active:scale-95">
-          Voltar para minhas solicitações
+        <button onClick={onBack} className="px-6 py-2.5 bg-[#004080] text-white rounded-lg font-black uppercase text-xs tracking-widest hover:bg-orange-500 transition-all shadow-lg active:scale-95">
+          <i className="fa-solid fa-arrow-left mr-2"></i> Voltar
         </button>
       </div>
     );
@@ -625,7 +664,9 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   const canValidate = isAdmin || currentUser?.permissions?.includes('validar');
   // Se o analista tentar forçar entrada em algo que não é dele
-  if (isRestricted) {
+  const isActuallyRestricted = isRestricted && duplicateDecision !== 'viewing';
+
+  if (isActuallyRestricted) {
     return (
       <div className="bg-white rounded-3xl p-16 text-center animate-in zoom-in-95 duration-300 shadow-2xl border border-slate-100 max-w-2xl mx-auto">
         <div className="w-20 h-20 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-8 text-3xl shadow-inner border border-orange-100">
@@ -635,8 +676,8 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         <p className="text-slate-500 text-sm leading-relaxed mb-10 font-medium">
           Este estudo está atribuído a outro analista. Pela segurança da fila técnica, você não pode visualizar ou executar tarefas de terceiros.
         </p>
-        <button onClick={onBack} className="px-12 py-4 bg-[#004080] text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-orange-500 transition-all shadow-lg active:scale-95">
-          Voltar para meu Painel
+        <button onClick={onBack} className="px-6 py-2.5 bg-[#004080] text-white rounded-lg font-black uppercase text-xs tracking-widest hover:bg-orange-500 transition-all shadow-lg active:scale-95">
+          <i className="fa-solid fa-arrow-left mr-2"></i> Voltar
         </button>
       </div>
     );
@@ -648,76 +689,95 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
 
         {showDuplicateModal && (precedentStudy || backendPrecedentStudy) && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[999] p-4 animate-in fade-in duration-300">
-            <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] overflow-hidden flex flex-col items-center p-10 animate-in zoom-in-95 duration-300">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[999] p-4 animate-in fade-in duration-300">
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col items-center animate-in zoom-in-95 duration-300 relative">
+              <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600"></div>
+              
+              <div className="pt-16 pb-8 px-10 w-full">
+                <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-orange-50 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+                  <i className="fa-solid fa-triangle-exclamation text-orange-500 text-4xl"></i>
+                </div>
 
-              <div className="w-20 h-20 bg-orange-50 rounded-3xl flex items-center justify-center mb-8">
-                <i className="fa-solid fa-triangle-exclamation text-orange-500 text-3xl"></i>
-              </div>
-
-              <h3 className="text-[22px] font-black text-[#004080] uppercase tracking-tighter text-center leading-tight mb-4 px-4">
-                Estudo já concluído ou Estudo vigente
-              </h3>
-
-              <div className="text-center px-4 mb-8">
-                <p className="text-sm text-slate-500 font-medium leading-relaxed">
-                  Identificamos que já existe uma solicitação (<span className="font-bold text-[#004080]">{(backendPrecedentStudy || precedentStudy)?.studyNumber}</span>) para este endereço com status <span className="font-bold text-orange-600">"{(backendPrecedentStudy || precedentStudy)?.status || 'Concluído'}"</span>. Estudos concluídos permanecem vigentes por 12 meses.
+                <h3 className="text-2xl font-black text-slate-800 text-center leading-tight mb-4">
+                  Estudo Existente
+                </h3>
+                <p className="text-sm text-slate-500 text-center leading-relaxed mb-8">
+                  Identificamos que já existe uma solicitação para este endereço. Estudos concluídos permanecem vigentes por 12 meses.
                 </p>
-              </div>
 
-              <div className="w-full bg-slate-50 rounded-2xl p-6 mb-10 text-left border border-slate-100">
-                <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Detalhes do Estudo Encontrado</span>
-                <p className="text-base font-black text-slate-700 leading-none mb-2">
-                  {(backendPrecedentStudy as any)?.title || (precedentStudy as any)?.studyTitle || (precedentStudy as any)?.clientName || 'Sem Título'}
-                </p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
-                  {(backendPrecedentStudy || precedentStudy)?.address}, {(backendPrecedentStudy || precedentStudy)?.city}
-                </p>
-              </div>
+                <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 mb-8 border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-xs font-bold text-orange-600 uppercase tracking-widest">Status</span>
+                    <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-bold">
+                      {(backendPrecedentStudy || precedentStudy)?.status || 'Concluído'}
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold text-slate-800 mb-2">
+                    {(backendPrecedentStudy as any)?.title || (precedentStudy as any)?.studyTitle || (precedentStudy as any)?.clientName || 'Sem Título'}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {(backendPrecedentStudy || precedentStudy)?.address}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {(backendPrecedentStudy || precedentStudy)?.city}
+                  </p>
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <span className="text-xs font-bold text-slate-600">Nº do Estudo</span>
+                    <p className="text-sm font-black text-[#004080]">{(backendPrecedentStudy || precedentStudy)?.studyNumber}</p>
+                  </div>
+                </div>
 
-              <div className="w-full space-y-3 flex flex-col">
-                <button
-                  onClick={() => {
-                    const matchedStudy = backendPrecedentStudy || precedentStudy;
-                    if (matchedStudy) {
-                      setDuplicateDecision('viewing');
-                    }
-                    setShowDuplicateModal(false);
-                  }}
-                  className="w-full py-4 bg-[#004080] text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-100/50 hover:bg-[#003366] transition-all active:scale-[0.98]"
-                >
-                  Visualizar Estudo Existente
-                </button>
-                <button
-                  onClick={() => {
-                    const matchedStudy = backendPrecedentStudy || precedentStudy;
-                    handleSolicitarRevisaoAction(matchedStudy);
-                  }}
-                  className="w-full py-4 bg-white text-slate-600 border border-slate-200 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all active:scale-[0.98]"
-                >
-                  Solicitar Revisão
-                </button>
+                <div className="space-y-3 flex flex-col">
+                  <button
+                    onClick={() => {
+                      const matchedStudy = backendPrecedentStudy || precedentStudy;
+                      if (matchedStudy) {
+                        setDuplicateDecision('viewing');
+                      }
+                      setShowDuplicateModal(false);
+                    }}
+                    className="w-full py-5 bg-gradient-to-r from-[#004080] to-[#003366] text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-500/30 hover:shadow-xl hover:scale-[1.02] transition-all active:scale-[0.98]"
+                  >
+                    <i className="fa-solid fa-eye mr-2"></i>
+                    Visualizar Estudo Existente
+                  </button>
+                  <button
+                    onClick={() => {
+                      const matchedStudy = backendPrecedentStudy || precedentStudy;
+                      handleSolicitarRevisaoAction(matchedStudy);
+                    }}
+                    className="w-full py-5 bg-white text-slate-700 border-2 border-slate-200 rounded-2xl font-bold text-sm hover:bg-slate-50 hover:border-[#004080] hover:text-[#004080] transition-all active:scale-[0.98] flex items-center justify-center"
+                  >
+                    <i className="fa-solid fa-rotate-right mr-2 text-slate-400"></i>
+                    Solicitar Revisão
+                  </button>
 
-                <button
-                  onClick={() => setShowDuplicateModal(false)}
-                  className="w-full py-2 text-slate-400 hover:text-slate-600 text-[11px] font-bold transition-all mt-2"
-                >
-                  Cancelar e Voltar
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDuplicateModal(false);
+                      setDuplicateDecision(null);
+                      onBack();
+                    }}
+                    className="w-full py-2.5 text-slate-400 font-bold text-sm hover:text-slate-600 transition-all mt-2"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {duplicateDecision === 'viewing' && (precedentStudy || backendPrecedentStudy) && (
-          <div className="mb-8 p-6 bg-blue-50 border border-blue-200 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top-4 duration-300">
-            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-[#004080] shadow-sm">
+          <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border-2 border-blue-200 rounded-2xl flex items-center gap-5 animate-in slide-in-from-top-4 duration-300 shadow-lg shadow-blue-500/10">
+            <div className="w-14 h-14 bg-gradient-to-r from-[#004080] to-blue-700 rounded-xl flex items-center justify-center text-white shadow-lg">
               <i className="fa-solid fa-eye text-xl"></i>
             </div>
             <div>
-              <h4 className="text-xs font-black text-[#004080] uppercase tracking-widest">Modo Visualização (Espelho)</h4>
-              <p className="text-[11px] text-blue-700/80 font-bold uppercase mt-1">
-                Você está visualizando o estudo <span className="underline">{(backendPrecedentStudy || precedentStudy)?.studyNumber}</span>. Veja os detalhes abaixo e escolha uma ação no final da página.
+              <h4 className="text-sm font-black text-[#004080] uppercase tracking-widest mb-1">Modo Visualização</h4>
+              <p className="text-sm text-slate-600">
+                Você está visualizando o estudo <span className="font-bold text-[#004080]">{(backendPrecedentStudy || precedentStudy)?.studyNumber}</span>. Veja os detalhes abaixo e escolha uma ação no final da página.
               </p>
             </div>
           </div>
@@ -734,9 +794,9 @@ export const FormContainer: React.FC<FormContainerProps> = ({
                 className="w-full p-4 border border-slate-200 rounded-2xl outline-none focus:border-red-500 transition-all text-sm h-40 bg-white"
                 placeholder="Motivo da devolução para o solicitante..."
               />
-              <div className="flex justify-end gap-4 mt-6">
-                <button onClick={() => setShowRejectionModal(false)} className="px-6 py-2 text-slate-400 font-bold uppercase text-[10px]">Cancelar</button>
-                <button onClick={handleConfirmRejection} className="px-8 py-3 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] shadow-lg shadow-red-200">Confirmar Devolução</button>
+              <div className="flex justify-end gap-3 mt-6">
+                <button onClick={() => setShowRejectionModal(false)} className="py-2.5 px-4 text-slate-400 font-bold uppercase text-[10px]">Cancelar</button>
+                <button onClick={handleConfirmRejection} className="py-2.5 px-4 bg-red-600 text-white rounded-lg font-black uppercase text-[10px] shadow-lg shadow-red-200">Confirmar Devolução</button>
               </div>
             </div>
           </div>
@@ -763,7 +823,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 border-b border-slate-100 pb-8">
           <div>
-            <button onClick={onBack} type="button" className="flex items-center text-[#004080] hover:text-orange-500 transition-all mb-4 font-bold text-[10px] uppercase tracking-widest">
+            <button onClick={handleBack} type="button" className="flex items-center text-[#004080] hover:text-orange-500 transition-all mb-4 font-bold text-[10px] uppercase tracking-widest">
               <i className="fa-solid fa-arrow-left-long mr-2"></i>
               Voltar
             </button>
@@ -787,54 +847,70 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
           <div className="mt-12 pt-8 border-t border-slate-100 flex items-center justify-end">
             <div className="flex gap-4">
-              {readOnly && !(isReprovadoCQ && canEdit) ? (
-                <>
-                  {(isAdmin || currentUser?.permissions?.includes('validar')) && (() => {
-                    const statusStr = String(formData.status);
-                    const statusNum = Number(formData.status);
-                    const isPendenteOrAnalise =
-                      formData.status === StudyStatus.PENDENTE ||
-                      formData.status === StudyStatus.EM_ANALISE ||
-                      statusStr === '330' ||
-                      statusNum === 330;
-                    return isPendenteOrAnalise;
-                  })() && (
-                      <>
-                        <button type="button" onClick={() => setShowRejectionModal(true)} className="px-8 py-4 rounded-xl border border-red-100 text-red-600 font-black uppercase text-xs">Reprovar</button>
-                        <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-green-600 text-white font-black uppercase text-xs shadow-lg shadow-green-200 transition-all">Validar Estudo</button>
-                      </>
-                    )}
-                  {(isAdmin || currentUser?.permissions?.includes('validar')) && (() => {
-                    const statusStr = String(formData.status);
-                    const statusNum = Number(formData.status);
-                    const isPendenteOrAnalise =
-                      formData.status === StudyStatus.PENDENTE ||
-                      formData.status === StudyStatus.EM_ANALISE ||
-                      statusStr === '330' ||
-                      statusNum === 330;
-                    return !isPendenteOrAnalise && formData.status !== StudyStatus.CONCLUIDO && formData.status !== StudyStatus.CANCELADO;
-                  })() && (
-                      <button type="button" onClick={() => setShowValidationModal(true)} className="px-10 py-4 rounded-xl bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">Gerenciar Atribuição</button>
-                    )}
-                </>
+              {duplicateDecision === 'viewing' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDuplicateDecision(null);
+                    setShowDuplicateModal(true);
+                  }}
+                  className="px-16 py-6 rounded-3xl font-black text-white bg-orange-500 hover:bg-orange-600 transition-all shadow-2xl shadow-orange-200 text-xl flex items-center uppercase tracking-tighter active:scale-95 group"
+                >
+                  <i className="fa-solid fa-arrow-left mr-4 transition-transform group-hover:-translate-x-2"></i>
+                  Voltar
+                </button>
               ) : (
                 <>
-                  {canExecute && (formData.status === StudyStatus.AGUARDANDO_EXECUCAO || formData.status === StudyStatus.EM_EXECUCAO || formData.status === StudyStatus.REPROVADO_CQ) && canEdit && (
-                    <button type="button" onClick={handleStartExecutionLocal} className="px-10 py-4 rounded-xl bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">
-                      {formData.status === StudyStatus.EM_EXECUCAO ? 'Abrir Painel Técnico' : 'Iniciar Execução'}
-                    </button>
-                  )}
-                  {canExecute && (formData.status === StudyStatus.EM_EXECUCAO || formData.status === StudyStatus.REPROVADO_CQ) && canEdit && (
-                    <button type="button" onClick={handleFinishExecution} className="px-10 py-4 rounded-xl bg-indigo-600 text-white font-black uppercase text-xs shadow-lg transition-all">Enviar para Qualidade</button>
-                  )}
-                  {!readOnly && (
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className={`px-12 py-5 rounded-2xl font-black text-white transition-all shadow-2xl text-lg flex items-center uppercase tracking-tighter ${isSubmitting ? 'bg-slate-400' : 'bg-[#004080] hover:bg-[#FF8000] active:scale-95 shadow-[#004080]/30'}`}
-                    >
-                      {isSubmitting ? <><i className="fa-solid fa-circle-notch fa-spin mr-3"></i>Enviando...</> : <>{initialData?.studyNumber ? 'Reenviar Solicitação' : 'Gerar Solicitação'} <i className="fa-solid fa-paper-plane ml-4"></i></>}
-                    </button>
+                  {readOnly && !(isReprovadoCQ && canEdit) ? (
+                    <>
+                      {(isAdmin || currentUser?.permissions?.includes('validar')) && (() => {
+                        const statusStr = String(formData.status);
+                        const statusNum = Number(formData.status);
+                        const isPendenteOrAnalise =
+                          formData.status === StudyStatus.PENDENTE ||
+                          formData.status === StudyStatus.EM_ANALISE ||
+                          statusStr === '330' ||
+                          statusNum === 330;
+                        return isPendenteOrAnalise;
+                      })() && (
+                          <>
+                            <button type="button" onClick={() => setShowRejectionModal(true)} className="py-2.5 px-4 rounded-lg border border-red-100 text-red-600 font-black uppercase text-xs">Reprovar</button>
+                            <button type="button" onClick={() => setShowValidationModal(true)} className="py-2.5 px-4 rounded-lg bg-green-600 text-white font-black uppercase text-xs shadow-lg shadow-green-200 transition-all">Validar Estudo</button>
+                          </>
+                        )}
+                      {(isAdmin || currentUser?.permissions?.includes('validar')) && (() => {
+                        const statusStr = String(formData.status);
+                        const statusNum = Number(formData.status);
+                        const isPendenteOrAnalise =
+                          formData.status === StudyStatus.PENDENTE ||
+                          formData.status === StudyStatus.EM_ANALISE ||
+                          statusStr === '330' ||
+                          statusNum === 330;
+                        return !isPendenteOrAnalise && formData.status !== StudyStatus.CONCLUIDO && formData.status !== StudyStatus.CANCELADO;
+                      })() && (
+                          <button type="button" onClick={() => setShowValidationModal(true)} className="py-2.5 px-4 rounded-lg bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">Gerenciar Atribuição</button>
+                        )}
+                    </>
+                  ) : (
+                    <>
+                      {canExecute && (formData.status === StudyStatus.AGUARDANDO_EXECUCAO || formData.status === StudyStatus.EM_EXECUCAO || formData.status === StudyStatus.REPROVADO_CQ) && canEdit && (
+                        <button type="button" onClick={handleStartExecutionLocal} className="py-2.5 px-4 rounded-lg bg-[#004080] text-white font-black uppercase text-xs shadow-lg transition-all">
+                          {formData.status === StudyStatus.EM_EXECUCAO ? 'Abrir Painel Técnico' : 'Iniciar Execução'}
+                        </button>
+                      )}
+                      {canExecute && (formData.status === StudyStatus.EM_EXECUCAO || formData.status === StudyStatus.REPROVADO_CQ) && canEdit && (
+                        <button type="button" onClick={handleFinishExecution} className="py-2.5 px-4 rounded-lg bg-indigo-600 text-white font-black uppercase text-xs shadow-lg transition-all">Enviar para Qualidade</button>
+                      )}
+                      {!readOnly && (
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className={`px-12 py-5 rounded-2xl font-black text-white transition-all shadow-2xl text-lg flex items-center uppercase tracking-tighter ${isSubmitting ? 'bg-slate-400' : 'bg-[#004080] hover:bg-[#FF8000] active:scale-95 shadow-[#004080]/30'}`}
+                        >
+                          {isSubmitting ? <><i className="fa-solid fa-circle-notch fa-spin mr-3"></i>Enviando...</> : <>{initialData?.studyNumber ? 'Reenviar Solicitação' : 'Gerar Solicitação'} <i className="fa-solid fa-paper-plane ml-4"></i></>}
+                        </button>
+                      )}
+                    </>
                   )}
                 </>
               )}

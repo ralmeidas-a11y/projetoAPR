@@ -7,8 +7,41 @@ import { FileBrowserModal } from '../components/FileBrowserModal';
 import { QCControlModal } from '../components/QCControlModal';
 import { useDialog } from '../components/AppDialog';
 import { NETWORK_GROUPS, PRESSURE_BASES, STANDARDIZED_CONDITIONS_BLOCKS } from '../constants/constants';
+import { VAZAO_UNITARIA_DATA, DIVERSIFICACAO_DATA, VazaoUnitItem, DiversificacaoItem } from '../constants/calculationData';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+
+const VAZAO_UNITARIA_BY_CLIMATE = {
+  CLASSE_A: {
+    FRIA: { residential: 2.1, smallCommerce: 0.85 },
+    NORMAL: { residential: 1.5, smallCommerce: 0.85 },
+    QUENTE: { residential: 0.21, smallCommerce: 0.85 },
+  },
+  CLASSE_B: {
+    FRIA: { residential: 1.5, smallCommerce: 0.85 },
+    NORMAL: { residential: 1.4, smallCommerce: 0.85 },
+    QUENTE: { residential: 0.13, smallCommerce: 0.85 },
+  },
+  CLASSE_C: {
+    FRIA: { residential: 1.1, smallCommerce: 0.85 },
+    NORMAL: { residential: 0.8, smallCommerce: 0.85 },
+    QUENTE: { residential: 0.09, smallCommerce: 0.85 },
+  },
+  CLASSE_DE: {
+    FRIA: { residential: 0.8, smallCommerce: 0.85 },
+    NORMAL: { residential: 0.6, smallCommerce: 0.85 },
+    QUENTE: { residential: 0.04, smallCommerce: 0.85 },
+  },
+};
+
+const getVazaoUnitByClimateZone = (socioLevel, climateZone) => {
+  const levels = VAZAO_UNITARIA_BY_CLIMATE;
+  const levelKey = levels[socioLevel];
+  if (!levelKey) return 0.8;
+  const climateKey = levelKey[climateZone];
+  if (!climateKey) return 0.8;
+  return climateKey.residential;
+};
 
 interface TechnicalExecutionPanelProps {
   data: FormData;
@@ -66,6 +99,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [isExportingCarta, setIsExportingCarta] = useState(false);
   const [showQCModal, setShowQCModal] = useState(false);
   const [showHoldModal, setShowHoldModal] = useState(false);
+  const [showVazaoModal, setShowVazaoModal] = useState(false);
+  const [showDiversificacaoModal, setShowDiversificacaoModal] = useState(false);
+  const [selectedSocioeconomicLevel, setSelectedSocioeconomicLevel] = useState<'CLASSE_A' | 'CLASSE_B' | 'CLASSE_C' | 'CLASSE_DE'>('CLASSE_A');
+  const [selectedClimateZone, setSelectedClimateZone] = useState<'FRIA' | 'NORMAL' | 'QUENTE'>('NORMAL');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [holdInfo, setHoldInfo] = useState('');
@@ -621,18 +658,18 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button
                 disabled={isExportingCarta}
                 onClick={async () => await handleExportCartaPDF(true)}
-                className={`flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95 ${isExportingCarta ? 'opacity-70 cursor-not-allowed' : ''}`}
+                className={`flex items-center gap-2 py-2.5 px-4 bg-indigo-600 text-white rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95 ${isExportingCarta ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
-                <i className={`fa-solid ${isExportingCarta ? 'fa-spinner fa-spin' : 'fa-file-export'}`}></i>
+                <i className={`fa-solid text-xs ${isExportingCarta ? 'fa-spinner fa-spin' : 'fa-file-export'}`}></i>
                 {isExportingCarta ? 'Exportando...' : 'Exportar Carta'}
               </button>
               <button
                 onClick={() => setShowCartaPreview(false)}
-                className="px-6 py-2 bg-white text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest hover:text-slate-600 transition-all border border-slate-200 active:scale-95"
+                className="py-2.5 px-4 bg-white text-slate-400 rounded-lg font-black text-[10px] uppercase tracking-widest hover:text-slate-600 transition-all border border-slate-200 active:scale-95"
               >
                 Fechar
               </button>
@@ -822,8 +859,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const getFO = (type: string) => type.split('-').pop() || '';
 
   const isResidencial = data.studySubType?.toLowerCase() === 'residencial';
-  const hasResidentialComponent = data.studySubType?.toLowerCase().includes('residencial');
-  const totalClientsAuto = Number(data.numClientsRes) || 0;
+  const hasResidentialComponent = data.studySubType?.toLowerCase().includes('residencial') || data.numClientsRes !== undefined || data.totalFlowRes !== undefined || data.vazaoSol !== undefined || data.numEconomias !== undefined;
+  const totalClientsAuto = Number(data.numClientsRes || data.numEconomias || 0);
   const unitFlowAuto = 0.09;
   const penetrationAuto = 1;
   const diversificationAuto = getDiversificationFactor(totalClientsAuto);
@@ -2034,7 +2071,16 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   </div>
 
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500">Vazão Unitária</span>
+                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                      Vazão Unitária
+                      {calcMode === 'manual' && (
+                        <i 
+                          className="fa-solid fa-circle-info text-indigo-400 cursor-pointer hover:text-indigo-600 transition-colors" 
+                          title="Clique para selecionar da tabela"
+                          onClick={() => setShowVazaoModal(true)}
+                        ></i>
+                      )}
+                    </span>
                     {calcMode === 'auto' ? (
                       <span className="text-sm font-black text-[#004080]">{currentCalc.unitFlow.toFixed(3)}</span>
                     ) : (
@@ -2064,7 +2110,16 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   </div>
 
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500">F. Diversificação</span>
+                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                      F. Diversificação
+                      {calcMode === 'manual' && (
+                        <i 
+                          className="fa-solid fa-circle-info text-indigo-400 cursor-pointer hover:text-indigo-600 transition-colors" 
+                          title="Clique para selecionar da tabela"
+                          onClick={() => setShowDiversificacaoModal(true)}
+                        ></i>
+                      )}
+                    </span>
                     {calcMode === 'auto' ? (
                       <span className="text-sm font-black text-[#004080]">{currentCalc.diversification.toFixed(2)}</span>
                     ) : (
@@ -2483,7 +2538,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   onClick={() => { setActiveFolder('Resposta'); handleAttachFile(); }}
                   className="px-12 py-5 bg-[#004080] text-white rounded-[1.5rem] font-black uppercase text-xs tracking-widest shadow-2xl shadow-blue-100 hover:bg-[#FF8000] hover:shadow-orange-100 transition-all flex items-center gap-4 active:scale-95"
                 >
-                  <i className="fa-solid fa-plus-circle text-lg"></i> Anexar Ofício de Resposta
+                  <i className="fa-solid fa-plus-circle text-xs"></i> Anexar Ofício de Resposta
                 </button>
               )}
               {readOnly && (
@@ -2544,8 +2599,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <i className="fa-solid fa-folder-tree text-orange-500"></i> Rastreabilidade completa de revisões e anexos
                 </p>
               </div>
-              <button onClick={() => setShowHistoryModal(false)} className="w-14 h-14 rounded-2xl bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-all shadow-sm">
-                <i className="fa-solid fa-xmark text-xl"></i>
+<button onClick={() => setShowHistoryModal(false)} className="py-2.5 px-2.5 rounded-lg bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-all shadow-sm">
+                <i className="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
 
@@ -2604,8 +2659,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 <h3 className="text-xl font-black text-[#004080] uppercase tracking-tight">Visualizando: {previewStudy.studyNumber}</h3>
                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Modo de Somente Leitura • Versão Histórica</p>
               </div>
-              <button onClick={() => setPreviewStudy(null)} className="w-12 h-12 rounded-2xl bg-white text-slate-400 hover:text-red-500 flex items-center justify-center shadow-sm border border-slate-100 transition-all">
-                <i className="fa-solid fa-xmark text-lg"></i>
+<button onClick={() => setPreviewStudy(null)} className="py-2.5 px-2.5 rounded-lg bg-white text-slate-400 hover:text-red-500 flex items-center justify-center shadow-sm border border-slate-100 transition-all">
+                <i className="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
             <div className="flex-grow overflow-y-auto p-10 custom-scrollbar space-y-10">
@@ -2727,8 +2782,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             <h3 className="text-xl font-black text-[#004080] text-center uppercase tracking-tight mb-3">Interromper Execução</h3>
             <p className="text-slate-500 text-center text-sm mb-10 leading-relaxed font-medium">Todos os arquivos temporários e o tempo de execução registrados nesta sessão serão descartados permanentemente. Confirmar?</p>
             <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => setShowCancelModal(false)} className="py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 transition-all active:scale-95">Manter Ativo</button>
-              <button onClick={() => { setShowCancelModal(false); onBack(); }} className="py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95">Sim, Cancelar</button>
+              <button onClick={() => setShowCancelModal(false)} className="py-2.5 px-4 bg-slate-100 text-slate-500 rounded-lg font-black uppercase text-xs hover:bg-slate-200 transition-all active:scale-95">Manter Ativo</button>
+              <button onClick={() => { setShowCancelModal(false); onBack(); }} className="py-2.5 px-4 bg-red-600 text-white rounded-lg font-black uppercase text-xs shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95">Sim, Cancelar</button>
             </div>
           </div>
         </div>
@@ -2745,17 +2800,17 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             <p className="text-slate-500 text-center text-sm mb-4 leading-relaxed font-medium">Tempo de realização monitorado: <span className="font-black text-[#004080] underline">{formatTime(elapsedTime)}</span>.</p>
             <p className="text-[10px] text-slate-400 text-center mb-10 uppercase font-black tracking-widest">Enviar para o Controle de Qualidade agora?</p>
             <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => setShowFinishModal(false)} className="py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 transition-all active:scale-95">Revisar</button>
-              <button onClick={handleFinishStudy} className="py-4 bg-[#004080] text-white rounded-2xl font-black uppercase text-xs shadow-xl shadow-blue-100 hover:bg-indigo-600 transition-all active:scale-95">Sim, Concluir</button>
+              <button onClick={() => setShowFinishModal(false)} className="py-2.5 px-4 bg-slate-100 text-slate-500 rounded-lg font-black uppercase text-xs hover:bg-slate-200 transition-all active:scale-95">Revisar</button>
+              <button onClick={handleFinishStudy} className="py-2.5 px-4 bg-[#004080] text-white rounded-lg font-black uppercase text-xs shadow-xl shadow-blue-100 hover:bg-indigo-600 transition-all active:scale-95">Sim, Concluir</button>
             </div>
           </div>
         </div>
       )}
 
       {/* HEADER FIXO */}
-      <div className="bg-white px-8 py-6 flex items-center border-b border-slate-200 shadow-sm z-10">
-        <button onClick={onBack} className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 hover:text-[#004080] hover:bg-white border border-slate-100 flex items-center justify-center transition-all active:scale-95 shadow-sm">
-          <i className="fa-solid fa-arrow-left"></i>
+      <div className="bg-white px-6 py-4 flex items-center border-b border-slate-200 shadow-sm z-10">
+        <button onClick={onBack} className="py-2.5 px-2.5 rounded-lg bg-slate-50 text-slate-400 hover:text-[#004080] hover:bg-white border border-slate-100 flex items-center justify-center transition-all active:scale-95 shadow-sm">
+          <i className="fa-solid fa-arrow-left text-xs"></i>
         </button>
 
         <div className="ml-8 flex items-center gap-6">
@@ -2794,7 +2849,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         )}
 
         <div className="flex items-center gap-3">
-          <button className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-400 hover:text-[#004080] border border-slate-100 flex items-center justify-center transition-all font-black shadow-sm">?</button>
+          <div className="py-2 px-2 bg-slate-100 rounded-lg text-slate-400 hover:text-[#004080] border border-slate-100 flex items-center justify-center transition-all font-black shadow-sm">
+              ?
+            </div>
         </div>
       </div>
 
@@ -2980,7 +3037,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               onClick={handleInitiateFinish}
               className="px-20 py-5 bg-[#004080] text-white rounded-[2rem] font-black uppercase text-xs tracking-[0.1em] shadow-2xl shadow-blue-100 hover:bg-indigo-600 transition-all active:translate-y-0.5 flex items-center gap-5"
             >
-              <i className="fa-solid fa-check-double text-green-400 text-lg"></i>
+              <i className="fa-solid fa-check-double text-green-400 text-xs"></i>
               Concluir Estudo Técnico
             </button>
           </div>
@@ -3104,7 +3161,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             <div className="p-8 border-b border-slate-50 flex items-center justify-between text-[#004080]">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-500 shadow-inner border border-orange-100">
-                  <i className="fa-solid fa-pause text-xl"></i>
+                  <i className="fa-solid fa-pause text-xs"></i>
                 </div>
                 <div>
                   <h3 className="text-lg font-black uppercase tracking-tight">Pausar e Pedir Info</h3>
@@ -3133,17 +3190,17 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </p>
               </div>
             </div>
-            <div className="p-8 bg-slate-50 flex gap-4">
+            <div className="p-6 bg-slate-50 flex gap-3">
               <button
                 onClick={() => { setShowHoldModal(false); setHoldInfo(''); setIsPaused(false); }}
-                className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors bg-white rounded-2xl border border-slate-100"
+                className="flex-1 py-2.5 px-4 text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors bg-white rounded-lg border border-slate-100"
               >
                 Continuar Executando
               </button>
               <button
                 disabled={!holdInfo.trim()}
                 onClick={handleConfirmHold}
-                className={`flex-[2] py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg transition-all ${holdInfo.trim() ? 'bg-orange-500 text-white shadow-orange-200 hover:scale-[1.02] active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                className={`flex-[2] py-2.5 px-4 rounded-lg text-xs font-black uppercase tracking-widest shadow-lg transition-all ${holdInfo.trim() ? 'bg-orange-500 text-white shadow-orange-200 hover:scale-[1.02] active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
               >
                 Confirmar Pausa
               </button>
@@ -3160,6 +3217,188 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           onClose={() => setShowQCModal(false)}
         />
       )}
+      {/* Vazão Unitária Modal */}
+      {showVazaoModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[32px] w-full max-w-2xl shadow-2xl border border-white/20 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+            <div className="p-8 bg-gradient-to-r from-indigo-600 to-blue-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                  <i className="fa-solid fa-droplet text-xs"></i>
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-tight">Vazão Unitária (m³/h)</h3>
+                  <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest mt-0.5">Referência NT-200 - Socioeconômica / Clima</p>
+                </div>
+              </div>
+              <button onClick={() => setShowVazaoModal(false)} className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors">
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <div className="p-6 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Classe Social</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(['CLASSE_A', 'CLASSE_B', 'CLASSE_C', 'CLASSE_DE'] as const).map((level) => (
+                      <button
+                        key={level}
+                        onClick={() => setSelectedSocioeconomicLevel(level)}
+                        className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm ${selectedSocioeconomicLevel === level ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-indigo-500/30' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:border-indigo-300'}`}
+                      >
+                        {level.replace('_', ' ')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Zona Climática</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(['FRIA', 'NORMAL', 'QUENTE'] as const).map((zone) => (
+                      <button
+                        key={zone}
+                        onClick={() => setSelectedClimateZone(zone)}
+                        className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm ${selectedClimateZone === zone ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-indigo-500/30' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:border-indigo-300'}`}
+                      >
+                        {zone}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="p-0 max-h-[60vh] overflow-y-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+                    <th className="p-5 text-xs font-bold text-slate-500 uppercase tracking-widest pl-8">Tipo de Consumo</th>
+                    <th className="p-5 text-xs font-bold text-slate-500 uppercase tracking-widest text-right pr-8">Vazão (m³/h)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  <tr 
+                    onClick={() => {
+                      const vaz = getVazaoUnitByClimateZone(selectedSocioeconomicLevel, selectedClimateZone);
+                      setManualCalc(prev => ({ ...prev, unitFlow: vaz }));
+                      setShowVazaoModal(false);
+                      showToast(`Vazão de ${vaz} m³/h selecionada!`, 'success');
+                    }}
+                    className="group cursor-pointer hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100/50 transition-all"
+                  >
+                    <td className="p-6 pl-8">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+                          <i className="fa-solid fa-home text-indigo-500"></i>
+                        </div>
+                        <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-700">Residencial</span>
+                      </div>
+                    </td>
+                    <td className="p-6 text-right pr-8">
+                      <span className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-indigo-100 to-indigo-50 group-hover:from-indigo-600 group-hover:to-indigo-700 group-hover:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all">
+                        {getVazaoUnitByClimateZone(selectedSocioeconomicLevel, selectedClimateZone).toFixed(2)}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr 
+                    onClick={() => {
+                      const vaz = VAZAO_UNITARIA_BY_CLIMATE[selectedSocioeconomicLevel][selectedClimateZone].smallCommerce;
+                      setManualCalc(prev => ({ ...prev, unitFlow: vaz }));
+                      setShowVazaoModal(false);
+                      showToast(`Vazão de ${vaz} m³/h selecionada!`, 'success');
+                    }}
+                    className="group cursor-pointer hover:bg-gradient-to-r hover:from-indigo-50 hover:to-indigo-100/50 transition-all"
+                  >
+                    <td className="p-6 pl-8">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
+                          <i className="fa-solid fa-store text-slate-500"></i>
+                        </div>
+                        <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-700">Comércio Pequeño</span>
+                      </div>
+                    </td>
+                    <td className="p-6 text-right pr-8">
+                      <span className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-indigo-100 to-indigo-50 group-hover:from-indigo-600 group-hover:to-indigo-700 group-hover:text-white px-4 py-2 rounded-xl text-sm font-bold transition-all">
+                        {VAZAO_UNITARIA_BY_CLIMATE[selectedSocioeconomicLevel][selectedClimateZone].smallCommerce.toFixed(2)}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="p-6 bg-slate-50 flex justify-end">
+              <button 
+                onClick={() => setShowVazaoModal(false)}
+                className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fator de Diversificação Modal */}
+      {showDiversificacaoModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[1000] p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl border border-white/20 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+            <div className="p-8 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                  <i className="fa-solid fa-chart-line text-2xl"></i>
+                </div>
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight">Fator de Diversificação</h3>
+                  <p className="text-xs text-white/70 font-medium uppercase tracking-widest mt-1">Coeficiente de simultaneidade - NT-200</p>
+                </div>
+              </div>
+              <button onClick={() => setShowDiversificacaoModal(false)} className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors">
+                <i className="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+            <div className="p-0 max-h-[60vh] overflow-y-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100">
+                    <th className="p-5 text-xs font-bold text-emerald-600 uppercase tracking-widest pl-8">Faixa de Unidades</th>
+                    <th className="p-5 text-xs font-bold text-emerald-600 uppercase tracking-widest text-right pr-8">Fator (FD)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {DIVERSIFICACAO_DATA.map((item) => (
+                    <tr 
+                      key={item.id} 
+                      onClick={() => {
+                        setManualCalc(prev => ({ ...prev, diversification: item.fator }));
+                        setShowDiversificacaoModal(false);
+                        showToast(`Fator de Diversificação ${item.fator} aplicado!`, 'success');
+                      }}
+                      className="group cursor-pointer hover:bg-gradient-to-r hover:from-emerald-50 hover:to-emerald-100/50 transition-all"
+                    >
+                      <td className="p-5 pl-8">
+                        <span className="text-sm font-bold text-slate-700 group-hover:text-emerald-700">{item.faixa}</span>
+                      </td>
+                      <td className="p-5 text-right pr-8">
+                        <span className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-emerald-100 to-emerald-50 group-hover:from-emerald-600 group-hover:to-teal-600 group-hover:text-white rounded-xl text-sm font-bold transition-all shadow-sm">
+                          {item.fator.toFixed(2)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="p-6 bg-slate-50 flex justify-end border-t border-slate-100">
+              <button 
+                onClick={() => setShowDiversificacaoModal(false)}
+                className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Off-screen hidden carta for background SVG/PNG export */}
       <div style={{ position: 'fixed', top: 0, left: '-9999px', width: '1200px', pointerEvents: 'none', background: 'white', zIndex: -1 }}>
         {renderCartaPaper(hiddenCartaRef)}
