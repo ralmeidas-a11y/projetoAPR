@@ -859,7 +859,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const getFO = (type: string) => type.split('-').pop() || '';
 
   const isResidencial = data.studySubType?.toLowerCase() === 'residencial';
-  const hasResidentialComponent = data.studySubType?.toLowerCase().includes('residencial') || data.numClientsRes !== undefined || data.totalFlowRes !== undefined || data.vazaoSol !== undefined || data.numEconomias !== undefined;
+  const hasResidentialComponent = Number(data.vazaoSol || 0) !== 0;
   const totalClientsAuto = Number(data.numClientsRes || data.numEconomias || 0);
   const unitFlowAuto = 0.09;
   const penetrationAuto = 1;
@@ -946,6 +946,44 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
 
     return missingFields;
+  };
+
+  const handleGenerateGeogasLegend = () => {
+    if (readOnly) return;
+
+    const nroEstudo = data.studyNumber?.replace('PROV-', '') || '';
+    const titulo = data.studyTitle || data.clientName || data.uteName || '';
+    const municipio = data.city || '';
+    const bairro = data.neighborhood || '';
+    const localiz = data.address || '';
+    const tipEst = data.studySubType || data.studyType || '';
+
+    const vSol = Number(data.vazaoSol || data.totalFlowRes || 0);
+    const vSolCom = Number(data.totalFlowCom || 0);
+    const consumoTotal = (vSol + vSolCom).toString().replace('.', ',');
+
+    const minPress = data.minPressure || data.technicalMetadata?.minPressure || '1';
+
+    const isFO02 = data.formType === FormType.EXPANSION_AREAS;
+
+    let content = `<FNT name = "Arial"><p><_ITA><BOL>ID_ESTUDO: </BOL>${nroEstudo}</_ITA></p></FNT> <p></p>\n`;
+    content += `<FNT name = "Arial"><p><_ITA><BOL>Título: </BOL>${titulo}</_ITA></p></FNT> \n`;
+    content += `<FNT name = "Arial"><p><_ITA><BOL>Município: </BOL>${municipio}</_ITA></p></FNT> \n`;
+
+    if (!isFO02) {
+      content += `<FNT name = "Arial"><p><_ITA><BOL>Bairro: </BOL>${bairro}</_ITA></p></FNT> \n`;
+    }
+
+    content += `<FNT name = "Arial"><p><_ITA><BOL>Endereço: </BOL></_ITA><ITA>${localiz}</ITA></p></FNT> <p></p> \n`;
+    content += `<FNT name = "Arial"><p><_ITA><UND><BOL>Dados Técnicos:</BOL></UND></_ITA></p></FNT> <p></p> \n`;
+    content += `<FNT name = "Arial"><p><_ITA><BOL>Tipo de Mercado: </BOL>${tipEst}</_ITA></p></FNT> \n`;
+    content += `<FNT name = "Arial"><p><_ITA><BOL>Consumo previsto: </BOL>${consumoTotal} m³(n)/h</_ITA></p></FNT> \n`;
+    content += `<FNT name = "Arial"><p><_ITA><BOL>MinPop Solicitada: </BOL>${minPress} bar</_ITA></p></FNT>`;
+
+    if (onUpdateData) {
+      onUpdateData({ ...data, responseMemo: content });
+      showToast('Legenda Geogas gerada com sucesso!', 'success');
+    }
   };
 
   const handleTechSubTabChange = (idx: number) => {
@@ -1470,6 +1508,35 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             {renderTechnicalField('Bairro', data.neighborhood || '-')}
             {renderTechnicalField('Estado', locationData.estado)}
             {renderTechnicalField('Empresa', locationData.empresa)}
+            {(data.latitude && data.longitude) && (
+              <div className="col-span-2 lg:col-span-4 flex flex-wrap items-center gap-2">
+                <a
+                  href={data.address
+                    ? `https://www.google.com/maps/place/${encodeURIComponent(data.address)}`
+                    : `https://www.google.com/maps/place/${data.latitude},${data.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-colors border border-blue-200"
+                >
+                  <i className="fa-solid fa-map-marked-alt"></i>
+                  Ver no Google Maps
+                </a>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(String(data.latitude)); showToast('Latitude copiada!', 'success'); }}
+                  className="flex items-center gap-1 px-2 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-mono text-slate-600 transition-colors"
+                  title="Clique para copiar latitude"
+                >
+                  Lat: {data.latitude?.toFixed(6)}
+                </button>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(String(data.longitude)); showToast('Longitude copiada!', 'success'); }}
+                  className="flex items-center gap-1 px-2 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-mono text-slate-600 transition-colors"
+                  title="Clique para copiar longitude"
+                >
+                  Long: {data.longitude?.toFixed(6)}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1609,20 +1676,20 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm flex flex-col">
             <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
               <i className="fa-solid fa-message text-orange-500"></i>
-              5. Observações do Validador
+              5. Notas do Solicitante
             </h4>
-            <div className="flex-grow p-6 bg-slate-50 rounded-[2rem] text-sm font-medium text-slate-600 leading-relaxed border border-slate-200 shadow-sm min-h-[100px] whitespace-pre-wrap">
-              {data.validatorObservations || "Sem observações do validador."}
+            <div className="flex-grow p-6 bg-slate-50/60 rounded-[2rem] text-sm font-medium text-slate-600 leading-relaxed border border-slate-100 shadow-inner min-h-[100px] whitespace-pre-wrap">
+              {data.comments || "Registro de Segurança / Sem anotações adicionais."}
             </div>
           </div>
 
           <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm flex flex-col">
             <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
               <i className="fa-solid fa-message text-orange-500"></i>
-              6. Notas do Solicitante
+              6. Observações do Validador
             </h4>
-            <div className="flex-grow p-6 bg-slate-50/60 rounded-[2rem] text-sm font-medium text-slate-600 leading-relaxed border border-slate-100 shadow-inner min-h-[100px] whitespace-pre-wrap">
-              {data.comments || "Registro de Segurança / Sem anotações adicionais."}
+            <div className="flex-grow p-6 bg-slate-50 rounded-[2rem] text-sm font-medium text-slate-600 leading-relaxed border border-slate-200 shadow-sm min-h-[100px] whitespace-pre-wrap">
+              {data.validatorObservations || "Sem observações do validador."}
             </div>
           </div>
         </div>
@@ -2019,7 +2086,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             <div className={`space-y-6 ${!hasResidentialComponent ? 'opacity-40 grayscale pointer-events-none select-none' : ''}`}>
               {!hasResidentialComponent && (
                 <div className="bg-orange-50 border border-orange-100 p-2 rounded-lg mb-2 text-center">
-                  <p className="text-[8px] font-black text-orange-600 uppercase tracking-tighter italic">Disponível apenas para estudos Residenciais</p>
+                  <p className="text-[8px] font-black text-orange-600 uppercase tracking-tighter italic">Disponível apenas se houver vazão residencial solicitada</p>
                 </div>
               )}
               <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-3 shadow-sm relative">
@@ -2527,8 +2594,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           <div className="p-5 border border-slate-200 rounded-2xl relative">
             <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos Geogas</span>
             <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
-              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-export text-[#004080]"></i> Caminho de Exportação Shapefile</li>
-              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda Geogas</li>
+              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-export text-[#004080]"></i> Criar Pasta no Servidor</li>
+              <li
+                onClick={() => !readOnly && handleGenerateGeogasLegend()}
+                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
+              >
+                <i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda Geogas
+              </li>
               <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
               <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa Geogas</li>
             </ul>
@@ -2583,7 +2655,20 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         </div>
 
         <div className="flex-grow flex flex-col min-h-[300px]">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Copiar Colar:</span>
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Copiar Colar:</span>
+            <button
+              onClick={() => {
+                if (data.responseMemo) {
+                  navigator.clipboard.writeText(data.responseMemo);
+                  showToast('Conteúdo copiado!', 'success');
+                }
+              }}
+              className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-800 transition-colors flex items-center gap-1"
+            >
+              <i className="fa-solid fa-copy"></i> Copiar Conteúdo
+            </button>
+          </div>
           <textarea
             readOnly={readOnly}
             className="flex-grow border border-slate-200 rounded-2xl bg-slate-50 p-4 resize-none text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono"

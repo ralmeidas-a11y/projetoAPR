@@ -161,6 +161,8 @@ export interface FormData {
   mapLocation?: string;
   pressure?: string;
   fileType?: string;
+  latitude?: number;
+  longitude?: number;
 
   // FO.02
   state?: string;

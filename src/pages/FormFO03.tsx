@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { FormData } from '../types/types';
 import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from '../constants/constants';
 import { formatDate } from '../utils/utils';
+import { LocationPickerModal } from '../components/LocationPickerModal';
 
 interface FormFO03Props {
   data: FormData;
@@ -12,6 +13,23 @@ interface FormFO03Props {
 export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = false }) => {
   const [showPressureTooltip, setShowPressureTooltip] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+
+  const handleLocationSelect = (location: {
+    address: string;
+    neighborhood: string;
+    city: string;
+    latitude: number;
+    longitude: number;
+  }) => {
+    onChange({
+      address: location.address,
+      neighborhood: location.neighborhood,
+      city: location.city,
+      latitude: location.latitude,
+      longitude: location.longitude
+    });
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     if (readOnly) return;
@@ -234,7 +252,17 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
 
             <div className="col-span-12 flex flex-col gap-1">
               <label className={`${requiredLabelClass}`}>Endereço:</label>
-              <input name="address" value={data.address || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`} />
+              <div className="flex items-center gap-2">
+                <input name="address" value={data.address || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white flex-grow`} />
+                <button
+                  type="button"
+                  onClick={() => setShowLocationPicker(true)}
+                  className="px-3 py-1.5 bg-[#004080] text-white text-xs font-bold uppercase rounded hover:bg-[#003060] transition-colors whitespace-nowrap"
+                >
+                  <i className="fa-solid fa-map-marked-alt mr-1"></i>
+                  Buscar no Mapa
+                </button>
+              </div>
             </div>
             <div className="col-span-12 md:col-span-8 flex flex-col gap-1">
               <label className={`${requiredLabelClass}`}>Cidade/Município:</label>
@@ -487,6 +515,18 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
         </div>
       </section>
 
+      <LocationPickerModal
+        isOpen={showLocationPicker}
+        onClose={() => setShowLocationPicker(false)}
+        onSelect={handleLocationSelect}
+        initialLocation={{
+          latitude: data.latitude,
+          longitude: data.longitude,
+          address: data.address,
+          neighborhood: data.neighborhood,
+          city: data.city
+        }}
+      />
 
     </div>
   );

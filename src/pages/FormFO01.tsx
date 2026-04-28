@@ -1,8 +1,9 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FormData } from '../types/types';
 import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from '../constants/constants';
 import { formatDate } from '../utils/utils';
+import { LocationPickerModal } from '../components/LocationPickerModal';
 
 interface FormFO01Props {
   data: FormData;
@@ -12,6 +13,23 @@ interface FormFO01Props {
 
 export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = false }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+
+  const handleLocationSelect = (location: {
+    address: string;
+    neighborhood: string;
+    city: string;
+    latitude: number;
+    longitude: number;
+  }) => {
+    onChange({
+      address: location.address,
+      neighborhood: location.neighborhood,
+      city: location.city,
+      latitude: location.latitude,
+      longitude: location.longitude
+    });
+  };
 
   const formatBR = (num: number | string | undefined) => {
     if (num === undefined || num === null || num === '') return "0,00";
@@ -212,7 +230,7 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
               <input name="studyTitle" value={data.studyTitle || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} />
             </div>
 
-            <div className="col-span-12 md:col-span-6 flex items-center gap-2">
+            <div className="col-span-12 flex items-center gap-2">
               <label className={`${standardLabelClass} w-32`}>Mercado:</label>
               <select name="marketCategory" value={data.marketCategory || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`}>
                 <option value="">Selecione...</option>
@@ -224,7 +242,17 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
 
             <div className="col-span-12 flex items-center gap-2">
               <label className={`${requiredLabelClass} w-32`}>Endereço:</label>
-              <input name="address" value={data.address || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} />
+              <div className="flex-grow flex items-center gap-2">
+                <input name="address" value={data.address || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white flex-grow`} />
+                <button
+                  type="button"
+                  onClick={() => setShowLocationPicker(true)}
+                  className="px-3 py-1.5 bg-[#004080] text-white text-xs font-bold uppercase rounded hover:bg-[#003060] transition-colors whitespace-nowrap"
+                >
+                  <i className="fa-solid fa-map-marked-alt mr-1"></i>
+                  Buscar no Mapa
+                </button>
+              </div>
             </div>
 
             <div className="col-span-12 md:col-span-6 flex items-center gap-2">
@@ -443,6 +471,18 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
         </div>
       </section>
 
+      <LocationPickerModal
+        isOpen={showLocationPicker}
+        onClose={() => setShowLocationPicker(false)}
+        onSelect={handleLocationSelect}
+        initialLocation={{
+          latitude: data.latitude,
+          longitude: data.longitude,
+          address: data.address,
+          neighborhood: data.neighborhood,
+          city: data.city
+        }}
+      />
 
     </div>
   );
