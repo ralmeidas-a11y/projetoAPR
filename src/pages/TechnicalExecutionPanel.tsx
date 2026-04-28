@@ -986,6 +986,61 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
   };
 
+  const handleCreateFolderOnServer = async () => {
+    if (readOnly) return;
+
+    const nroEstudo = data.studyNumber || '';
+    if (!nroEstudo) {
+      showToast('Estudo sem NRO_ESTUDO', 'error');
+      return;
+    }
+
+    const ano = nroEstudo.substring(0, 4);
+    const estudo = nroEstudo.substring(4, 8);
+    const rev = nroEstudo.substring(8, 10);
+
+    let basePath = 'C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\Teste de Criação de Pasta';
+
+    try {
+      const configRes = await fetch('/api/config');
+      const config = await configRes.json();
+      if (config.folderBasePath) {
+        basePath = config.folderBasePath;
+      }
+    } catch (err) {
+      console.warn('[handleCreateFolderOnServer] Using default path:', err);
+    }
+
+    const folderPath = `${basePath}\\${ano}\\${estudo}\\${rev}`;
+
+    try {
+      const response = await fetch('/api/folders/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const currentMemo = data.responseMemo || '';
+        const newContent = currentMemo
+          ? `${currentMemo}\n\n=== Pasta do Estudo ===\n${folderPath}`
+          : `=== Pasta do Estudo ===\n${folderPath}`;
+
+        if (onUpdateData) {
+          onUpdateData({ ...data, responseMemo: newContent });
+        }
+        showToast('Pasta criada com sucesso!', 'success');
+      } else {
+        showToast('Erro ao criar pasta: ' + result.error, 'error');
+      }
+    } catch (err) {
+      console.error('[handleCreateFolderOnServer] Error:', err);
+      showToast('Erro ao criar pasta no servidor', 'error');
+    }
+  };
+
   const handleTechSubTabChange = (idx: number) => {
     if (idx === 2) { // Passos Resposta
       const missing = validateAnalysisFields();
@@ -2594,7 +2649,12 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           <div className="p-5 border border-slate-200 rounded-2xl relative">
             <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos Geogas</span>
             <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
-              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-export text-[#004080]"></i> Criar Pasta no Servidor</li>
+              <li
+                onClick={() => !readOnly && handleCreateFolderOnServer()}
+                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
+              >
+                <i className="fa-solid fa-file-export text-[#004080]"></i> Criar Pasta no Servidor
+              </li>
               <li
                 onClick={() => !readOnly && handleGenerateGeogasLegend()}
                 className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}

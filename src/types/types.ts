@@ -61,6 +61,7 @@ export interface User {
   profileComplete?: boolean;
   permissions?: ('validar' | 'executar' | 'controle_qualidade')[];
   folderPath?: string;
+  folderBasePath?: string;
   createdAt?: string;
   lastAccess?: string;
   requiresPasswordChange?: boolean;

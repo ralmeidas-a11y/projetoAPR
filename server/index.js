@@ -165,6 +165,18 @@ async function startServer() {
       )
     `;
 
+    // 1.2 Auto Create SystemConfig Table
+    console.log('[Server] Checking SystemConfig table...');
+    await sql.query`
+      IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='SystemConfig' and xtype='U')
+      CREATE TABLE SystemConfig (
+        [configKey] [varchar](100) PRIMARY KEY,
+        [configValue] [nvarchar](max) NULL,
+        [createdAt] [datetime] DEFAULT GETDATE(),
+        [updatedAt] [datetime] DEFAULT GETDATE()
+      )
+    `;
+
     // --- ONE-TIME DATA MIGRATION: Padding Analyst ID 805217 (Completed) ---
 
     console.log('[Server] Verificando e criando colunas nativas na E_OPEMAN...');
@@ -483,6 +495,59 @@ async function startServer() {
       } catch (err) {
         console.error('SQL test query error:', err);
         res.status(500).json({ error: 'Database query failed' });
+      }
+    });
+
+    // 2.1 System Configuration Routes
+    const SYSTEM_CONFIG_KEY = 'system_config';
+    let systemConfigCache = { folderBasePath: '' };
+
+    app.get('/api/config', async (req, res) => {
+      try {
+        const request = new sql.Request();
+        request.input('configKey', sql.VarChar, SYSTEM_CONFIG_KEY);
+        const result = await request.query`
+          SELECT configValue FROM SystemConfig WHERE configKey = @configKey
+        `;
+
+        if (result.recordset.length > 0) {
+          const configData = JSON.parse(result.recordset[0].configValue);
+          systemConfigCache = configData;
+          res.json(configData);
+        } else {
+          res.json(systemConfigCache);
+        }
+      } catch (err) {
+        console.error('[Config] Error fetching config:', err);
+        res.json(systemConfigCache);
+      }
+    });
+
+    app.post('/api/config', async (req, res) => {
+      try {
+        const { folderBasePath } = req.body;
+
+        systemConfigCache = { folderBasePath: folderBasePath || '' };
+
+        const request = new sql.Request();
+        request.input('configKey', sql.VarChar, SYSTEM_CONFIG_KEY);
+        request.input('configValue', sql.VarChar, JSON.stringify(systemConfigCache));
+
+        await request.query`
+          MERGE INTO SystemConfig AS target
+          USING (SELECT @configKey as configKey) AS source
+          ON target.configKey = source.configKey
+          WHEN MATCHED THEN
+            UPDATE SET configValue = @configValue, updatedAt = GETDATE()
+          WHEN NOT MATCHED THEN
+            INSERT (configKey, configValue, createdAt, updatedAt)
+            VALUES (@configKey, @configValue, GETDATE(), GETDATE());
+        `;
+
+        res.json({ success: true, ...systemConfigCache });
+      } catch (err) {
+        console.error('[Config] Error saving config:', err);
+        res.status(500).json({ success: false, error: err.message });
       }
     });
 
@@ -2476,6 +2541,38 @@ app.delete('/api/attachments/:fileId', async (req, res) => {
   } catch (err) {
     console.error('[Attachments] Error deleting attachment:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/folders/create', async (req, res) => {
+  try {
+    const { folderPath } = req.body;
+
+    console.log('[Folders] Create folder request:', folderPath);
+    console.log('[Folders] Current dir:', process.cwd());
+
+    if (!folderPath) {
+      return res.status(400).json({ success: false, error: 'folderPath é obrigatório' });
+    }
+
+    // Normalize path - convert forward slashes to backslashes for Windows
+    const normalizedPath = folderPath.replace(/\//g, '\\');
+    
+    // Create directory with recursive flag
+    fs.mkdirSync(normalizedPath, { recursive: true });
+    
+    // Verify it was created
+    const exists = fs.existsSync(normalizedPath);
+    console.log('[Folders] Folder exists after create:', exists);
+    
+    if (!exists) {
+      return res.status(500).json({ success: false, error: 'Pasta não foi criada' });
+    }
+
+    res.json({ success: true, folderPath: normalizedPath, message: 'Pasta criada com sucesso!' });
+  } catch (err) {
+    console.error('[Folders] Error creating folder:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

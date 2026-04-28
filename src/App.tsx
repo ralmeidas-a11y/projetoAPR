@@ -10,6 +10,7 @@ import { UserManagement } from './pages/UserManagement';
 import { AuditLog } from './pages/AuditLog';
 import { TechnicalExecutionPanel } from './pages/TechnicalExecutionPanel';
 import { PasswordChange } from './pages/PasswordChange';
+import { SystemSettings } from './pages/SystemSettings';
 // EmailPreviewModal removed <!-- id: 11 -->
 import { FormType, User, UserRole, FormData, StudyStatus } from './types/types';
 import { NaturgyLogo, HeaderTitle, REVERSE_AREA_MAPPING } from './constants/constants';
@@ -25,7 +26,7 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
   const [editingRequest, setEditingRequest] = useState<FormData | null>(null);
-  const [view, setView] = useState<'login' | 'onboarding' | 'password-change' | 'menu' | 'form' | 'dashboard' | 'my-requests' | 'analyst-view' | 'users' | 'audit' | 'execution'>('login');
+  const [view, setView] = useState<'login' | 'onboarding' | 'password-change' | 'menu' | 'form' | 'dashboard' | 'my-requests' | 'analyst-view' | 'users' | 'audit' | 'execution' | 'settings'>('login');
   const [notification, setNotification] = useState<{ message: string; subtext?: string; type?: 'success' | 'info' } | null>(null);
 
   const [allRequests, setAllRequests] = useState<FormData[]>([]);
@@ -1671,6 +1672,7 @@ const App: React.FC = () => {
                     <>
                       <button onClick={() => setView('users')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'users' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Usuários</button>
                       <button onClick={() => setView('audit')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'audit' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Auditoria</button>
+                      <button onClick={() => setView('settings')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'settings' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Config</button>
                     </>
                   )}
                 </>
@@ -1782,6 +1784,9 @@ const App: React.FC = () => {
           )}
           {view === 'audit' && user?.role === UserRole.ADM && (
             <AuditLog currentUser={user} />
+          )}
+          {view === 'settings' && user?.role === UserRole.ADM && (
+            <SystemSettings user={user} />
           )}
         </div>
       </main>
