@@ -132,12 +132,12 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
 
   const allIterations = useMemo(() => {
     const combined = [...dbIterations, ...iterations];
-    // De-duplicate by combination of status and date to be safe
+    // De-duplicate by status + reviewer combination (same person can't have same status twice in a row)
     const seen = new Set<string>();
     return combined
       .filter(it => {
-        if (!it.date) return true;
-        const key = `${it.status}-${it.date}`;
+        if (!it.status || !it.reviewer) return true;
+        const key = `${it.status}-${it.reviewer}`.toLowerCase();
         if (seen.has(key)) return false;
         seen.add(key);
         return true;

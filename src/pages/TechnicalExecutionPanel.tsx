@@ -106,6 +106,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [holdInfo, setHoldInfo] = useState('');
+  const [pdfFiles, setPdfFiles] = useState<any[]>([]);
+  const [selectedPdfFiles, setSelectedPdfFiles] = useState<Set<number>>(new Set());
+  const [showPdfSelectModal, setShowPdfSelectModal] = useState(false);
   const cartaRef = useRef<HTMLDivElement>(null);
   const hiddenCartaRef = useRef<HTMLDivElement>(null);
 
@@ -1041,6 +1044,158 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
   };
 
+  const handleImportPDF = async () => {
+    if (readOnly) return;
+
+    const nroEstudo = data.studyNumber || '';
+    if (!nroEstudo) {
+      showToast('Estudo sem NRO_ESTUDO', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/files/folder/${nroEstudo}`);
+      const result = await res.json();
+
+      if (!result.files || result.files.length === 0) {
+        showToast('Nenhum PDF encontrado na pasta do estudo', 'error');
+        return;
+      }
+
+      setPdfFiles(result.files);
+      setSelectedPdfFiles(new Set());
+      setShowPdfSelectModal(true);
+    } catch (err) {
+      console.error('[handleImportPDF] Error:', err);
+      showToast('Erro ao importar PDF', 'error');
+    }
+  };
+
+  const handleTogglePdfFile = (idx: number) => {
+    const newSelected = new Set(selectedPdfFiles);
+    if (newSelected.has(idx)) {
+      newSelected.delete(idx);
+    } else {
+      newSelected.add(idx);
+    }
+    setSelectedPdfFiles(newSelected);
+  };
+
+  const checkExistingFiles = async (): Promise<Set<string>> => {
+    const existingFiles = new Set<string>();
+    try {
+      const res = await fetch(`/api/attachments/${data.id}?category=Resposta`);
+      const result = await res.json();
+      if (Array.isArray(result)) {
+        result.forEach((f: any) => existingFiles.add(f.name));
+      }
+    } catch (err) {
+      console.warn('[checkExistingFiles] Error:', err);
+    }
+    return existingFiles;
+  };
+
+  const handleImportSelectedPdfs = async () => {
+    if (selectedPdfFiles.size === 0) {
+      showToast('Selecione pelo menos um arquivo', 'error');
+      return;
+    }
+
+    const existingFiles = await checkExistingFiles();
+    const filesToImport = Array.from(selectedPdfFiles).map(idx => pdfFiles[idx]);
+    const duplicates: string[] = [];
+    const toImport: any[] = [];
+
+    for (const file of filesToImport) {
+      if (existingFiles.has(file.name)) {
+        duplicates.push(file.name);
+      } else {
+        toImport.push(file);
+      }
+    }
+
+    if (duplicates.length > 0) {
+      showToast(`Arquivo(s) já existem na Resposta: ${duplicates.join(', ')}`, 'error');
+      return;
+    }
+
+    let successCount = 0;
+    for (const file of toImport) {
+      const success = await importSingleFileQuiet(file);
+      if (success) successCount++;
+    }
+
+    setShowPdfSelectModal(false);
+    if (successCount > 0) {
+      showToast(`${successCount} PDF(s) importado(s) com sucesso!`, 'success');
+      setActiveFolder('Resposta');
+    } else {
+      showToast('Erro ao importar arquivos', 'error');
+    }
+  };
+
+  const importSingleFileQuiet = async (file: any): Promise<boolean> => {
+    try {
+      const fileRes = await fetch(`/api/files/read?path=${encodeURIComponent(file.path)}`);
+      const fileData = await fileRes.json();
+      if (!fileData.content) return false;
+
+      const attachRes = await fetch('/api/attachments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId: data.id,
+          fileName: file.name,
+          fileType: 'application/pdf',
+          category: 'Resposta',
+          contentBase64: fileData.content,
+        }),
+      });
+
+      const attachResult = await attachRes.json();
+      return !!(attachResult.message || attachResult.id);
+    } catch (err) {
+      console.error('[importSingleFileQuiet] Error:', err);
+      return false;
+    }
+  };
+
+  const importSingleFile = async (file: any) => {
+    try {
+      const fileRes = await fetch(`/api/files/read?path=${encodeURIComponent(file.path)}`);
+      const fileData = await fileRes.json();
+
+      if (!fileData.content) {
+        showToast('Erro ao ler arquivo', 'error');
+        return;
+      }
+
+      const attachRes = await fetch('/api/attachments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId: data.id,
+          fileName: file.name,
+          fileType: 'application/pdf',
+          category: 'Resposta',
+          contentBase64: fileData.content,
+        }),
+      });
+
+      const attachResult = await attachRes.json();
+
+      if (attachResult.message || attachResult.id) {
+        showToast('PDF importado: ' + file.name, 'success');
+        setActiveFolder('Resposta');
+      } else {
+        showToast('Erro ao importar PDF', 'error');
+      }
+    } catch (err) {
+      console.error('[importSingleFile] Error:', err);
+      showToast('Erro ao importar PDF', 'error');
+    }
+  };
+
   const handleTechSubTabChange = (idx: number) => {
     if (idx === 2) { // Passos Resposta
       const missing = validateAnalysisFields();
@@ -1200,6 +1355,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       if (status === StudyStatus.CONCLUIDO) {
         finalAdditional.completedAt = new Date().toISOString();
       }
+
+      // Clear responseMemo when sending to CQ
+      finalAdditional.responseMemo = '';
 
       // Auto-populate analyst info if assigned
       if (data.assignedTo) {
@@ -2661,7 +2819,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               >
                 <i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda Geogas
               </li>
-              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
+              <li
+                onClick={() => !readOnly && handleImportPDF()}
+                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
+              ><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
               <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa Geogas</li>
             </ul>
           </div>
@@ -2670,7 +2831,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos QGis</span>
             <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
               <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda QGis</li>
-              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
+              <li
+                onClick={() => !readOnly && handleImportPDF()}
+                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
+              ><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
               <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa QGis</li>
             </ul>
           </div>
@@ -2716,18 +2880,26 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
         <div className="flex-grow flex flex-col min-h-[300px]">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Copiar Colar:</span>
-            <button
-              onClick={() => {
-                if (data.responseMemo) {
-                  navigator.clipboard.writeText(data.responseMemo);
-                  showToast('Conteúdo copiado!', 'success');
-                }
-              }}
-              className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-800 transition-colors flex items-center gap-1"
-            >
-              <i className="fa-solid fa-copy"></i> Copiar Conteúdo
-            </button>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Copiar Código:</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onUpdateData && onUpdateData({ ...data, responseMemo: '' })}
+                className="text-[10px] font-black text-red-400 uppercase tracking-widest hover:text-red-600 transition-colors flex items-center gap-1"
+              >
+                <i className="fa-solid fa-trash"></i> Limpar
+              </button>
+              <button
+                onClick={() => {
+                  if (data.responseMemo) {
+                    navigator.clipboard.writeText(data.responseMemo);
+                    showToast('Conteúdo copiado!', 'success');
+                  }
+                }}
+                className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:text-indigo-800 transition-colors flex items-center gap-1"
+              >
+                <i className="fa-solid fa-copy"></i> Copiar
+              </button>
+            </div>
           </div>
           <textarea
             readOnly={readOnly}
@@ -3010,6 +3182,61 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </div>
             <div className="p-4 border-t border-slate-100 text-right">
               <a href={`data:${filePreview.mime};base64,${filePreview.base64}`} download={filePreview.name} className="px-4 py-2 bg-[#004080] text-white rounded-lg font-black text-xs">Download</a>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* MODAL SELECIONAR PDF */}
+      {showPdfSelectModal && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 text-2xl shadow-inner">
+              <i className="fa-solid fa-file-pdf"></i>
+            </div>
+            <h3 className="text-lg font-black text-[#004080] text-center uppercase tracking-tight mb-2">Selecionar Arquivo(s) PDF</h3>
+            <p className="text-slate-500 text-center text-xs mb-6">Escolha um ou mais arquivos para importar para a pasta Resposta</p>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto mb-6">
+              {pdfFiles.map((file, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleTogglePdfFile(idx)}
+                  className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 ${
+                    selectedPdfFiles.has(idx)
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-slate-200 hover:border-indigo-500'
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                    selectedPdfFiles.has(idx)
+                      ? 'bg-indigo-500 border-indigo-500'
+                      : 'border-slate-300'
+                  }`}>
+                    {selectedPdfFiles.has(idx) && (
+                      <i className="fa-solid fa-check text-white text-[10px]"></i>
+                    )}
+                  </div>
+                  <i className="fa-solid fa-file-pdf text-red-500"></i>
+                  <span className="text-sm font-medium text-slate-700 truncate">{file.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowPdfSelectModal(false)}
+                className="flex-1 py-2.5 bg-slate-100 text-slate-500 rounded-lg font-black uppercase text-xs hover:bg-slate-200 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleImportSelectedPdfs}
+                disabled={selectedPdfFiles.size === 0}
+                className="flex-1 py-2.5 bg-[#004080] text-white rounded-lg font-black uppercase text-xs hover:bg-[#003060] transition-all disabled:opacity-50"
+              >
+                Importar {selectedPdfFiles.size > 0 ? `(${selectedPdfFiles.size})` : ''}
+              </button>
             </div>
           </div>
         </div>

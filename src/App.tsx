@@ -1235,7 +1235,7 @@ const App: React.FC = () => {
         (async () => {
           try {
             const nextId = await StorageService.getNextId();
-            
+
             // Use originalInputs as the base for the revision data
             const baseData = originalRequest.originalInputs || originalRequest;
             const isDifferentUser = user && originalRequest.user_id && originalRequest.user_id !== user.id;
@@ -1298,7 +1298,7 @@ const App: React.FC = () => {
       (async () => {
         try {
           const nextId = await StorageService.getNextId();
-          
+
           // Use originalInputs as the base for the revision data
           const baseData = originalRequest.originalInputs || originalRequest;
           const isDifferentUser = user && originalRequest.user_id && originalRequest.user_id !== user.id;
@@ -1940,7 +1940,7 @@ const App: React.FC = () => {
               </div>
               <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-slate-400 rounded-b-2xl shrink-0">
                 <p className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-1">
-                  <i className="fa-solid fa-info-circle"></i> Confirmações de leitura em tempo real.
+
                 </p>
                 <p className="text-[9px] font-bold uppercase tracking-widest">Total: <span className="text-[#004080] ml-1">{adminNotifications.length}</span></p>
               </div>

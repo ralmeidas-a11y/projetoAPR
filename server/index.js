@@ -2544,38 +2544,32 @@ app.delete('/api/attachments/:fileId', async (req, res) => {
   }
 });
 
-app.post('/api/folders/create', async (req, res) => {
+// Maintenance: Clear responseMemo for CQ/Concluded studies
+app.post('/api/maintenance/clear-response-memo', async (req, res) => {
   try {
-    const { folderPath } = req.body;
-
-    console.log('[Folders] Create folder request:', folderPath);
-    console.log('[Folders] Current dir:', process.cwd());
-
-    if (!folderPath) {
-      return res.status(400).json({ success: false, error: 'folderPath é obrigatório' });
+    const check = await sql.query`
+      SELECT COUNT(*) as cnt FROM Requests 
+      WHERE STATUS IN ('205', '280') 
+      AND responseMemo IS NOT NULL 
+      AND LEN(responseMemo) > 0
+    `;
+    
+    if (check.recordset[0].cnt > 0) {
+      await sql.query`
+        UPDATE Requests 
+        SET responseMemo = '' 
+        WHERE STATUS IN ('205', '280') 
+        AND responseMemo IS NOT NULL 
+        AND LEN(responseMemo) > 0
+      `;
     }
-
-    // Normalize path - convert forward slashes to backslashes for Windows
-    const normalizedPath = folderPath.replace(/\//g, '\\');
     
-    // Create directory with recursive flag
-    fs.mkdirSync(normalizedPath, { recursive: true });
-    
-    // Verify it was created
-    const exists = fs.existsSync(normalizedPath);
-    console.log('[Folders] Folder exists after create:', exists);
-    
-    if (!exists) {
-      return res.status(500).json({ success: false, error: 'Pasta não foi criada' });
-    }
-
-    res.json({ success: true, folderPath: normalizedPath, message: 'Pasta criada com sucesso!' });
+    res.json({ success: true, updated: check.recordset[0].cnt });
   } catch (err) {
-    console.error('[Folders] Error creating folder:', err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('[Maintenance] Error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
-
 
 startServer();
 

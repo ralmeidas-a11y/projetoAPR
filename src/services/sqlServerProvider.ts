@@ -33,7 +33,7 @@ export class SQLServerProvider implements StorageProvider {
       return await res.json();
     } catch (err) {
       console.error('[SQLServerProvider] saveUser error', err);
-      return user; 
+      return user;
     }
   }
 
@@ -127,15 +127,15 @@ export class SQLServerProvider implements StorageProvider {
   }
 
   async getNextStudyNumber(
-    type: 'new' | 'revision' = 'new', 
+    type: 'new' | 'revision' = 'new',
     baseStudyNumber?: string,
     city?: string,
     address?: string,
     title?: string,
     neighborhood?: string
-  ): Promise<{ 
-    nextNumber: string; 
-    isRevision?: boolean; 
+  ): Promise<{
+    nextNumber: string;
+    isRevision?: boolean;
     previousStudy?: string;
     matchedAddress?: string;
     matchedTitle?: string;
@@ -150,7 +150,7 @@ export class SQLServerProvider implements StorageProvider {
       if (address) url.searchParams.append('address', address);
       if (title) url.searchParams.append('title', title);
       if (neighborhood) url.searchParams.append('neighborhood', neighborhood);
-      
+
       const res = await fetch(url.toString());
       if (!res.ok) throw new Error('Failed to get next study number');
       const data = await res.json();
@@ -218,7 +218,7 @@ export class SQLServerProvider implements StorageProvider {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to upload file');
       }
-      
+
       return `api/attachments/download/${requestId}/${file.name}`;
     } catch (err) {
       console.error('[SQLServerProvider] uploadFile error', err);
@@ -230,11 +230,11 @@ export class SQLServerProvider implements StorageProvider {
     try {
       const url = new URL(`${this.apiUrl}/api/attachments/${requestId}`);
       if (folder) url.searchParams.append('category', folder);
-      
+
       const res = await fetch(url.toString());
       if (!res.ok) return [];
       const files = await res.json();
-      
+
       return files.map((f: any) => ({
         ...f,
         fullPath: `${this.apiUrl}/api/attachments/download/${f.id}`
@@ -246,7 +246,7 @@ export class SQLServerProvider implements StorageProvider {
   }
 
   async uploadCartaResposta(request: FormData, blob: Blob): Promise<string> {
-    const file = new File([blob], `Carta_Resposta_${request.studyNumber}.pdf`, { type: 'application/pdf' });
+    const file = new File([blob], `Carta_${request.studyNumber}.pdf`, { type: 'application/pdf' });
     return this.uploadFile(request.id, 'Resposta', file);
   }
 
@@ -308,7 +308,7 @@ export class SQLServerProvider implements StorageProvider {
     const res = await fetch(`${this.apiUrl}/api/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: hash, role: 'Analista' }) 
+      body: JSON.stringify({ email, password: hash, role: 'Analista' })
     });
     if (!res.ok) throw new Error('Failed to update password');
   }

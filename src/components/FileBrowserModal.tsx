@@ -15,15 +15,15 @@ interface FileBrowserModalProps {
   restrictToCategory?: string;
 }
 
-export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({ 
-  request, user, onClose, allUsers = [], allRequests = [], onStatusUpdate, onStartExecution, restrictToCategory 
+export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
+  request, user, onClose, allUsers = [], allRequests = [], onStatusUpdate, onStartExecution, restrictToCategory
 }) => {
   const { showConfirm, showToast } = useDialog();
   const [activeCategory, setActiveCategory] = useState<string>(restrictToCategory || 'Solicitacao');
   const [files, setFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [viewingFormMirror, setViewingFormMirror] = useState(false);
-  
+
   const isStaff = user.role === UserRole.ADM || user.role === UserRole.ANALISTA;
 
   // Identificar estudo base para mostrar revisões
@@ -40,7 +40,7 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
 
   const availableRevisions = useMemo(() => {
     if (!allRequests || allRequests.length === 0) return [request.studyNumber];
-    
+
     return allRequests
       .filter(r => getBaseCode(r.studyNumber) === baseCode)
       .map(r => r.studyNumber)
@@ -67,10 +67,10 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
 
   const categories = ['Solicitacao', 'Resposta', 'Calculos', 'Outros'];
   const availableCategories = useMemo(() => {
-    const base = isStaff 
-      ? categories 
+    const base = isStaff
+      ? categories
       : categories.filter(c => c === 'Solicitacao' || (c === 'Resposta' && selectedRevisionData.status === StudyStatus.CONCLUIDO));
-    
+
     if (restrictToCategory) {
       return base.filter(c => c === restrictToCategory);
     }
@@ -123,18 +123,18 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
     try {
       const result = await StorageService.getRequestFiles(requestId, activeCategory);
       const remoteFiles = result.filter(f => !f.name.startsWith('.')); // Ocultar .keep
-      
+
       // Merging local files ONLY if looking at the "current" physical request being edited
       const isCurrentRequest = activeRevision === request.studyNumber;
-      const localFiles = isCurrentRequest 
-        ? (activeCategory === 'Solicitacao' 
-            ? (request.selectedFiles || []) 
-            : (request.categorizedFiles?.[activeCategory] || []))
+      const localFiles = isCurrentRequest
+        ? (activeCategory === 'Solicitacao'
+          ? (request.selectedFiles || [])
+          : (request.categorizedFiles?.[activeCategory] || []))
         : [];
-      
+
       // Filter out invalid/empty files from local state
       const validLocalFiles = localFiles.filter((f: any) => f && f.name && f.name !== '-');
-      
+
       const remoteNames = new Set(remoteFiles.map(f => f.name));
       const filteredLocalFiles = validLocalFiles.filter((f: any) => !remoteNames.has(f.name));
 
@@ -148,7 +148,7 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
 
   useEffect(() => {
     loadFiles();
-    
+
     // Auto-sync polling every 3 seconds while modal is open
     const intervalId = setInterval(() => {
       loadFiles();
@@ -167,9 +167,9 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
   if (viewingFormMirror) {
     return (
       <div className="fixed inset-0 z-[100] flex flex-col bg-white">
-        <FormMirrorView 
-          data={selectedRevisionData} 
-          onBack={() => setViewingFormMirror(false)} 
+        <FormMirrorView
+          data={selectedRevisionData}
+          onBack={() => setViewingFormMirror(false)}
           currentUser={user}
           allUsers={allUsers}
           onStatusUpdate={onStatusUpdate}
@@ -182,7 +182,7 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      
+
       <div className="relative w-full max-w-2xl bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="bg-[#004080] p-6 text-white relative flex items-center justify-between">
@@ -212,14 +212,13 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                   <button
                     key={rev}
                     onClick={() => {
-                        setActiveRevision(rev);
-                        setActiveCategory('Solicitacao');
+                      setActiveRevision(rev);
+                      setActiveCategory('Solicitacao');
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
-                      isSelected 
-                      ? 'bg-orange-500 text-white border-orange-600 shadow-sm' 
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${isSelected
+                      ? 'bg-orange-500 text-white border-orange-600 shadow-sm'
                       : 'bg-white text-slate-500 border-slate-200 hover:border-orange-300 hover:text-orange-500'
-                    }`}
+                      }`}
                   >
                     {(() => {
                       const norm = rev.replace('PROV-', '');
@@ -245,11 +244,10 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-                  activeCategory === cat 
-                  ? 'bg-[#004080] text-white shadow-md' 
+                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeCategory === cat
+                  ? 'bg-[#004080] text-white shadow-md'
                   : 'bg-slate-50 text-slate-400 border border-slate-200 hover:text-slate-600'
-                }`}
+                  }`}
               >
                 {cat}
               </button>
@@ -260,20 +258,20 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
         {/* Action Header - Upload */}
         {canModify && (
           <div className="px-6 pt-4">
-             <input
-               type="file"
-               ref={fileInputRef}
-               onChange={handleFileUpload}
-               className="hidden"
-               multiple
-             />
-             <button
-               onClick={() => fileInputRef.current?.click()}
-               className="w-full py-3 bg-indigo-50 border-2 border-dashed border-indigo-200 rounded-2xl flex items-center justify-center gap-3 text-indigo-500 hover:bg-indigo-100/50 hover:border-indigo-400 transition-all font-black uppercase text-[10px] tracking-widest"
-             >
-               <i className="fa-solid fa-cloud-arrow-up text-lg"></i>
-               Adicionar Arquivo em {activeCategory}
-             </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+              multiple
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full py-3 bg-indigo-50 border-2 border-dashed border-indigo-200 rounded-2xl flex items-center justify-center gap-3 text-indigo-500 hover:bg-indigo-100/50 hover:border-indigo-400 transition-all font-black uppercase text-[10px] tracking-widest"
+            >
+              <i className="fa-solid fa-cloud-arrow-up text-lg"></i>
+              Adicionar Arquivo em {activeCategory}
+            </button>
           </div>
         )}
 
@@ -291,7 +289,7 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                   <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#004080] flex items-center justify-center shrink-0">
                     <i className={`fa-solid ${file.name?.toLowerCase().endsWith('.pdf') ? 'fa-file-pdf' : 'fa-file'} text-lg`}></i>
                   </div>
-                  
+
                   <div className="min-w-0 flex-grow">
                     <p className="text-xs font-black text-slate-700 truncate">{file.name?.replace('Formulario', 'Formulário')}</p>
                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{formatSize(file.size)} • {file.type || 'Arquivo'}</p>
@@ -299,15 +297,15 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
 
                   <div className="flex items-center gap-2">
                     {file.isVirtualForm ? (
-                      <button 
-                         onClick={() => setViewingFormMirror(true)}
-                         className="h-9 px-4 rounded-xl bg-orange-500 text-white font-black uppercase text-[9px] tracking-widest shadow-lg shadow-orange-100 hover:bg-orange-600 active:scale-95 transition-all flex items-center gap-2"
+                      <button
+                        onClick={() => setViewingFormMirror(true)}
+                        className="h-9 px-4 rounded-xl bg-orange-500 text-white font-black uppercase text-[9px] tracking-widest shadow-lg shadow-orange-100 hover:bg-orange-600 active:scale-95 transition-all flex items-center gap-2"
                       >
-                         <i className="fa-solid fa-eye"></i> Ver
+                        <i className="fa-solid fa-eye"></i> Ver
                       </button>
                     ) : null}
-                    
-                    <button 
+
+                    <button
                       onClick={async () => {
                         const url = await StorageService.getFileUrl(file.fullPath, true);
                         if (url) {
@@ -324,10 +322,10 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                     >
                       <i className="fa-solid fa-download text-xs"></i>
                     </button>
-                    
+
                     {!file.isVirtualForm && (
                       <div className="flex gap-2">
-                        <button 
+                        <button
                           onClick={async () => {
                             const url = await StorageService.getFileUrl(file.fullPath);
                             if (url) window.open(url, '_blank');
@@ -341,9 +339,9 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                         </button>
 
                         {canModify && (
-                          <button 
+                          <button
                             onClick={async () => {
-                              const ok = await showConfirm(`Deseja realmente excluir o arquivo "${file.name || 'documento'}"? Esta ação removerá o arquivo permanentemente do Storage e do Banco de Dados.`, 'Excluir Arquivo');
+                              const ok = await showConfirm(`Deseja realmente excluir o arquivo "${file.name || 'documento'}"? Esta ação removerá o arquivo permanentemente do Banco de Dados.`, 'Excluir Arquivo');
                               if (ok) {
                                 setLoading(true);
                                 try {
@@ -384,8 +382,8 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
         {/* Footer */}
         <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${loading ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`}></span>
-            <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Storage Sincronizado</span>
+
+
           </div>
           <button onClick={onClose} className="px-6 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100">
             Fechar
