@@ -46,13 +46,23 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   // Initialize from existing QC data or defaults
   const existing = data.qcData || {};
 
+  // Para revisões, não carregar falhas da revisão anterior
+  const isRevision = data.previousStudy && data.previousStudy.length > 0;
+  const initialCriticalFailures = isRevision ? {} : (existing.qcCriticalFailures || {});
+  const initialSecondaryFailures = isRevision ? {} : (existing.qcSecondaryFailures || {});
+
   const [qcStatus, setQcStatus] = useState<'Definir' | 'Aprovado' | 'Reprovado'>(existing.qcStatusCQ || 'Definir');
   const [supervisor, setSupervisor] = useState(existing.qcSupervisor || currentUser?.name || '');
-  const [criticalCounts, setCriticalCounts] = useState<Record<string, number>>(existing.qcCriticalFailures || {});
-  const [secondaryCounts, setSecondaryCounts] = useState<Record<string, number>>(existing.qcSecondaryFailures || {});
-  const [comments, setComments] = useState(existing.qcComments || '');
+  const [criticalCounts, setCriticalCounts] = useState<Record<string, number>>(initialCriticalFailures);
+  const [secondaryCounts, setSecondaryCounts] = useState<Record<string, number>>(initialSecondaryFailures);
+  const [comments, setComments] = useState(isRevision ? '' : (existing.qcComments || ''));
   const [showConfirmApprove, setShowConfirmApprove] = useState(false);
   const [selectedRevision, setSelectedRevision] = useState<any>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroup = (studyNum: string) => {
+    setExpandedGroups(prev => ({ ...prev, [studyNum]: !prev[studyNum] }));
+  };
 
   const qcUsers = useMemo(() => {
     return allUsers.filter(u => u.role === UserRole.ADM || u.permissions?.includes('controle_qualidade'));
@@ -87,6 +97,15 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
         console.log('[QCModal] No studyNumber, skipping history fetch');
         return;
       }
+
+      // Only skip history for non-revision studies in certain statuses
+      // For revisions, always fetch history (includes previous study's history)
+      const isRevision = data.previousStudy && data.previousStudy.length > 0;
+      if (!isRevision && (data.status === StudyStatus.CONTROLE_QUALIDADE || data.status === StudyStatus.ENVIADO_SEM_CQ)) {
+        setDbIterations([]);
+        return;
+      }
+
       setIsLoadingHistory(true);
       console.log('[QCModal] Fetching QC history for:', data.studyNumber);
       try {
@@ -95,7 +114,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
         console.log('[QCModal] Fetching from URL:', url);
         const res = await fetch(url);
         console.log('[QCModal] Response status:', res.status, 'Content-Type:', res.headers.get('content-type'));
-        
+
         if (!res.ok) {
           console.error('[QCModal] Failed to fetch history, status:', res.status);
           const text = await res.text();
@@ -103,7 +122,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
           setIsLoadingHistory(false);
           return;
         }
-        
+
         const contentType = res.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           console.error('[QCModal] Response is not JSON, content-type:', contentType);
@@ -112,7 +131,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
           setIsLoadingHistory(false);
           return;
         }
-        
+
         const history = await res.json();
         console.log('[QCModal] History fetched:', history);
         // Store full history data including failures for detailed view
@@ -125,28 +144,34 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
       }
     };
     fetchQCHistory();
-  }, [data.studyNumber]);
+  }, [data.studyNumber, data.previousStudy]);
 
   // Combine local iterations (from existing.qcIterations) with database history
   const iterations: QCIteration[] = existing.qcIterations || [];
 
+  // Para revisões, mostra mensagem diferente
+  const shouldLoadFailures = !isRevision && iterations.length === 0;
+
   const allIterations = useMemo(() => {
+    // Combinar banco + local remove duplicados exatos
     const combined = [...dbIterations, ...iterations];
-    // De-duplicate by status + reviewer combination (same person can't have same status twice in a row)
+
+    // Remove duplicados exatos usando JSON.stringify
     const seen = new Set<string>();
-    return combined
-      .filter(it => {
-        if (!it.status || !it.reviewer) return true;
-        const key = `${it.status}-${it.reviewer}`.toLowerCase();
-        if (seen.has(key)) return false;
+    const unique: any[] = [];
+    combined.forEach(it => {
+      const key = JSON.stringify(it);
+      if (!seen.has(key)) {
         seen.add(key);
-        return true;
-      })
-      .sort((a, b) => {
-        const dateA = new Date(a.date || 0).getTime();
-        const dateB = new Date(b.date || 0).getTime();
-        return dateA - dateB;
-      });
+        unique.push(it);
+      }
+    });
+
+    return unique.sort((a, b) => {
+      const dateA = new Date(a.date || 0).getTime();
+      const dateB = new Date(b.date || 0).getTime();
+      return dateA - dateB;
+    });
   }, [dbIterations, iterations]);
 
   const totalRevisions = allIterations.length + (readOnly ? 0 : (qcStatus !== 'Definir' ? 1 : 0));
@@ -176,17 +201,17 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
     if (!onApprove) return;
     const statusText = 'Aprovado';
     const finalCode = withReservations ? '400' : '300';
-    
+
     setQcStatus('Aprovado');
     const qc = buildQCData();
     qc.qcStatusCQ = 'Aprovado';
     qc.qcFinalStatus = finalCode;
     qc.qcIterations = [
       ...allIterations,
-      { 
-        status: withReservations ? 'Aprovado com Ressalvas' : 'Aprovado', 
-        date: new Date().toISOString(), 
-        reviewer: currentUser?.name || supervisor 
+      {
+        status: withReservations ? 'Aprovado com Ressalvas' : 'Aprovado',
+        date: new Date().toISOString(),
+        reviewer: currentUser?.name || supervisor
       },
     ];
     onApprove(qc);
@@ -482,7 +507,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
               <div>
                 <span className="text-[10px] font-black text-[#004080] uppercase tracking-widest flex items-center gap-2 mb-3">
                   <i className="fa-solid fa-clock-rotate-left"></i>
-                  Revisões do CQ
+                  {isRevision ? 'Histórico de Revisões de CQ' : 'Histórico de Revisões de CQ'}
                 </span>
                 <div className="space-y-2">
                   {allIterations.length === 0 && (
@@ -490,29 +515,73 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                       Nenhuma revisão anterior.
                     </div>
                   )}
-                  {allIterations.map((it: any, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => setSelectedRevision(it)}
-                      className={`p-3 rounded-lg border text-[10px] font-bold cursor-pointer hover:shadow-md transition-all ${it.status === 'Aprovado' ? 'bg-green-50 border-green-200 text-green-700' :
-                        it.status === 'Reprovado' ? 'bg-red-50 border-red-200 text-red-700' :
-                          'bg-white border-slate-200 text-slate-500'
-                        }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="uppercase tracking-wider font-black">{it.status}</span>
-                        <span className="text-[9px] opacity-70">{it.validationDate ? formatDateTimeBR(it.validationDate) : '-'}</span>
-                      </div>
-                      {it.reviewer && (
-                        <div className="text-[9px] mt-1 opacity-60">{resolveReviewerName(it.reviewer)}</div>
-                      )}
-                      <div className="text-[8px] mt-1 text-[#004080] opacity-70">
-                        <i className="fa-solid fa-eye"></i> Ver detalhes
-                      </div>
-                    </div>
-                  ))}
+                  {/* Group and sort by study number - most recent first */}
+                  {(() => {
+                    // First sort all iterations by date (most recent first)
+                    const sorted = [...allIterations].sort((a, b) => {
+                      const dateA = new Date(a.validationDate || 0).getTime();
+                      const dateB = new Date(b.validationDate || 0).getTime();
+                      return dateB - dateA;
+                    });
+                    
+                    // Group by study number
+                    const grouped: Record<string, any[]> = {};
+                    sorted.forEach((it: any) => {
+                      const studyNum = it.studyNumber || '';
+                    if (!studyNum || studyNum === 'N/A') return null;  // Skip empty or N/A
+                      if (!grouped[studyNum]) grouped[studyNum] = [];
+                      grouped[studyNum].push(it);
+                    });
+                    
+                    // Sort groups by most recent iteration in each group (descending by study number)
+                    const sortedGroups = Object.entries(grouped)
+                      .filter(([num]) => num && num !== 'N/A' && num !== '')
+                      .sort(([numA], [numB]) => {
+                      return numB.localeCompare(numA, undefined, { numeric: true });
+                    });
+                    
+                    return sortedGroups.map(([studyNum, iterations]: [string, any]) => {
+                      const isExpanded = expandedGroups[studyNum] === undefined ? false : expandedGroups[studyNum];
+                      return (
+                        <div key={studyNum} className="mb-3">
+                          <button 
+                            onClick={() => toggleGroup(studyNum)}
+                            className="w-full text-[9px] font-black text-[#004080] uppercase tracking-wider mb-1 bg-slate-100 px-2 py-1.5 rounded flex items-center justify-between hover:bg-slate-200 transition-colors"
+                          >
+                            <span>{studyNum}</span>
+                            <i className={`fa-solid fa-chevron-${isExpanded ? 'up' : 'down'} text-[8px]`}></i>
+                          </button>
+                          {isExpanded && (
+                            <div className="space-y-2 pl-2 border-l-2 border-slate-200">
+                              {iterations.map((it: any, idx: number) => (
+                                <div
+                                  key={`${studyNum}-${idx}`}
+                                  onClick={() => setSelectedRevision(it)}
+                                  className={`p-3 rounded-lg border text-[10px] font-bold cursor-pointer hover:shadow-md transition-all ${it.status === 'Aprovado' ? 'bg-green-50 border-green-200 text-green-700' :
+                                    it.status === 'Reprovado' ? 'bg-red-50 border-red-200 text-red-700' :
+                                      'bg-white border-slate-200 text-slate-500'
+                                  }`}
+                                >
+<div className="flex items-center justify-between">
+                                    <span className="uppercase tracking-wider font-black">{it.status}</span>
+                                    <span className="text-[9px] opacity-70">{it.validationDate ? formatDateTimeBR(it.validationDate) : '-'}</span>
+                                  </div>
+                                  {it.reviewer && (
+                                    <div className="text-[9px] mt-1 opacity-60">{resolveReviewerName(it.reviewer)}</div>
+                                  )}
+                                  <div className="text-[8px] mt-1 text-[#004080] opacity-70">
+                                    <i className="fa-solid fa-eye"></i> Ver detalhes
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
                   {/* Current pending iteration */}
-                  {!readOnly && (
+                  {!readOnly && !selectedRevision && (
                     <div className="p-3 rounded-lg border border-dashed border-slate-300 bg-white text-[10px] font-bold text-slate-400 flex items-center gap-2">
                       <i className="fa-solid fa-hourglass-half animate-pulse"></i>
                       Aguardando decisão...
@@ -550,7 +619,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                     Detalhes da Revisão de CQ
                   </h3>
                   <p className="text-[10px] text-slate-500 mt-1">
-                    Estudo: {data.studyNumber}
+                    Estudo: {selectedRevision?.studyNumber || data.studyNumber}
                   </p>
                 </div>
                 <button
@@ -563,15 +632,14 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                   <i className="fa-solid fa-times"></i>
                 </button>
               </div>
-              
+
               <div className="p-5 overflow-y-auto flex-1">
                 {/* Status & Date */}
                 <div className="flex items-center gap-4 mb-6">
-                  <div className={`px-4 py-2 rounded-lg font-black text-xs uppercase ${
-                    selectedRevision.status === 'Reprovado' ? 'bg-red-100 text-red-700 border border-red-200' :
+                  <div className={`px-4 py-2 rounded-lg font-black text-xs uppercase ${selectedRevision.status === 'Reprovado' ? 'bg-red-100 text-red-700 border border-red-200' :
                     selectedRevision.status === 'Aprovado' ? 'bg-green-100 text-green-700 border border-green-200' :
-                    'bg-amber-100 text-amber-700 border border-amber-200'
-                  }`}>
+                      'bg-amber-100 text-amber-700 border border-amber-200'
+                    }`}>
                     {selectedRevision.status}
                   </div>
                   <div className="text-[10px] text-slate-500">
@@ -645,7 +713,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                   </div>
                 )}
               </div>
-              
+
               <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
                 <button
                   onClick={() => setSelectedRevision(null)}
@@ -702,7 +770,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                   <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Identificamos falhas no estudo</p>
                 </div>
               </div>
-              
+
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-8">
                 <p className="text-xs text-slate-600 font-bold leading-relaxed">
                   Foram registradas <strong className="text-red-600">{totalCritical} falhas críticas</strong> e <strong className="text-amber-600">{totalSecondary} secundárias</strong>.

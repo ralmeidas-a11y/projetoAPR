@@ -77,10 +77,18 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       }
     });
 
-    // Agrupar por estudo base (sem revisão)
+    // Grupo por estudo base (sem revisão)
     const groups: { [key: string]: FormData } = {};
+    const seenIds = new Set<string>();
 
     filteredByTab.forEach(req => {
+      // Skip duplicates de ID
+      if (seenIds.has(req.id)) {
+        console.warn('[MyRequests] Skipping duplicate ID:', req.id, 'studyNumber:', req.studyNumber);
+        return;
+      }
+      seenIds.add(req.id);
+
       // Pegar código base (antes de -REV ou PROV-)
       const cleanCode = (req.studyNumber || '').replace('PROV-', '');
       const baseCode = cleanCode.split('-REV')[0];
@@ -487,6 +495,12 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                 </div>
               ) : (
                 displayedRequests.map(req => {
+                  // DEBUG: Check for duplicate IDs
+                  const duplicates = displayedRequests.filter(r => r.id === req.id);
+                  if (duplicates.length > 1) {
+                    console.warn('[MyRequests] Duplicate ID found:', req.id, 'count:', duplicates.length);
+                  }
+
                   const isCancelled = req.status === StudyStatus.CANCELADO;
                   const isCompleted = req.status === StudyStatus.CONCLUIDO || req.status === StudyStatus.ENVIADO_SEM_CQ;
                   const hasRevision = (req.studyNumber || '').includes('-REV');

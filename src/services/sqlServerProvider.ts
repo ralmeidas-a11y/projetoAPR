@@ -178,6 +178,7 @@ export class SQLServerProvider implements StorageProvider {
       const res = await fetch(`${this.apiUrl}/api/requests/next-id`);
       if (!res.ok) throw new Error('Failed to get next ID');
       const data = await res.json();
+      console.log('[SQLServerProvider] getNextId response:', data);
       return data.nextId;
     } catch (err) {
       console.error('[SQLServerProvider] getNextId error', err);

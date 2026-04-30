@@ -745,7 +745,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           data={qcRequest}
           allUsers={allUsers}
           currentUser={user}
-          readOnly={false}
+          readOnly={qcRequest.status === StudyStatus.REPROVADO_CQ}
           onClose={() => setQcRequest(null)}
           onApprove={(qcData: QCControlData) => {
             qcData.fromQCModal = true;

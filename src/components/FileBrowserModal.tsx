@@ -226,10 +226,10 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
                       if (revMatch) return `REV${revMatch[1]}`;
                       if (norm.length === 10 && /^\d+$/.test(norm)) {
                         const rnum = norm.substring(8, 10);
-                        return rnum === '01' ? 'ORIG.' : `REV${rnum}`;
+                        return rnum === '01' ? 'REV01' : `REV${rnum}`;
                       }
-                      return 'ORIG.';
-                    })()} {rev === request.studyNumber ? '(Atual)' : ''}
+                      return 'REV01';
+                    })()} {rev === request.studyNumber ? '' : ''}
                   </button>
                 );
               })}

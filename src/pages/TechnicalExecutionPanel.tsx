@@ -109,6 +109,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [pdfFiles, setPdfFiles] = useState<any[]>([]);
   const [selectedPdfFiles, setSelectedPdfFiles] = useState<Set<number>>(new Set());
   const [showPdfSelectModal, setShowPdfSelectModal] = useState(false);
+  const [standardConditionsFilter, setStandardConditionsFilter] = useState('');
   const cartaRef = useRef<HTMLDivElement>(null);
   const hiddenCartaRef = useRef<HTMLDivElement>(null);
 
@@ -160,6 +161,25 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
     return blocks.filter(b => b.itens.length > 0 || b.id === 'PrevRevision');
   }, [responseObsList, previousStudyObs]);
+
+  const filteredStandardItems = useMemo(() => {
+    const filterTerm = standardConditionsFilter.toLowerCase();
+    if (!filterTerm) return [];
+    
+    const seenItems = new Set<string>();
+    const allItems: string[] = [];
+    
+    Object.values(STANDARDIZED_CONDITIONS_BLOCKS).forEach(block => {
+      block.itens.forEach(item => {
+        if (item.toLowerCase().includes(filterTerm) && !responseObsList.includes(item) && !seenItems.has(item)) {
+          seenItems.add(item);
+          allItems.push(item);
+        }
+      });
+    });
+
+    return allItems;
+  }, [standardConditionsFilter, responseObsList]);
 
   const toggleBlock = (blockId: string) => {
     setExpandedBlocks(prev =>
@@ -932,8 +952,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       missingFields.push('Pelo menos uma Extensão de Rede Planificada');
     }
 
-    if (isResidencial && !data.totalFlowRes) {
-      missingFields.push('Cálculo de Vazão Residencial (Aplicar)');
+    if (isResidencial && !data.totalFlowRes && !data.totalFlow) {
+      missingFields.push('Cálculo de Vazão Residencial');
     }
 
     if (data.regSizingActive) {
@@ -2517,46 +2537,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     <span className="text-lg font-black text-orange-600">
                       {currentCalc.totalFlow.toFixed(3).replace('.', ',')}
                     </span>
-                  </div>
+</div>
                 </div>
 
-                <button
-                  disabled={readOnly || !hasResidentialComponent}
-                  onClick={() => {
-                    const total = currentCalc.totalFlow;
-                    const summary = `Vazão residencial diversificada adotada para o dimensionamento: ${total.toFixed(3).replace('.', ',')} m³/h`;
-
-                    if (onUpdateData) {
-                      handleUpdateData({
-                        ...data,
-                        numClientsRes: currentCalc.totalClients,
-                        totalClients: currentCalc.totalClients,
-                        unitFlow: currentCalc.unitFlow,
-                        flowUnitRes: currentCalc.unitFlow, // Dual sync
-                        penetrationFactor: currentCalc.penetration,
-                        penetration: currentCalc.penetration,
-                        diversificationFactor: currentCalc.diversification,
-                        diversification: currentCalc.diversification,
-                        calcMode: calcMode,
-                        totalFlowRes: total,
-                        totalFlow: total,
-                        responseObservations: [...responseObsList, summary].join('\n')
-                      });
-                      showToast('Cálculo aplicado à resposta técnica!', 'success');
-                    }
-                  }}
-                  className="w-full mt-2 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md active:scale-95 disabled:opacity-50"
-                >
-                  Aplicar Cálculo à Resposta <i className="fa-solid fa-check-double ml-1"></i>
-                </button>
+                <p className="text-[9px] text-slate-400 italic leading-tight px-2">
+                  *Sempre consultar a Norma para os fatores necessários para a diversificação, pressão mínima e perda de carga admissível.
+                </p>
               </div>
-
-              <p className="text-[9px] text-slate-400 italic leading-tight px-2">
-                *Sempre consultar a Norma para os fatores necessários para a diversificação, pressão mínima e perda de carga admissível.
-              </p>
-            </div>
-
-            <div className="p-6 bg-indigo-50 border border-indigo-100 rounded-2xl shadow-sm">
               <div className="flex justify-between items-center mb-4 text-xs font-black text-[#004080] uppercase">
                 Dimensionar Regulador?
                 <input
@@ -2632,9 +2619,45 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           {/* LEFT: Standardized Conditions (Grouped by Blocks) */}
           <div className="flex-1 space-y-2">
             <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080] mb-2 text-center md:text-left">Condições Padronizadas</h5>
-            <div className="h-48 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-medium leading-relaxed custom-scrollbar">
-              <div className="space-y-4">
-                {availableBlocks.length === 0 ? (
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="text"
+                placeholder="Filtrar condições..."
+                value={standardConditionsFilter}
+                onChange={(e) => setStandardConditionsFilter(e.target.value)}
+                className="flex-1 px-3 py-1.5 text-[10px] border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400"
+              />
+              {standardConditionsFilter && (
+                <button
+                  onClick={() => setStandardConditionsFilter('')}
+                  className="text-[9px] text-slate-400 hover:text-slate-600 px-2"
+                  title="Limpar filtro"
+                >
+                  <i className="fa-solid fa-times"></i>
+                </button>
+              )}
+            </div>
+            <div className="h-44 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-medium leading-relaxed custom-scrollbar">
+              <div className="space-y-2">
+                {standardConditionsFilter && filteredStandardItems.length > 0 ? (
+                  <div className="text-[9px] text-slate-500 mb-2 px-1">{filteredStandardItems.length} item(s) encontrado(s)</div>
+                ) : null}
+                {standardConditionsFilter ? (
+                  filteredStandardItems.length === 0 ? (
+                    <div className="p-4 text-center text-slate-400 italic">Nenhum item encontrado</div>
+                  ) : (
+                    filteredStandardItems.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onDoubleClick={() => !readOnly && handleAddCondition(item)}
+                        className="p-2 rounded-lg hover:bg-white hover:border-slate-200 cursor-copy text-slate-500 border border-transparent"
+                        title="Clique duplo para adicionar"
+                      >
+                        <span className="text-[9px]">• {item}</span>
+                      </div>
+                    ))
+                  )
+                ) : availableBlocks.length === 0 ? (
                   <div className="p-4 text-center text-slate-400 italic">Nenhuma condição padrão disponível.</div>
                 ) : (
                   availableBlocks.map(block => {
