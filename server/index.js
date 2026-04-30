@@ -855,6 +855,7 @@ END
         updatedAt: row.updatedAt,
         requestDate: row.requestDate || meta.requestDate || meta.DAT_IN_SEP,
         estimatedDeliveryDate: row.estimatedDeliveryDate || meta.estimatedDeliveryDate || (row.rawDeliveryDate ? oaDateToISOString(row.rawDeliveryDate) : meta.dtEntregaPrevista) || meta.deliveryDeadline || null,
+        previousStudy: getField('previousStudy', 'previousStudy'),
 
         rejectionReason: getField('MOTIVO_REJEICAO', 'rejectionReason'),
         holdReason: getField('MOTIVO_PAUSA', 'holdReason'),
@@ -939,7 +940,9 @@ END
             PRESSAO_MINIMA, CODIGO_SAP_ISU, NOME_INDUSTRIA, CONSUMO_ATUAL, PRESSAO_CONTRATUAL, FAIXA_PRESSAO_ATUAL,
             NOME_UTE, PRESS_MAX_UTE, PRESS_MIN_UTE, PRESS_MAX_UPGN, PRESS_MIN_UPGN,
             RESP_SEPLA as respSepla,
-            VazaoInsta, QDC, HoraFunciona, CATEGORIA_MERCADO, RESP_UNID
+            VazaoInsta, QDC, HoraFunciona, CATEGORIA_MERCADO, RESP_UNID,
+            NRO_EST_AN as previousStudy,
+            NRO_EST_AN as nroEstAn
           FROM Requests
           ${wherePart1}
           ORDER BY createdAt DESC
@@ -972,7 +975,9 @@ END
             NULL as PRESSAO_MINIMA, NULL as CODIGO_SAP_ISU, NULL as NOME_INDUSTRIA, NULL as CONSUMO_ATUAL, NULL as PRESSAO_CONTRATUAL, NULL as FAIXA_PRESSAO_ATUAL,
             NULL as NOME_UTE, NULL as PRESS_MAX_UTE, NULL as PRESS_MIN_UTE, NULL as PRESS_MAX_UPGN, NULL as PRESS_MIN_UPGN,
             NULL as RESP_MAX_PO, NULL as RESP_MIN, NULL as RESP_GARANTIA, NULL as ANALISTA_EMPRESA, NULL as ANALISTA_CARGO, NULL as ANALISTA_GB, NULL as MEMO_RESPOSTA,
-            T.VazaoInsta, T.QDC, T.HoraFunciona, NULL as CATEGORIA_MERCADO, NULL as RESP_UNID
+            T.VazaoInsta, T.QDC, T.HoraFunciona, NULL as CATEGORIA_MERCADO, NULL as RESP_UNID,
+            T.NRO_EST_AN as previousStudy,
+            T.NRO_EST_AN as nroEstAn
           FROM T_ESTPLA T
           ${wherePart2}
           ORDER BY T.IDSIGEP DESC
@@ -1674,7 +1679,7 @@ END
             sqlReq.input('datEnSep', sql.Float, data.createdAt ? dateToOADate(new Date(data.createdAt)) : dateToOADate(effectiveRequestDate));
             // Use validationDate for DAT_IN_SEP as per user requirement (date moved to 200)
             sqlReq.input('datInSep', sql.Float, data.validationDate ? dateToOADate(new Date(data.validationDate)) : (data.startedAt ? dateToOADate(new Date(data.startedAt)) : null));
-            sqlReq.input('datSaSep', sql.Float, data.completedAt ? dateToOADate(new Date(data.completedAt)) : null);
+            sqlReq.input('datSaSep', sql.Float, data.completedAt ? dateToOADate(new Date(data.completedAt)) : ((String(statusVal) === '210' || String(statusVal) === '215') ? dateToOADate(now) : null));
             // dtEntregaPrevista: data definida no validation panel (estimatedDeliveryDate)
             const entregaStr = data.estimatedDeliveryDate || data.deliveryDeadline || '';
             const entregaDate = parseDateBR(entregaStr);
@@ -1682,8 +1687,8 @@ END
             const numericIDSIGEP = parseInt((data.studyNumber || '').replace(/[^0-9]/g, '')) || 0;
             sqlReq.input('idsigep', sql.BigInt, numericIDSIGEP);
 
-            const isRevision = data.studyType === 'Revisão Técnica';
-            sqlReq.input('nroAn', sql.VarChar, isRevision ? (data.previousStudy || '') : (effectiveNro || '')); // NRO_EST_AN = previousStudy ou próprio studyNumber
+            const isRevision = !!data.previousStudy;
+            sqlReq.input('nroAn', sql.VarChar, isRevision ? data.previousStudy : (effectiveNro || '')); // NRO_EST_AN = previousStudy ou próprio studyNumber
 
             const pressureToNormalize = data.suggestedPressureRange || data.pressure || '';
             const normalizedPressure = pressureToNormalize.substring(0, 2).toUpperCase();
@@ -1803,7 +1808,7 @@ END
             IF EXISTS (SELECT 1 FROM T_ESTPLA WHERE id = @id)
             BEGIN
               UPDATE T_ESTPLA SET
-                EMPRESA = @emp, SOL_ORGAO = @org, DAT_EN_SEP = @datEnSep, DAT_IN_SEP = @datInSep, SOL_RESPON = @resp,
+                EMPRESA = @emp, SOL_ORGAO = @org, DAT_EN_SEP = @datEnSep, DAT_IN_SEP = @datInSep, DAT_SA_SEP = @datSaSep, SOL_RESPON = @resp,
                 RESP_SEPLA = @respSepla, OPERADOR_M = @respSepla, FK_MODELO = @formType,
                 STATUS = @status, meta_data = @meta, TITULO = @tit, NOME_CLIENTE = @tit,
                 ObsEstudSol = @obs, Bairro = @bairro, OBSERVS = @obs,
@@ -1839,7 +1844,7 @@ END
             ELSE
             BEGIN
               INSERT INTO T_ESTPLA (
-                id, EMPRESA, SOL_ORGAO, DAT_EN_SEP, DAT_IN_SEP, SOL_RESPON, RESP_SEPLA, OPERADOR_M, FK_MODELO, STATUS, meta_data,
+                id, EMPRESA, SOL_ORGAO, DAT_EN_SEP, DAT_IN_SEP, DAT_SA_SEP, SOL_RESPON, RESP_SEPLA, OPERADOR_M, FK_MODELO, STATUS, meta_data,
                 TITULO, NOME_CLIENTE, LOCALIZ, Bairro, Municipio,
                 NumEconomias, VazaoSol, VazaoInsta, ConsMens, PresSolMax, PresSolMin,
                 HorOpeIni, HorOpeFin, DiaOpeMes, EmailContato, NumEconomiasComIndEtc,
@@ -1854,7 +1859,7 @@ END
                 PRESSAO_ABSOLUTA, PRESSAO_ATM, CODIGO_PASTA, Simulacao, Supervision,
                 Tempo, TempoEstimado, Preparacion, RedeExtTotal, dtEntregaPrevista, MOTIVO_PAUSA
               ) VALUES (
-                @id, @emp, @org, @datEnSep, @datInSep, @resp, @respSepla, @respSepla, @formType, @status, @meta,
+                @id, @emp, @org, @datEnSep, @datInSep, @datSaSep, @resp, @respSepla, @respSepla, @formType, @status, @meta,
                 @tit, @tit, @localiz, @bairro, @muni, @numE, @vazS, @vazI, @cons,
                 @pMax, @pMin, @hIn, @hFin, @dMes, @mail, @numE2, @vazS2, @tel, @entradaReal,
                 @idsigep, @nroAn, @nro, @grupoEst, @tipoEst, @tipEs, @grauDif, @tpgass,
@@ -2095,6 +2100,8 @@ END
           sqlReq.input('lastModifiedBy', sql.VarChar, data.lastModifiedBy || data.userId || '');
           sqlReq.input('userId', sql.VarChar, data.userId || data.user_id || '');
           sqlReq.input('idsigep', sql.BigInt, data.idsigep || data.sigep || (previousRecord ? previousRecord.IDSIGEP : null));
+          const isRevision = !!data.previousStudy;
+          sqlReq.input('nroAn', sql.VarChar, isRevision ? data.previousStudy : (effectiveNro || ''));
 
           await sqlReq.query(`
           IF EXISTS (SELECT 1 FROM Requests WHERE id = @id)
@@ -2105,7 +2112,8 @@ END
               EMPRESA = @emp, SOL_ORGAO = @org, SOL_RESPON = @resp, TITULO = @tit, 
               BAIRRO = @bairro, MUNICIPIO = @muni, LOCALIZ = @localiz,
               naturgyUnit = @natUnit, RESP_SEPLA = @respSepla,
-              lastModifiedBy = @lastModifiedBy, IDSIGEP = @idsigep
+              lastModifiedBy = @lastModifiedBy, IDSIGEP = @idsigep,
+              NRO_EST_AN = @nroAn
             WHERE id = @id
           END
           ELSE
@@ -2113,12 +2121,14 @@ END
             INSERT INTO Requests (
               id, user_id, userId, formType, NRO_ESTUDO, STATUS,
               meta_data, createdAt, updatedAt, requestDate,
-              EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, BAIRRO, MUNICIPIO, LOCALIZ, naturgyUnit, RESP_SEPLA, lastModifiedBy, IDSIGEP
+              EMPRESA, SOL_ORGAO, SOL_RESPON, TITULO, BAIRRO, MUNICIPIO, LOCALIZ, 
+              naturgyUnit, RESP_SEPLA, lastModifiedBy, IDSIGEP, NRO_EST_AN
             )
             VALUES (
               @id, @user_id, @userId, @formType, @nro, @status,
               @meta, @now, @now, @datEnSep,
-              @emp, @org, @resp, @tit, @bairro, @muni, @localiz, @natUnit, @respSepla, @lastModifiedBy, @idsigep
+              @emp, @org, @resp, @tit, @bairro, @muni, @localiz, 
+              @natUnit, @respSepla, @lastModifiedBy, @idsigep, @nroAn
             )
           END
         `);
@@ -2148,13 +2158,17 @@ END
               changes.push({ field: 'status', old: oldS, new: newS, type: 'STATUS_CHANGE' });
 
               // *** I_INTREC Sync: Detect status transitions 200 -> 205 and 210 ***
-              if (oldS === '200' && newS === '205') {
+if (oldS === '200' && newS === '205') {
                 try {
-                  const checkIntRec = await sql.query`SELECT 1 FROM I_INTREC WHERE COD_ESTUDO = ${effectiveNro}`;
+                  const intRecReq = new sql.Request();
+                  intRecReq.input('studyNro', sql.VarChar, effectiveNro);
+                  const nowFloat = new Date().getTime() / (1000 * 60 * 60 * 24);
+                  intRecReq.input('dataIni', sql.Float, nowFloat);
+                  const checkIntRec = await intRecReq.query`SELECT 1 FROM I_INTREC WHERE COD_ESTUDO = @studyNro`;
                   if (checkIntRec.recordset.length === 0) {
-                    await sql.query`
+                    await intRecReq.query`
                       INSERT INTO I_INTREC (COD_ESTUDO, IDSIGEP, DATA_INI, ATIVIDADE)
-                      VALUES (@effectiveNro, @effectiveNro, GETDATE(), 'Generación')
+                      VALUES (@studyNro, @studyNro, @dataIni, 'Generación')
                     `;
                     console.log(`[I_INTREC] ✅ DATA_INI set for study ${effectiveNro}`);
                   }
@@ -2169,25 +2183,27 @@ END
                   const intRecReq = new sql.Request();
                   intRecReq.input('studyNro', sql.VarChar, effectiveNro);
                   intRecReq.input('studyTempo', sql.Float, studyTempo);
+                  const nowFloat = new Date().getTime() / (1000 * 60 * 60 * 24);
+                  intRecReq.input('dataTer', sql.Float, nowFloat);
                   const checkIntRec = await intRecReq.query`SELECT 1 FROM I_INTREC WHERE COD_ESTUDO = @studyNro`;
                   if (checkIntRec.recordset.length === 0) {
                     await intRecReq.query`
-                      INSERT INTO I_INTREC (COD_ESTUDO, IDSIGEP, DATA_TER, DAT_SA_SEP, TEMPO, ATIVIDADE)
-                      VALUES (@studyNro, @studyNro, GETDATE(), GETDATE(), @studyTempo, 'Generación')
+                      INSERT INTO I_INTREC (COD_ESTUDO, IDSIGEP, DATA_TER, TEMPO, ATIVIDADE)
+                      VALUES (@studyNro, @studyNro, @dataTer, @studyTempo, 'Generación')
                     `;
                   } else {
                     await intRecReq.query`
-                      UPDATE I_INTREC SET DATA_TER = GETDATE(), DAT_SA_SEP = GETDATE(), TEMPO = @studyTempo
+                      UPDATE I_INTREC SET DATA_TER = @dataTer, TEMPO = @studyTempo
                       WHERE COD_ESTUDO = @studyNro
                     `;
                   }
-                  console.log(`[I_INTREC] ✅ DAT_SA_SEP set for study ${effectiveNro} (status 210)`);
+console.log(`[I_INTREC] ✅ DATA_TER set for study ${effectiveNro} (status 210)`);
                 } catch (err) {
-                  console.warn('[I_INTREC] Error setting DAT_SA_SEP:', err.message);
+                  console.warn('[I_INTREC] Error setting DATA_TER:', err.message);
                 }
               }
             }
-             
+              
             // 2. Responsible Change - only log when changing FROM system/ADRSis to another analyst
             const oldResp = String(previousRecord.RESP_SEPLA || '');
             const newResp = String(respSeplaValue || '');

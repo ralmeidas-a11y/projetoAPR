@@ -144,6 +144,7 @@ export interface FormData {
   naturgyUnit?: string;
   studyType?: string;
   previousStudy?: string;
+  nroEstAn?: string;
   requesterName?: string;
   requestDate?: string;
   requesterArea?: string;

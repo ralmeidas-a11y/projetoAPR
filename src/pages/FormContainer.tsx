@@ -594,7 +594,8 @@ export const FormContainer: React.FC<FormContainerProps> = ({
         executionSteps: [],
         qcControl: undefined,
         currentStep: undefined,
-        activeTab: undefined
+        activeTab: undefined,
+        totalExecutionTime: 0
       } as any;
     });
 

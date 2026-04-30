@@ -69,3 +69,43 @@
   "stack": "RequestError: Invalid column name 'MOTIVO_PAUSA'.\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
 }
 ---
+{
+  "timestamp": "2026-04-30T05:01:05.378Z",
+  "message": "Must declare the scalar variable \"@nroAn\".",
+  "id": "3",
+  "studyNumber": "PROV-2026000103",
+  "status": "Em Análise",
+  "numericStatus": 330,
+  "stack": "RequestError: Must declare the scalar variable \"@nroAn\".\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
+}
+---
+{
+  "timestamp": "2026-04-30T05:03:25.972Z",
+  "message": "Must declare the scalar variable \"@nroAn\".",
+  "id": "3",
+  "studyNumber": "PROV-2026000103",
+  "status": "Em Análise",
+  "numericStatus": 330,
+  "stack": "RequestError: Must declare the scalar variable \"@nroAn\".\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
+}
+---
+{
+  "timestamp": "2026-04-30T05:06:05.338Z",
+  "message": "Must declare the scalar variable \"@nroAn\".",
+  "id": "3",
+  "studyNumber": "PROV-2026000103",
+  "status": "Em Análise",
+  "numericStatus": 330,
+  "stack": "RequestError: Must declare the scalar variable \"@nroAn\".\n    at handleError (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\mssql\\lib\\tedious\\request.js:384:15)\n    at Connection.emit (node:events:508:28)\n    at Connection.emit (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\connection.js:970:18)\n    at RequestTokenHandler.onErrorMessage (C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\node_modules\\tedious\\lib\\token\\handler.js:284:21)"
+}
+---
+{
+  "timestamp": "2026-04-30T05:13:48.448Z",
+  "message": "isRevision is not defined",
+  "id": "3",
+  "studyNumber": "PROV-2026000103",
+  "status": "Em Análise",
+  "numericStatus": 330,
+  "stack": "ReferenceError: isRevision is not defined\n    at C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\rebuildapr\\projetoAPR\\server\\index.js:2103:46\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)"
+}
+---

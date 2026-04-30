@@ -1450,12 +1450,31 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const revisionHistory = useMemo(() => {
     if (!data.studyNumber) return [];
     const cleanCode = data.studyNumber.replace('PROV-', '');
-    const revMatch = cleanCode.match(/(.+)-REV\d+$/i);
-    const baseCode = revMatch ? revMatch[1] : cleanCode;
-    return allRequests.filter(r =>
-      r.id !== data.id &&
-      (r.studyNumber.replace('PROV-', '').startsWith(baseCode) || (r.previousStudy && r.previousStudy.replace('PROV-', '').startsWith(baseCode)))
-    ).sort((a, b) => (b.requestDate || '').localeCompare(a.requestDate || ''));
+    
+    // Find revisions: studies where nroEstAn matches current study, OR previousStudy matches base code
+    const suffixMatch = cleanCode.match(/(\d+)(\d{2})$/);
+    const baseCode = suffixMatch ? suffixMatch[1] : cleanCode;
+    
+    return allRequests.filter(r => {
+      if (r.id === data.id) return false;
+      
+      // Match by NRO_EST_AN
+      if (r.nroEstAn && r.nroEstAn.replace('PROV-', '') === cleanCode) return true;
+      
+      // Match by previousStudy linking to base code
+      if (r.previousStudy && r.previousStudy.replace('PROV-', '').startsWith(baseCode)) return true;
+      
+      // Legacy pattern: -REV
+      const rClean = (r.studyNumber || '').replace('PROV-', '');
+      const rMatch = rClean.match(/(.+)-REV\d+$/i);
+      if (rMatch && rMatch[1] === baseCode) return true;
+      
+      return false;
+    }).sort((a, b) => {
+      const dateA = a.requestDate ? new Date(a.requestDate).getTime() : 0;
+      const dateB = b.requestDate ? new Date(b.requestDate).getTime() : 0;
+      return dateB - dateA;
+    });
   }, [allRequests, data.id, data.studyNumber]);
 
   const renderTechnicalField = (label: string, value: any, unit: string = '') => (
@@ -1593,9 +1612,25 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     // Logic to calculate previous study/revision
     const getPreviousStudy = (studyNumber: string | undefined) => {
       if (!studyNumber) return '-';
-      const match = studyNumber.match(/-REV(\d+)$/i);
-      if (match) {
-        const currentRev = parseInt(match[1], 10);
+      const clean = studyNumber.replace('PROV-', '');
+      
+      // NRO_EST_AN logic: If ends with 01 → itself, else ends with 02/03/04 → subtract 1
+      const suffixMatch = clean.match(/(\d+)(\d{2})$/);
+      if (suffixMatch) {
+        const prefix = suffixMatch[1];
+        const suffix = parseInt(suffixMatch[2], 10);
+        if (suffix === 1) {
+          return clean; // Root study - returns itself
+        } else if (suffix >= 2) {
+          const prevNum = parseInt(clean, 10) - 1;
+          return String(prevNum);
+        }
+      }
+      
+      // Legacy fallback: -REV pattern
+      const revMatch = studyNumber.match(/-REV(\d+)$/i);
+      if (revMatch) {
+        const currentRev = parseInt(revMatch[1], 10);
         if (currentRev > 0) {
           return studyNumber.replace(/-REV\d+$/i, `-REV${currentRev - 1}`).replace('PROV-', '');
         }
@@ -1696,41 +1731,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             {renderTechnicalField('ID Estudo', data.studyNumber?.replace('PROV-', '') || 'N/A')}
             {(() => {
               const prevText = getPreviousStudy(data.studyNumber);
-              if (prevText === '-') return renderTechnicalField('Estudo Anterior', '-');
-
-              // Robust search
-              const search = prevText.toLowerCase().replace('prov-', '');
-              const found = allRequests?.find(r => {
-                const rNum = (r.studyNumber || '').toLowerCase().replace('prov-', '');
-                return rNum === search || rNum.includes(search);
-              });
-
-              // Always create an object to allow folder browsing
-              const displayObj = found || ({
-                studyNumber: prevText,
-                id: `ref-${prevText}`,
-                status: StudyStatus.CONCLUIDO,
-                formType: data.formType // Fallback to current form type
-              } as FormData);
-
-              return renderTechnicalField('Estudo Anterior', (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setBrowsingRevision(displayObj)}
-                    className="text-indigo-600 hover:text-[#004080] font-black underline decoration-indigo-300 underline-offset-4 transition-colors"
-                    title="Visualizar detalhes/documentos do estudo anterior"
-                  >
-                    {prevText}
-                  </button>
-                  <button
-                    onClick={() => setBrowsingRevision(displayObj)}
-                    className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 hover:text-white hover:bg-blue-600 transition-all border border-blue-100 shadow-sm"
-                    title="Abrir pasta de documentos da solicitação antiga"
-                  >
-                    <i className="fa-solid fa-folder-open text-xs"></i>
-                  </button>
-                </div>
-              ));
+              return renderTechnicalField('Estudo Anterior', prevText === '-' ? '-' : prevText);
             })()}
             {renderTechnicalField('Data de Solicitação', formatDateTimeBR(data.createdAt))}
             {renderTechnicalField('Solicitante', data.requesterName || '-')}
@@ -3146,40 +3147,82 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               </div>
 
               <div className="space-y-6">
-                <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Anexos desta Versão</h4>
-                {previewStudy.selectedFiles && previewStudy.selectedFiles.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-4">
-                    {previewStudy.selectedFiles.filter(f => f.name !== '.keep').map((f, idx) => (
-                      <div key={idx} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between gap-3 group">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-red-500 shadow-sm border border-slate-50">
-                            <i className="fa-solid fa-file-pdf"></i>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-slate-700 truncate">{f.name}</p>
-                            <p className="text-[8px] font-black text-slate-400 uppercase">{(f.size / 1024).toFixed(0)} KB</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleDownloadFile(f)}
-                          className="w-8 h-8 bg-white border border-slate-100 text-indigo-500 hover:bg-indigo-500 hover:text-white transition-all flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100"
-                          title="Visualizar / Baixar"
-                        >
-                          <i className="fa-solid fa-download text-[10px]"></i>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs italic text-slate-400">Nenhum anexo registrado nesta versão.</p>
-                )}
-              </div>
-
-              <div className="space-y-6">
                 <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Observações da Época</h4>
                 <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 text-xs italic text-slate-500 leading-relaxed">
                   {previewStudy.comments || "Sem observações registradas nesta versão."}
                 </div>
+              </div>
+
+              {/* Points de Interligação */}
+              <div className="space-y-6">
+                <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Ponto(s) de Interligação(ões)</h4>
+                {previewStudy.interconnectionPoints && previewStudy.interconnectionPoints.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left bg-slate-50 rounded-xl overflow-hidden text-xs">
+                      <thead className="bg-[#004080] text-white">
+                        <tr>
+                          <th className="p-2 font-normal">Pressão</th>
+                          <th className="p-2 font-normal">Material</th>
+                          <th className="p-2 font-normal">Diâmetro</th>
+                          <th className="p-2 font-normal">Ponto de interligação logradouro</th>
+                          <th className="p-2 font-normal">Comentário</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white border border-slate-200">
+                        {previewStudy.interconnectionPoints.map((point) => (
+                          <tr key={point.id || Math.random()}>
+                            <td className="p-2 bg-white font-bold text-slate-700">{point.pressure || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700">{point.material || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700">{point.diameter || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700 italic">{point.location || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700">{point.comment || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs italic text-slate-400">Nenhum ponto de interligação registrado nesta versão.</p>
+                )}
+              </div>
+
+              {/* Extensões Redes Planificadas */}
+              <div className="space-y-6">
+                <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Extensões Redes Planificadas</h4>
+                {previewStudy.plannedExtensions && previewStudy.plannedExtensions.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left bg-slate-50 rounded-xl overflow-hidden text-xs">
+                      <thead className="bg-[#004080] text-white">
+                        <tr>
+                          <th className="p-2 font-normal">Material</th>
+                          <th className="p-2 font-normal">Diâmetro</th>
+                          <th className="p-2 font-normal text-center">Extensão (m)</th>
+                          <th className="p-2 font-normal">Tipo de Rede</th>
+                          <th className="p-2 font-normal text-center">Válvulas</th>
+                          <th className="p-2 font-normal">Pressão</th>
+                          <th className="p-2 font-normal">Gás</th>
+                          <th className="p-2 font-normal">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white border border-slate-200">
+                        {previewStudy.plannedExtensions.map((ext) => (
+                          <tr key={ext.id || Math.random()}>
+                            <td className="p-2 bg-white font-bold text-slate-700">{ext.material || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700">{ext.diameter || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700 text-center">{ext.extension || 0}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700">{ext.networkType || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700 text-center">{ext.valves || 0}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700">{ext.pressure || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700">{ext.gasType || '-'}</td>
+                            <td className="p-2 bg-white font-bold text-slate-700">{ext.status || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs italic text-slate-400">Nenhuma extensão de rede registrada nesta versão.</p>
+                )}
               </div>
             </div>
             <div className="bg-slate-50 px-10 py-6 border-t border-slate-200 flex justify-end">

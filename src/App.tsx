@@ -1168,6 +1168,11 @@ const App: React.FC = () => {
     // 2. Debounce the PERSISTENCE (expensive)
     if (storageUpdateRef.current) clearTimeout(storageUpdateRef.current);
 
+    // Do not auto-save unsaved drafts (id=0) to avoid database corruption
+    if (String(dataWithTimestamp.id) === '0' || !dataWithTimestamp.id) {
+      return;
+    }
+
     storageUpdateRef.current = setTimeout(() => {
       StorageService.addRequest(dataWithTimestamp).catch(error => {
         console.error('Error persisting request update:', error);
@@ -1395,9 +1400,9 @@ const App: React.FC = () => {
     // Helper for normalization
     const normalize = (s: string) => s?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() || "";
 
-    // 1. Verificar se é um update de estudo existente
+    // 1. Verificar se é um update de estudo existente (e que não seja um rascunho com id 0)
     const currentRequests = Array.isArray(allRequests) ? allRequests : [];
-    const existingRequest = currentRequests.find(r => r.id === newRequest.id);
+    const existingRequest = currentRequests.find(r => String(r.id) === String(newRequest.id) && String(newRequest.id) !== '0');
     let isUpdate = !!existingRequest;
     let finalRequest = { ...newRequest };
 
@@ -1429,6 +1434,9 @@ const App: React.FC = () => {
 
         let studyNumber = '';
 
+        // Assegurar ID válido para novos estudos e revisões
+        const nextId = await StorageService.getNextId();
+
         if (isRevision) {
           // É uma revisão - Pedir próxima revisão ao servidor
           const baseRef = newRequest.previousStudy!;
@@ -1437,6 +1445,7 @@ const App: React.FC = () => {
 
           finalRequest = {
             ...newRequest,
+            id: String(newRequest.id) === '0' ? nextId : newRequest.id,
             studyNumber,
             status: StudyStatus.EM_ANALISE,
             previousStudy: baseRef,
@@ -1451,6 +1460,7 @@ const App: React.FC = () => {
 
           finalRequest = {
             ...newRequest,
+            id: String(newRequest.id) === '0' ? nextId : newRequest.id,
             studyNumber,
             status: StudyStatus.EM_ANALISE,
             user_id: user?.id || '',
@@ -1482,7 +1492,11 @@ const App: React.FC = () => {
             subtext: `O estudo ${finalRequest.studyNumber} foi salvo com sucesso.`,
             type: 'success'
           });
-          setView('my-requests');
+          if (user?.role === UserRole.ANALISTA || user?.role === UserRole.ADM) {
+            setView('dashboard');
+          } else {
+            setView('my-requests');
+          }
           setEditingRequest(null);
 
           // NEW: Upload attachments and generated PDF
