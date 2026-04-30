@@ -1141,6 +1141,21 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
     let successCount = 0;
     for (const file of toImport) {
+      // Copy to Resposta folder first
+      try {
+        await fetch('/api/files/copy-to-resposta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourcePath: file.path,
+            studyNumber: data.studyNumber
+          }),
+        });
+      } catch (copyErr) {
+        console.warn('[handleImportSelectedPdfs] Copy error:', copyErr);
+      }
+      
+      // Then import to database
       const success = await importSingleFileQuiet(file);
       if (success) successCount++;
     }

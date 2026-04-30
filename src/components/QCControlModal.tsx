@@ -98,18 +98,10 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
         return;
       }
 
-      // Only skip history for non-revision studies in certain statuses
-      // For revisions, always fetch history (includes previous study's history)
-      const isRevision = data.previousStudy && data.previousStudy.length > 0;
-      if (!isRevision && (data.status === StudyStatus.CONTROLE_QUALIDADE || data.status === StudyStatus.ENVIADO_SEM_CQ)) {
-        setDbIterations([]);
-        return;
-      }
-
       setIsLoadingHistory(true);
       console.log('[QCModal] Fetching QC history for:', data.studyNumber);
       try {
-        // Direct fetch to API
+        // Always fetch history regardless of status
         const url = `/api/qc-history/${encodeURIComponent(data.studyNumber)}`;
         console.log('[QCModal] Fetching from URL:', url);
         const res = await fetch(url);
@@ -144,7 +136,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
       }
     };
     fetchQCHistory();
-  }, [data.studyNumber, data.previousStudy]);
+  }, [data.studyNumber]);
 
   // Combine local iterations (from existing.qcIterations) with database history
   const iterations: QCIteration[] = existing.qcIterations || [];
