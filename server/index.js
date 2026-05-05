@@ -2705,15 +2705,3 @@ app.post('/api/folders/create', async (req, res) => {
 
 startServer();
 
-res.json({ success: true, path: folderPath });
-    } else {
-  res.json({ success: true, path: folderPath, alreadyExists: true });
-}
-  } catch (err) {
-  console.error('[Folders] Error:', err);
-  res.status(500).json({ success: false, error: err.message });
-}
-});
-
-startServer();
-

@@ -688,7 +688,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 className={`flex items-center gap-2 py-2.5 px-4 bg-indigo-600 text-white rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95 ${isExportingCarta ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
                 <i className={`fa-solid text-xs ${isExportingCarta ? 'fa-spinner fa-spin' : 'fa-file-export'}`}></i>
-                {isExportingCarta ? 'Exportando...' : `Exportar Carta (${data.letterTemplate?.replace('rlt_carta_sepla_', '') || 'GENÉRICO'})`}
+                {isExportingCarta ? 'Exportando...' : 'Exportar Carta'}
               </button>
               <button
                 onClick={() => setShowCartaPreview(false)}
@@ -2891,7 +2891,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 onClick={() => !readOnly && handleExportCartaPDF()}
                 className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'} ${isExportingCarta ? 'animate-pulse opacity-50' : ''}`}
               >
-                <i className="fa-solid fa-envelope-open-text"></i> {isExportingCarta ? 'Exportando...' : `Exportar Carta (${data.letterTemplate?.replace('rlt_carta_sepla_', '') || 'GENÉRICO'})`}
+                <i className="fa-solid fa-envelope-open-text"></i> {isExportingCarta ? 'Exportando...' : 'Exportar Carta Resposta'}
               </li>
               <li
                 onClick={handleJustifyPreQC}
