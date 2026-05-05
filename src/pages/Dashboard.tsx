@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole, QCControlData } from '../types/types';
-import { formatToLocalTime, formatDate, normalizeArea, isAssignedToMe, isSystemAssigned } from '../utils/utils';
+import { formatToLocalTime, formatDate, normalizeArea, isAssignedToMe, isSystemAssigned, getGMT3Date, getGMT3DateString } from '../utils/utils';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { ValidationModal } from '../components/ValidationModal';
 import { QCControlModal } from '../components/QCControlModal';
@@ -531,8 +531,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       const excelDate = Number(str);
                       if (excelDate > 40000) {
                         try {
-                          const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
-                          return jsDate.toISOString().split('T')[0];
+                          const jsDate = getGMT3Date((excelDate - 25569) * 86400 * 1000);
+                          return getGMT3DateString(jsDate);
                         } catch (e) { return str; }
                       }
                     }
@@ -548,8 +548,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     if (!deadlineStr) return false;
                     // Ignorar status concluídos/cancelados/rejeitados
                     if ([StudyStatus.CONCLUIDO, StudyStatus.CANCELADO, StudyStatus.REJEITADO].includes(req.status)) return false;
-                    const deadline = new Date(deadlineStr + 'T00:00:00');
-                    const now = new Date();
+                    const deadline = getGMT3Date(deadlineStr + 'T00:00:00');
+                    const now = getGMT3Date();
                     const diffDays = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
                     // Urgent: menos de 2 dias (prazo próximo) OU prazo ultrapassado (atrasado)
                     return diffDays < 2;
@@ -604,8 +604,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         {req.status === StudyStatus.CONCLUIDO ? (
                           (() => {
                             if (!deadlineStr) return <span className="text-slate-300 text-sm">-</span>;
-                            const deadline = new Date(deadlineStr + 'T00:00:00');
-                            const completed = new Date(req.updatedAt || req.completedAt || req.requestDate);
+                            const deadline = getGMT3Date(deadlineStr + 'T00:00:00');
+                            const completed = getGMT3Date(req.updatedAt || req.completedAt || req.requestDate);
                             const onTime = completed <= deadline;
                             return onTime ? (
                               <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">

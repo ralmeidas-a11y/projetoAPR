@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole, FormType, InterconnectionPoint, PlannedExtension } from '../types/types';
-import { formatDateTimeBR, calculateDeadline, isSystemAssigned } from '../utils/utils';
+import { formatDateTimeBR, calculateDeadline, isSystemAssigned, getGMT3ISOString, getGMT3Date } from '../utils/utils';
 import { StorageService } from '../services/storage';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { QCControlModal } from '../components/QCControlModal';
@@ -204,7 +204,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
     // Check if data changed and it's not the initial mount
     // to show "Salvo" briefly
-    setLastSaved(new Date());
+    setLastSaved(getGMT3Date());
     setIsAutoSaving(false);
   }, [data, readOnly, onUpdateData]);
 
@@ -340,7 +340,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     try {
       let activeRequest = data;
       if (!data.cartaGeneratedAt && onUpdateData) {
-        const now = new Date().toISOString();
+        const now = getGMT3ISOString();
         activeRequest = { ...data, cartaGeneratedAt: now };
         onUpdateData(activeRequest);
 
@@ -406,7 +406,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   };
 
   const renderCartaPaper = (reference: React.RefObject<HTMLDivElement>) => {
-    const docDate = data.cartaGeneratedAt || data.completedAt || new Date().toISOString();
+    const docDate = data.cartaGeneratedAt || data.completedAt || getGMT3ISOString();
     const assignedUser = allUsers.find(u => {
       const matchId = u.id === data.assignedTo;
       const matchEmail = u.email?.toLowerCase() === data.assignedTo?.toLowerCase();
@@ -858,7 +858,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
       // Ensure startedAt is set if in execution
       if (!updated.startedAt) {
-        updated.startedAt = new Date().toISOString();
+        updated.startedAt = getGMT3ISOString();
         changed = true;
       }
     }
@@ -1384,11 +1384,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
     // Logic to prevent date inversion and improve persistence
     if (status === StudyStatus.EM_EXECUCAO) {
-      finalAdditional.startedAt = data.startedAt || new Date().toISOString();
+      finalAdditional.startedAt = data.startedAt || getGMT3ISOString();
       finalAdditional.completedAt = undefined; // Force clear if starting execution
     } else if (status === StudyStatus.CONCLUIDO || status === StudyStatus.CONTROLE_QUALIDADE) {
       if (status === StudyStatus.CONCLUIDO) {
-        finalAdditional.completedAt = new Date().toISOString();
+        finalAdditional.completedAt = getGMT3ISOString();
       }
 
       // Clear responseMemo when sending to CQ
@@ -1607,36 +1607,36 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
   };
 
-  const renderTechSubTab0 = () => {
+  // Logic to calculate previous study/revision
+  const getPreviousStudy = (studyNumber: string | undefined) => {
+    if (!studyNumber) return '-';
+    const clean = studyNumber.replace('PROV-', '');
 
-    // Logic to calculate previous study/revision
-    const getPreviousStudy = (studyNumber: string | undefined) => {
-      if (!studyNumber) return '-';
-      const clean = studyNumber.replace('PROV-', '');
-      
-      // NRO_EST_AN logic: If ends with 01 → itself, else ends with 02/03/04 → subtract 1
-      const suffixMatch = clean.match(/(\d+)(\d{2})$/);
-      if (suffixMatch) {
-        const prefix = suffixMatch[1];
-        const suffix = parseInt(suffixMatch[2], 10);
-        if (suffix === 1) {
-          return clean; // Root study - returns itself
-        } else if (suffix >= 2) {
-          const prevNum = parseInt(clean, 10) - 1;
-          return String(prevNum);
-        }
+    // NRO_EST_AN logic: If ends with 01 → itself, else ends with 02/03/04 → subtract 1
+    const suffixMatch = clean.match(/(\d+)(\d{2})$/);
+    if (suffixMatch) {
+      const prefix = suffixMatch[1];
+      const suffix = parseInt(suffixMatch[2], 10);
+      if (suffix === 1) {
+        return clean; // Root study - returns itself
+      } else if (suffix >= 2) {
+        const prevNum = parseInt(clean, 10) - 1;
+        return String(prevNum);
       }
-      
-      // Legacy fallback: -REV pattern
-      const revMatch = studyNumber.match(/-REV(\d+)$/i);
-      if (revMatch) {
-        const currentRev = parseInt(revMatch[1], 10);
-        if (currentRev > 0) {
-          return studyNumber.replace(/-REV\d+$/i, `-REV${currentRev - 1}`).replace('PROV-', '');
-        }
+    }
+
+    // Legacy fallback: -REV pattern
+    const revMatch = studyNumber.match(/-REV(\d+)$/i);
+    if (revMatch) {
+      const currentRev = parseInt(revMatch[1], 10);
+      if (currentRev > 0) {
+        return studyNumber.replace(/-REV\d+$/i, `-REV${currentRev - 1}`).replace('PROV-', '');
       }
-      return '-';
-    };
+    }
+    return '-';
+  };
+
+  const renderTechSubTab0 = () => {
 
     // Logic to calculate Empresa and Estado based on Município
     const getEmpresaEstado = (municipio: string | undefined): { empresa: string, estado: string } => {
@@ -2001,7 +2001,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </span>
               </div>
 
-              {renderTechnicalField('Estudo Anterior', data.previousStudy || '-')}
+              {renderTechnicalField('Estudo Anterior', getPreviousStudy(data.studyNumber))}
             </div>
 
             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 grid grid-cols-5 gap-2 text-center">
@@ -3479,7 +3479,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                       onClick={async () => {
                         if (f.isVirtual && f.virtualType === 'official-form') {
                           const fileName = `Formulário - ${data.studyNumber}.pdf`;
-                          const path = `Solicitacoes_APR/${new Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
+                          const path = `Solicitacoes_APR/${getGMT3Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
                           const url = await StorageService.getFileUrl(path);
                           if (url) {
                             const link = document.createElement('a');
@@ -3503,7 +3503,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                       onClick={async () => {
                         if (f.isVirtual && f.virtualType === 'official-form') {
                           const fileName = `Formulário - ${data.studyNumber}.pdf`;
-                          const path = `Solicitacoes_APR/${new Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
+                          const path = `Solicitacoes_APR/${getGMT3Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
                           const url = await StorageService.getFileUrl(path);
                           if (url) {
                             window.open(url, '_blank');

@@ -523,6 +523,18 @@ async function startServer() {
       }
     });
 
+    // 2.2 E_TIPESP - Mapeamento de sub-tipos de estudo para modelos de carta e prazos
+    app.get('/api/tipesp', async (req, res) => {
+      try {
+        const request = new sql.Request();
+        const result = await request.query`SELECT DESCRICAO, GRUPO1, GRUPDIAPRAZO FROM E_TIPESP`;
+        res.json(result.recordset);
+      } catch (err) {
+        console.error('[E_TIPESP] Error fetching:', err);
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     app.post('/api/config', async (req, res) => {
       try {
         const { folderBasePath } = req.body;
@@ -1665,7 +1677,7 @@ END
             sqlReq.input('cons', sql.Float, safeFloat(data.monthlyConsumption || 0));
 
             sqlReq.input('pMax', sql.Float, safeFloat(data.presSolMax || 0));
-            sqlReq.input('pMin', sql.Float, safeFloat(data.presSolMin || 0));
+            sqlReq.input('pMin', sql.Float, safeFloat(data.minPressure || data.presSolMin || 0));
             sqlReq.input('hIn', sql.VarChar, String(data.horOpeIni || ''));
             sqlReq.input('hFin', sql.VarChar, String(data.horOpeFin || ''));
             sqlReq.input('dMes', sql.Int, safeInt(data.workDaysPerWeek || 0) * 4);

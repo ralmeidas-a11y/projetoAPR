@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { FormData, QCControlData, QCIteration, StudyStatus, User, UserRole } from '../types/types';
-import { formatDateTimeBR } from '../utils/utils';
+import { formatDateTimeBR, getGMT3ISOString } from '../utils/utils';
 import { StorageService } from '../services/storage';
 
 interface QCControlModalProps {
@@ -172,8 +172,8 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   const totalSecondary = Object.values(secondaryCounts).reduce<number>((a, b) => a + (Number(b) || 0), 0);
 
   const buildQCData = (): QCControlData => ({
-    qcRequestDate: existing.qcRequestDate || data.completedAt || new Date().toISOString(),
-    qcValidationDate: new Date().toISOString(),
+    qcRequestDate: existing.qcRequestDate || data.completedAt || getGMT3ISOString(),
+    qcValidationDate: getGMT3ISOString(),
     qcStatusCQ: qcStatus,
     qcSupervisor: supervisor,
     qcCriticalFailures: criticalCounts,
@@ -182,7 +182,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
       ...allIterations,
       {
         status: qcStatus === 'Definir' ? 'Aguardando' : qcStatus,
-        date: new Date().toISOString(),
+        date: getGMT3ISOString(),
         reviewer: currentUser?.name || supervisor,
       },
     ],
@@ -202,7 +202,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
       ...allIterations,
       {
         status: withReservations ? 'Aprovado com Ressalvas' : 'Aprovado',
-        date: new Date().toISOString(),
+        date: getGMT3ISOString(),
         reviewer: currentUser?.name || supervisor
       },
     ];
@@ -231,7 +231,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
     qc.qcStatusCQ = 'Reprovado';
     qc.qcIterations = [
       ...allIterations,
-      { status: 'Reprovado', date: new Date().toISOString(), reviewer: currentUser?.name || supervisor },
+      { status: 'Reprovado', date: getGMT3ISOString(), reviewer: currentUser?.name || supervisor },
     ];
     const rejectionItems: string[] = [];
     CRITICAL_FAILURES.forEach((f, i) => {

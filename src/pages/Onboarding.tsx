@@ -5,6 +5,7 @@ import { NaturgyLogo, REQUESTER_AREAS } from '../constants/constants';
 import { StorageService } from '../services/storage';
 import bcrypt from 'bcryptjs';
 import { useDialog } from '../components/AppDialog';
+import { getGMT3ISOString } from '../utils/utils';
 
 
 interface OnboardingProps {
@@ -67,7 +68,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
         password: hashedPassword,
         profileComplete: true,
         requiresPasswordChange: false,
-        lastAccess: new Date().toISOString(),
+        lastAccess: getGMT3ISOString(),
       };
 
       const savedUser = await StorageService.saveUser(updatedUser);

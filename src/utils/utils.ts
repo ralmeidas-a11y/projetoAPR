@@ -28,45 +28,46 @@ export const formatDateTimeBR = (date: Date | string | undefined | null) => {
   }
 };
 
-export const getGMT3Date = () => {
-  const date = new Date();
-  return new Date(date.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+export const getGMT3Date = (baseDate?: string | number | Date) => {
+  const d = baseDate ? new Date(baseDate) : new Date();
+  return new Date(d.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 };
 
 export const getGMT3ISOString = () => {
   const date = new Date();
+  // Returns YYYY-MM-DDTHH:mm:ss-03:00
   return date.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T') + '-03:00';
+};
+
+/**
+ * Returns YYYY-MM-DD in America/Sao_Paulo timezone.
+ */
+export const getGMT3DateString = (date?: Date | string) => {
+  const d = date ? new Date(date) : new Date();
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
 };
 
 export const formatDate = (dateStr: any) => {
   if (!dateStr) return '-';
   
-  let dStr = typeof dateStr === 'string' ? dateStr : '';
+  let d: Date | null = null;
   
   // Excel numeric date (days since 1899-12-30)
-  if (typeof dateStr === 'number' || (typeof dateStr === 'string' && !isNaN(Number(dateStr)) && !dateStr.includes('-'))) {
+  if (typeof dateStr === 'number' || (typeof dateStr === 'string' && !isNaN(Number(dateStr)) && !dateStr.includes('-') && !dateStr.includes('/'))) {
     const numericDate = Number(dateStr);
-    if (numericDate > 10000) { // Safety check to avoid small numbers if any
-      const jsDate = new Date((numericDate - 25569) * 86400 * 1000);
-      try {
-        dStr = jsDate.toISOString().split('T')[0];
-      } catch (e) {
-        return String(dateStr);
-      }
+    if (numericDate > 10000) {
+      d = new Date((numericDate - 25569) * 86400 * 1000);
     }
+  } else if (dateStr instanceof Date) {
+    d = dateStr;
+  } else if (typeof dateStr === 'string') {
+    d = new Date(dateStr);
   }
 
-  if (dateStr instanceof Date) {
-    try {
-      dStr = dateStr.toISOString().split('T')[0];
-    } catch (e) {
-      return '-';
-    }
-  } else if (typeof dateStr === 'string' && dateStr.includes('T')) {
-    dStr = dateStr.split('T')[0];
-  }
+  if (!d || isNaN(d.getTime())) return String(dateStr);
 
-  if (!dStr) return String(dateStr);
+  const dStr = d.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
 
   // Assumes yyyy-mm-dd
   const parts = dStr.split('-');
@@ -156,11 +157,11 @@ export const addBusinessDays = (date: Date | string, days: number): Date => {
 };
 
 /**
- * Calculates the deadline based on FormType.
+ * Calculates the deadline based on FormType or custom days.
  * FO.02: 7 calendar days.
- * Others: 5 business days.
+ * Others: 5 business days (default) or custom business days.
  */
-export const calculateDeadline = (requestDate: string | undefined | null, formType: string): string => {
+export const calculateDeadline = (requestDate: string | undefined | null, formType: string, customDays?: number): string => {
   if (!requestDate) return '';
   
   let d: Date;
@@ -179,11 +180,11 @@ export const calculateDeadline = (requestDate: string | undefined | null, formTy
     deadlineDate = new Date(d);
     deadlineDate.setDate(deadlineDate.getDate() + 7);
   } else {
-    // 5 business days
-    deadlineDate = addBusinessDays(d, 5);
+    // Business days: use customDays if provided, else default to 5
+    deadlineDate = addBusinessDays(d, customDays !== undefined ? customDays : 5);
   }
 
-  return deadlineDate.toISOString().split('T')[0];
+  return getGMT3DateString(deadlineDate);
 };
 
 /**
@@ -242,7 +243,7 @@ export const isExpiringOrOverdue = (deadlineStr: string | undefined | null) => {
       const excelDate = Number(dStr);
       if (excelDate > 40000) {
         const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
-        dStr = jsDate.toISOString().split('T')[0];
+        dStr = getGMT3DateString(jsDate);
       }
     }
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { FormData } from '../types/types';
 import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from '../constants/constants';
-import { formatDate } from '../utils/utils';
+import { formatDate, getGMT3DateString } from '../utils/utils';
 import { LocationPickerModal } from '../components/LocationPickerModal';
 
 interface FormFO03Props {
@@ -83,7 +83,7 @@ export const FormFO03: React.FC<FormFO03Props> = ({ data, onChange, readOnly = f
       if (!isNaN(requestDateObj.getTime())) {
         const deliveryDateObj = new Date(requestDateObj);
         deliveryDateObj.setDate(deliveryDateObj.getDate() + 7);
-        const deliveryDateStr = deliveryDateObj.toISOString().split('T')[0];
+        const deliveryDateStr = getGMT3DateString(deliveryDateObj);
         if (data.estimatedDeliveryDate !== deliveryDateStr) {
           updates.estimatedDeliveryDate = deliveryDateStr;
         }
