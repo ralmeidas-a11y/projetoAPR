@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FormData } from '../types/types';
 import { REQUESTER_AREAS, MUNICIPALITIES_RJ, MUNICIPALITIES_SP } from '../constants/constants';
-import { formatDate, getGMT3DateString } from '../utils/utils';
+import { formatDate } from '../utils/utils';
 import { LocationPickerModal } from '../components/LocationPickerModal';
 
 interface FormFO01Props {
@@ -45,7 +45,7 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
     if (readOnly) return;
     const resTotal = isResActive ? (Number(data.numClientsRes) || 0) * (Number(data.flowUnitRes) || 0) : 0;
     const comTotal = isComActive ? (Number(data.numClientsCom) || 0) * (Number(data.flowUnitCom) || 0) : 0;
-    
+
     const updates: Partial<FormData> = {};
     if (resTotal !== data.totalFlowRes) updates.totalFlowRes = parseFloat(resTotal.toFixed(2));
     if (comTotal !== data.totalFlowCom) updates.totalFlowCom = parseFloat(comTotal.toFixed(2));
@@ -55,7 +55,7 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
       if (!isNaN(requestDateObj.getTime())) {
         const deliveryDateObj = new Date(requestDateObj);
         deliveryDateObj.setDate(deliveryDateObj.getDate() + 7);
-        const deliveryDateStr = getGMT3DateString(deliveryDateObj);
+        const deliveryDateStr = deliveryDateObj.toISOString().split('T')[0];
         if (data.estimatedDeliveryDate !== deliveryDateStr) {
           updates.estimatedDeliveryDate = deliveryDateStr;
         }
@@ -74,7 +74,7 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
     if (type === 'number') {
       processedValue = value === '' ? '' : (name.includes('numClients') ? (parseInt(value, 10) || 0) : (parseFloat(value) || 0));
     }
-    
+
     // Dual sync for flow unit fields
     if (name === 'flowUnitRes') {
       onChange({ flowUnitRes: processedValue as number | "", unitFlow: processedValue as number | "" });
@@ -172,8 +172,8 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
 
             {data.studyType === 'Revisão de Estudo' && (
               <div className="col-span-12 flex items-center gap-2 animate-in slide-in-from-left-2 duration-300">
-                 <label className={`${requiredLabelClass} w-32`}>Estudo Anterior :</label>
-                 <input name="previousStudy" value={data.previousStudy || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} placeholder="Ex: ADR-2023-001" />
+                <label className={`${requiredLabelClass} w-32`}>Estudo Anterior :</label>
+                <input name="previousStudy" value={data.previousStudy || ''} onChange={handleInputChange} className={`${inputBaseClass} border-slate-200 bg-white`} placeholder="Ex: ADR-2023-001" />
               </div>
             )}
 
@@ -374,26 +374,26 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
 
       {/* CONSIDERAÇÕES E PRAZOS */}
       <section className="bg-white border border-slate-200 p-5">
-         <h4 className="font-bold text-[#004080] mb-4 uppercase text-[10px] border-b border-slate-100 pb-2">Considerações sobre a solicitação</h4>
-         {readOnly ? (
-           <table style={tableStyle}>
-             <tbody>
-               <tr><th style={thStyle}>Prazo dias</th><td style={tdStyle}>até 5 dias úteis</td></tr>
-               <tr><th style={thStyle}>Previsão de Entrega</th><td style={tdStyle}>{formatDate(data.estimatedDeliveryDate) || '-'}</td></tr>
-             </tbody>
-           </table>
-         ) : (
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-              <div className="flex items-center gap-4">
-                 <label className="text-[10px] text-[#004080] uppercase font-bold min-w-[80px]">Prazo dias:</label>
-                 <input type="text" readOnly value="até 5 dias úteis" className="flex-1 p-2 border border-slate-300 rounded bg-white text-slate-700 text-center font-bold h-10 shadow-sm" />
-              </div>
-              <div className="flex items-center gap-4">
-                 <label className="text-[10px] text-[#004080] uppercase tracking-tight font-bold min-w-[120px]">Previsão de Entrega:</label>
-                 <input type="date" name="estimatedDeliveryDate" value={data.estimatedDeliveryDate || ''} readOnly className="flex-1 p-2 rounded border border-slate-300 outline-none font-bold h-10 text-[10pt] bg-white text-[#004080] text-center shadow-sm" />
-              </div>
-           </div>
-         )}
+        <h4 className="font-bold text-[#004080] mb-4 uppercase text-[10px] border-b border-slate-100 pb-2">Considerações sobre a solicitação</h4>
+        {readOnly ? (
+          <table style={tableStyle}>
+            <tbody>
+              <tr><th style={thStyle}>Prazo dias</th><td style={tdStyle}>até 5 dias úteis</td></tr>
+              <tr><th style={thStyle}>Previsão de Entrega</th><td style={tdStyle}>{formatDate(data.estimatedDeliveryDate) || '-'}</td></tr>
+            </tbody>
+          </table>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+            <div className="flex items-center gap-4">
+              <label className="text-[10px] text-[#004080] uppercase font-bold min-w-[80px]">Prazo dias:</label>
+              <input type="text" readOnly value="até 5 dias úteis" className="flex-1 p-2 border border-slate-300 rounded bg-white text-slate-700 text-center font-bold h-10 shadow-sm" />
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="text-[10px] text-[#004080] uppercase tracking-tight font-bold min-w-[120px]">Previsão de Entrega:</label>
+              <input type="date" name="estimatedDeliveryDate" value={data.estimatedDeliveryDate || ''} readOnly className="flex-1 p-2 rounded border border-slate-300 outline-none font-bold h-10 text-[10pt] bg-white text-[#004080] text-center shadow-sm" />
+            </div>
+          </div>
+        )}
       </section>
 
       {/* DOCUMENTAÇÃO E ANEXOS */}
@@ -401,7 +401,7 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
         <div className="bg-[#004080] text-white px-4 py-1 font-bold rounded-t text-[10px] uppercase">DOCUMENTAÇÃO E ANEXOS</div>
         <div className="p-6 border border-slate-200 rounded-b-lg bg-white space-y-4">
           {!readOnly && (
-            <div 
+            <div
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 hover:border-[#FF8000] transition-all cursor-pointer group"
             >
@@ -412,11 +412,11 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
                 <p className="font-bold text-[#004080] text-sm">Clique para anexar arquivos técnicos</p>
                 <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest text-center">PDF, JPG, PNG, DWG, KMZ (Max. 10MB)</p>
               </div>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                className="hidden" 
-                multiple 
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                multiple
                 onChange={handleFileChange}
                 accept=".pdf,.jpg,.jpeg,.png,.dwg,.kmz"
               />
@@ -433,7 +433,7 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
                     <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
                   </div>
                   {!readOnly && (
-                    <button 
+                    <button
                       onClick={() => removeFile(idx)}
                       className="p-1 hover:text-red-500 transition-colors text-slate-300"
                     >
@@ -459,13 +459,13 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
               {data.comments || 'Nenhum comentário registrado.'}
             </div>
           ) : (
-            <textarea 
-              name="comments" 
-              value={data.comments || ''} 
-              onChange={handleInputChange} 
-              rows={6} 
-              className="w-full p-4 border border-slate-200 rounded-xl outline-none bg-white font-normal text-slate-700 text-[10pt] leading-relaxed shadow-inner" 
-              placeholder="Digite aqui as observações técnicas do estudo..." 
+            <textarea
+              name="comments"
+              value={data.comments || ''}
+              onChange={handleInputChange}
+              rows={6}
+              className="w-full p-4 border border-slate-200 rounded-xl outline-none bg-white font-normal text-slate-700 text-[10pt] leading-relaxed shadow-inner"
+              placeholder="Digite aqui as observações técnicas do estudo..."
             />
           )}
         </div>

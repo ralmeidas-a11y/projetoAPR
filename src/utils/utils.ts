@@ -13,7 +13,7 @@ export const formatDateTimeBR = (date: Date | string | undefined | null) => {
   try {
     const d = new Date(date);
     if (isNaN(d.getTime())) return '-';
-    
+
     return new Intl.DateTimeFormat('pt-BR', {
       timeZone: 'America/Sao_Paulo',
       day: '2-digit',
@@ -28,46 +28,45 @@ export const formatDateTimeBR = (date: Date | string | undefined | null) => {
   }
 };
 
-export const getGMT3Date = (baseDate?: string | number | Date) => {
-  const d = baseDate ? new Date(baseDate) : new Date();
-  return new Date(d.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+export const getGMT3Date = () => {
+  const date = new Date();
+  return new Date(date.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 };
 
 export const getGMT3ISOString = () => {
   const date = new Date();
-  // Returns YYYY-MM-DDTHH:mm:ss-03:00
   return date.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T') + '-03:00';
-};
-
-/**
- * Returns YYYY-MM-DD in America/Sao_Paulo timezone.
- */
-export const getGMT3DateString = (date?: Date | string) => {
-  const d = date ? new Date(date) : new Date();
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
 };
 
 export const formatDate = (dateStr: any) => {
   if (!dateStr) return '-';
-  
-  let d: Date | null = null;
-  
+
+  let dStr = typeof dateStr === 'string' ? dateStr : '';
+
   // Excel numeric date (days since 1899-12-30)
-  if (typeof dateStr === 'number' || (typeof dateStr === 'string' && !isNaN(Number(dateStr)) && !dateStr.includes('-') && !dateStr.includes('/'))) {
+  if (typeof dateStr === 'number' || (typeof dateStr === 'string' && !isNaN(Number(dateStr)) && !dateStr.includes('-'))) {
     const numericDate = Number(dateStr);
-    if (numericDate > 10000) {
-      d = new Date((numericDate - 25569) * 86400 * 1000);
+    if (numericDate > 10000) { // Safety check to avoid small numbers if any
+      const jsDate = new Date((numericDate - 25569) * 86400 * 1000);
+      try {
+        dStr = jsDate.toISOString().split('T')[0];
+      } catch (e) {
+        return String(dateStr);
+      }
     }
-  } else if (dateStr instanceof Date) {
-    d = dateStr;
-  } else if (typeof dateStr === 'string') {
-    d = new Date(dateStr);
   }
 
-  if (!d || isNaN(d.getTime())) return String(dateStr);
+  if (dateStr instanceof Date) {
+    try {
+      dStr = dateStr.toISOString().split('T')[0];
+    } catch (e) {
+      return '-';
+    }
+  } else if (typeof dateStr === 'string' && dateStr.includes('T')) {
+    dStr = dateStr.split('T')[0];
+  }
 
-  const dStr = d.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
+  if (!dStr) return String(dateStr);
 
   // Assumes yyyy-mm-dd
   const parts = dStr.split('-');
@@ -81,12 +80,12 @@ export const normalizeArea = (area: string | undefined | null) => {
   if (!area) return '';
 
   const trimmedArea = area.trim();
-  
+
   // Se for um código numérico e temos o mapeamento, retornamos a descrição
   if (AREA_CODE_MAPPING[trimmedArea]) {
     return AREA_CODE_MAPPING[trimmedArea];
   }
-  
+
   const clean = trimmedArea
     .toLowerCase()
     .normalize("NFD")
@@ -99,7 +98,7 @@ export const normalizeArea = (area: string | undefined | null) => {
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .trim();
-    
+
     return officialClean === clean || officialClean.replace(/\bzona\b/g, 'zone') === clean.replace(/\bzona\b/g, 'zone');
   });
 
@@ -122,7 +121,7 @@ export const isWithinLast12Months = (dateStr: string | undefined | null) => {
  */
 export const isAssignedToMe = (assignedToId: string | undefined | null, currentUser: User | null | undefined) => {
   if (!assignedToId || !currentUser) return false;
-  
+
   const idLower = assignedToId.trim().toLowerCase();
   const userIdLower = currentUser.id.toLowerCase();
   const userEmailLower = currentUser.email?.toLowerCase().trim();
@@ -134,7 +133,7 @@ export const isAssignedToMe = (assignedToId: string | undefined | null, currentU
   if (userEmailLower && idLower === userEmailLower) return true;
   if (userSapLower && idSapClean === userSapLower) return true;
   if (userGbLower && idLower === userGbLower) return true;
-  
+
   return false;
 };
 
@@ -144,7 +143,7 @@ export const isAssignedToMe = (assignedToId: string | undefined | null, currentU
 export const addBusinessDays = (date: Date | string, days: number): Date => {
   const result = new Date(date);
   if (isNaN(result.getTime())) return new Date();
-  
+
   let added = 0;
   while (added < days) {
     result.setDate(result.getDate() + 1);
@@ -157,13 +156,13 @@ export const addBusinessDays = (date: Date | string, days: number): Date => {
 };
 
 /**
- * Calculates the deadline based on FormType or custom days.
+ * Calculates the deadline based on FormType.
  * FO.02: 7 calendar days.
- * Others: 5 business days (default) or custom business days.
+ * Others: 5 business days.
  */
-export const calculateDeadline = (requestDate: string | undefined | null, formType: string, customDays?: number): string => {
+export const calculateDeadline = (requestDate: string | undefined | null, formType: string): string => {
   if (!requestDate) return '';
-  
+
   let d: Date;
   if (/^\d{2}\/\d{2}\/\d{4}/.test(requestDate)) {
     const [day, month, year] = requestDate.split('/').map(Number);
@@ -180,11 +179,11 @@ export const calculateDeadline = (requestDate: string | undefined | null, formTy
     deadlineDate = new Date(d);
     deadlineDate.setDate(deadlineDate.getDate() + 7);
   } else {
-    // Business days: use customDays if provided, else default to 5
-    deadlineDate = addBusinessDays(d, customDays !== undefined ? customDays : 5);
+    // 5 business days
+    deadlineDate = addBusinessDays(d, 5);
   }
 
-  return getGMT3DateString(deadlineDate);
+  return deadlineDate.toISOString().split('T')[0];
 };
 
 /**
@@ -194,11 +193,11 @@ export const calculateDeadline = (requestDate: string | undefined | null, formTy
 export const isSystemAssigned = (id: string | undefined | null) => {
   if (!id) return true;
   const clean = id.trim().toUpperCase();
-  return clean === 'ADRSIS' || 
-         clean === 'ADRSIS - SISTEMA' || 
-         clean === 'PRGC' || 
-         clean === 'SISTEMA' ||
-         clean === 'ADRSIS- SISTEMA';
+  return clean === 'ADRSIS' ||
+    clean === 'ADRSIS - SISTEMA' ||
+    clean === 'PRGC' ||
+    clean === 'SISTEMA' ||
+    clean === 'ADRSIS- SISTEMA';
 };
 
 /**
@@ -208,7 +207,7 @@ export const isSystemAssigned = (id: string | undefined | null) => {
 export function toTitleCase(str: string | undefined): string {
   if (!str) return '';
   const exceptions = ['de', 'da', 'do', 'das', 'dos', 'em', 'com', 'para', 'a', 'o'];
-  
+
   return str
     .trim()
     .toLowerCase()
@@ -234,16 +233,16 @@ export function normalizeString(str: string | undefined | null): string {
  */
 export const isExpiringOrOverdue = (deadlineStr: string | undefined | null) => {
   if (!deadlineStr) return false;
-  
+
   try {
     let dStr = String(deadlineStr).trim();
-    
+
     // Suporte para datas em formato Excel
     if (!isNaN(Number(dStr)) && !dStr.includes('-') && !dStr.includes('/')) {
       const excelDate = Number(dStr);
       if (excelDate > 40000) {
         const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
-        dStr = getGMT3DateString(jsDate);
+        dStr = jsDate.toISOString().split('T')[0];
       }
     }
 
@@ -259,15 +258,15 @@ export const isExpiringOrOverdue = (deadlineStr: string | undefined | null) => {
         deadline = new Date(y, m - 1, d);
       }
     }
-    
+
     if (isNaN(deadline.getTime())) return false;
-    
+
     deadline.setHours(0, 0, 0, 0);
-    
+
     // Data atual em SP
     const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
     today.setHours(0, 0, 0, 0);
-    
+
     return deadline <= today;
   } catch {
     return false;

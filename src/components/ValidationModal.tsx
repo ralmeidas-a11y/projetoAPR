@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FormData, StudyStatus, FormType, User } from '../types/types';
-import { isSystemAssigned, calculateDeadline, getGMT3ISOString, getGMT3DateString } from '../utils/utils';
+import { isSystemAssigned, calculateDeadline } from '../utils/utils';
 import { PRESSURE_BASES } from '../constants/constants';
 import { useDialog } from './AppDialog';
 
@@ -24,23 +24,6 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
   const { showAlert } = useDialog();
   const [assignedAnalyst, setAssignedAnalyst] = useState(initialData?.assignedTo || 'ADRSis - SISTEMA');
   const [hasInteractedWithAnalyst, setHasInteractedWithAnalyst] = useState(false);
-
-  const [tipespData, setTipespData] = useState<{ DESCRICAO: string; GRUPDIAPRAZO: number }[]>([]);
-
-  useEffect(() => {
-    const fetchTipesp = async () => {
-      try {
-        const res = await fetch('/api/tipesp');
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setTipespData(data);
-        }
-      } catch (err) {
-        console.error('Error fetching tipesp:', err);
-      }
-    };
-    fetchTipesp();
-  }, []);
 
   // Sincroniza o analista selecionado com a lista de executores (resolvendo SAP/Email para ID interno ou SAP)
   // APENAS se o usuário ainda não tiver interagido manualmente com o seletor.
@@ -109,28 +92,14 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
     if (!dateStr) return false;
     return /^\d{4}-\d{2}-\d{2}/.test(dateStr) && !isNaN(new Date(dateStr).getTime());
   };
-  const getGrupDiaPrazo = (subType: string) => {
-    const found = tipespData.find(t => t.DESCRICAO === subType);
-    return found ? found.GRUPDIAPRAZO : undefined;
-  };
-
   const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState(
     isValidISODate(initialData?.estimatedDeliveryDate)
       ? initialData.estimatedDeliveryDate
-      : calculateDeadline(initialData?.requestDate, initialData?.formType || '', getGrupDiaPrazo(initialData?.studySubType || ''))
+      : calculateDeadline(initialData?.requestDate, initialData?.formType || '')
   );
 
-  // Update deadline when studySubType changes
-  useEffect(() => {
-    if (!isReadOnly && tipespData.length > 0) {
-      const days = getGrupDiaPrazo(studySubType);
-      const basisDate = initialData?.requestDate || initialData?.createdAt || getGMT3ISOString();
-      setEstimatedDeliveryDate(calculateDeadline(basisDate, initialData?.formType || '', days));
-    }
-  }, [studySubType, tipespData, isReadOnly, tipespData.length, initialData?.requestDate, initialData?.createdAt, studySubType]);
-
   const handleConfirm = () => {
-    const today = getGMT3ISOString();
+    const today = new Date().toISOString();
 
     // If we're validating for the first time or changing validation, 
     // we use "now" as validationDate unless it already exists.
@@ -142,8 +111,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
     if (!initialData?.validationDate) {
       // Use requestDate (submission date) or createdAt as the basis for the deadline, NOT the validation date.
       const basisDate = initialData?.requestDate || initialData?.createdAt || validationDate;
-      const days = getGrupDiaPrazo(studySubType);
-      finalDeadline = calculateDeadline(basisDate, initialData?.formType || '', days);
+      finalDeadline = calculateDeadline(basisDate, initialData?.formType || '');
     }
 
     onConfirm(assignedAnalyst, {

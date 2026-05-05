@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole, FormType, InterconnectionPoint, PlannedExtension } from '../types/types';
-import { formatDateTimeBR, calculateDeadline, isSystemAssigned, getGMT3ISOString, getGMT3Date } from '../utils/utils';
+import { formatDateTimeBR, calculateDeadline, isSystemAssigned } from '../utils/utils';
 import { StorageService } from '../services/storage';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { QCControlModal } from '../components/QCControlModal';
@@ -165,10 +165,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const filteredStandardItems = useMemo(() => {
     const filterTerm = standardConditionsFilter.toLowerCase();
     if (!filterTerm) return [];
-    
+
     const seenItems = new Set<string>();
     const allItems: string[] = [];
-    
+
     Object.values(STANDARDIZED_CONDITIONS_BLOCKS).forEach(block => {
       block.itens.forEach(item => {
         if (item.toLowerCase().includes(filterTerm) && !responseObsList.includes(item) && !seenItems.has(item)) {
@@ -204,7 +204,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
     // Check if data changed and it's not the initial mount
     // to show "Salvo" briefly
-    setLastSaved(getGMT3Date());
+    setLastSaved(new Date());
     setIsAutoSaving(false);
   }, [data, readOnly, onUpdateData]);
 
@@ -340,7 +340,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     try {
       let activeRequest = data;
       if (!data.cartaGeneratedAt && onUpdateData) {
-        const now = getGMT3ISOString();
+        const now = new Date().toISOString();
         activeRequest = { ...data, cartaGeneratedAt: now };
         onUpdateData(activeRequest);
 
@@ -406,7 +406,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   };
 
   const renderCartaPaper = (reference: React.RefObject<HTMLDivElement>) => {
-    const docDate = data.cartaGeneratedAt || data.completedAt || getGMT3ISOString();
+    const docDate = data.cartaGeneratedAt || data.completedAt || new Date().toISOString();
     const assignedUser = allUsers.find(u => {
       const matchId = u.id === data.assignedTo;
       const matchEmail = u.email?.toLowerCase() === data.assignedTo?.toLowerCase();
@@ -688,7 +688,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 className={`flex items-center gap-2 py-2.5 px-4 bg-indigo-600 text-white rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95 ${isExportingCarta ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
                 <i className={`fa-solid text-xs ${isExportingCarta ? 'fa-spinner fa-spin' : 'fa-file-export'}`}></i>
-                {isExportingCarta ? 'Exportando...' : 'Exportar Carta'}
+                {isExportingCarta ? 'Exportando...' : `Exportar Carta (${data.letterTemplate?.replace('rlt_carta_sepla_', '') || 'GENÉRICO'})`}
               </button>
               <button
                 onClick={() => setShowCartaPreview(false)}
@@ -858,7 +858,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
       // Ensure startedAt is set if in execution
       if (!updated.startedAt) {
-        updated.startedAt = getGMT3ISOString();
+        updated.startedAt = new Date().toISOString();
         changed = true;
       }
     }
@@ -1154,7 +1154,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       } catch (copyErr) {
         console.warn('[handleImportSelectedPdfs] Copy error:', copyErr);
       }
-      
+
       // Then import to database
       const success = await importSingleFileQuiet(file);
       if (success) successCount++;
@@ -1384,11 +1384,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
 
     // Logic to prevent date inversion and improve persistence
     if (status === StudyStatus.EM_EXECUCAO) {
-      finalAdditional.startedAt = data.startedAt || getGMT3ISOString();
+      finalAdditional.startedAt = data.startedAt || new Date().toISOString();
       finalAdditional.completedAt = undefined; // Force clear if starting execution
     } else if (status === StudyStatus.CONCLUIDO || status === StudyStatus.CONTROLE_QUALIDADE) {
       if (status === StudyStatus.CONCLUIDO) {
-        finalAdditional.completedAt = getGMT3ISOString();
+        finalAdditional.completedAt = new Date().toISOString();
       }
 
       // Clear responseMemo when sending to CQ
@@ -1450,25 +1450,25 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const revisionHistory = useMemo(() => {
     if (!data.studyNumber) return [];
     const cleanCode = data.studyNumber.replace('PROV-', '');
-    
+
     // Find revisions: studies where nroEstAn matches current study, OR previousStudy matches base code
     const suffixMatch = cleanCode.match(/(\d+)(\d{2})$/);
     const baseCode = suffixMatch ? suffixMatch[1] : cleanCode;
-    
+
     return allRequests.filter(r => {
       if (r.id === data.id) return false;
-      
+
       // Match by NRO_EST_AN
       if (r.nroEstAn && r.nroEstAn.replace('PROV-', '') === cleanCode) return true;
-      
+
       // Match by previousStudy linking to base code
       if (r.previousStudy && r.previousStudy.replace('PROV-', '').startsWith(baseCode)) return true;
-      
+
       // Legacy pattern: -REV
       const rClean = (r.studyNumber || '').replace('PROV-', '');
       const rMatch = rClean.match(/(.+)-REV\d+$/i);
       if (rMatch && rMatch[1] === baseCode) return true;
-      
+
       return false;
     }).sort((a, b) => {
       const dateA = a.requestDate ? new Date(a.requestDate).getTime() : 0;
@@ -1607,36 +1607,36 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
   };
 
-  // Logic to calculate previous study/revision
-  const getPreviousStudy = (studyNumber: string | undefined) => {
-    if (!studyNumber) return '-';
-    const clean = studyNumber.replace('PROV-', '');
-
-    // NRO_EST_AN logic: If ends with 01 → itself, else ends with 02/03/04 → subtract 1
-    const suffixMatch = clean.match(/(\d+)(\d{2})$/);
-    if (suffixMatch) {
-      const prefix = suffixMatch[1];
-      const suffix = parseInt(suffixMatch[2], 10);
-      if (suffix === 1) {
-        return clean; // Root study - returns itself
-      } else if (suffix >= 2) {
-        const prevNum = parseInt(clean, 10) - 1;
-        return String(prevNum);
-      }
-    }
-
-    // Legacy fallback: -REV pattern
-    const revMatch = studyNumber.match(/-REV(\d+)$/i);
-    if (revMatch) {
-      const currentRev = parseInt(revMatch[1], 10);
-      if (currentRev > 0) {
-        return studyNumber.replace(/-REV\d+$/i, `-REV${currentRev - 1}`).replace('PROV-', '');
-      }
-    }
-    return '-';
-  };
-
   const renderTechSubTab0 = () => {
+
+    // Logic to calculate previous study/revision
+    const getPreviousStudy = (studyNumber: string | undefined) => {
+      if (!studyNumber) return '-';
+      const clean = studyNumber.replace('PROV-', '');
+
+      // NRO_EST_AN logic: If ends with 01 → itself, else ends with 02/03/04 → subtract 1
+      const suffixMatch = clean.match(/(\d+)(\d{2})$/);
+      if (suffixMatch) {
+        const prefix = suffixMatch[1];
+        const suffix = parseInt(suffixMatch[2], 10);
+        if (suffix === 1) {
+          return clean; // Root study - returns itself
+        } else if (suffix >= 2) {
+          const prevNum = parseInt(clean, 10) - 1;
+          return String(prevNum);
+        }
+      }
+
+      // Legacy fallback: -REV pattern
+      const revMatch = studyNumber.match(/-REV(\d+)$/i);
+      if (revMatch) {
+        const currentRev = parseInt(revMatch[1], 10);
+        if (currentRev > 0) {
+          return studyNumber.replace(/-REV\d+$/i, `-REV${currentRev - 1}`).replace('PROV-', '');
+        }
+      }
+      return '-';
+    };
 
     // Logic to calculate Empresa and Estado based on Município
     const getEmpresaEstado = (municipio: string | undefined): { empresa: string, estado: string } => {
@@ -2001,7 +2001,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </span>
               </div>
 
-              {renderTechnicalField('Estudo Anterior', getPreviousStudy(data.studyNumber))}
+              {renderTechnicalField('Estudo Anterior', data.previousStudy || '-')}
             </div>
 
             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 grid grid-cols-5 gap-2 text-center">
@@ -2553,7 +2553,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     <span className="text-lg font-black text-orange-600">
                       {currentCalc.totalFlow.toFixed(3).replace('.', ',')}
                     </span>
-</div>
+                  </div>
                 </div>
 
                 <p className="text-[9px] text-slate-400 italic leading-tight px-2">
@@ -2891,7 +2891,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 onClick={() => !readOnly && handleExportCartaPDF()}
                 className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'} ${isExportingCarta ? 'animate-pulse opacity-50' : ''}`}
               >
-                <i className="fa-solid fa-envelope-open-text"></i> {isExportingCarta ? 'Exportando...' : 'Exportar Carta Resposta'}
+                <i className="fa-solid fa-envelope-open-text"></i> {isExportingCarta ? 'Exportando...' : `Exportar Carta (${data.letterTemplate?.replace('rlt_carta_sepla_', '') || 'GENÉRICO'})`}
               </li>
               <li
                 onClick={handleJustifyPreQC}
@@ -3268,7 +3268,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         </div>
       )}
 
-{/* MODAL SELECIONAR PDF */}
+      {/* MODAL SELECIONAR PDF */}
       {showPdfSelectModal && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
@@ -3277,23 +3277,21 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </div>
             <h3 className="text-lg font-black text-[#004080] text-center uppercase tracking-tight mb-2">Selecionar Arquivo(s) PDF</h3>
             <p className="text-slate-500 text-center text-xs mb-6">Escolha um ou mais arquivos para importar para a pasta Resposta</p>
-            
+
             <div className="space-y-2 max-h-60 overflow-y-auto mb-6">
               {pdfFiles.map((file, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleTogglePdfFile(idx)}
-                  className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 ${
-                    selectedPdfFiles.has(idx)
+                  className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 ${selectedPdfFiles.has(idx)
                       ? 'border-indigo-500 bg-indigo-50'
                       : 'border-slate-200 hover:border-indigo-500'
-                  }`}
+                    }`}
                 >
-                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                    selectedPdfFiles.has(idx)
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${selectedPdfFiles.has(idx)
                       ? 'bg-indigo-500 border-indigo-500'
                       : 'border-slate-300'
-                  }`}>
+                    }`}>
                     {selectedPdfFiles.has(idx) && (
                       <i className="fa-solid fa-check text-white text-[10px]"></i>
                     )}
@@ -3479,7 +3477,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                       onClick={async () => {
                         if (f.isVirtual && f.virtualType === 'official-form') {
                           const fileName = `Formulário - ${data.studyNumber}.pdf`;
-                          const path = `Solicitacoes_APR/${getGMT3Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
+                          const path = `Solicitacoes_APR/${new Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
                           const url = await StorageService.getFileUrl(path);
                           if (url) {
                             const link = document.createElement('a');
@@ -3503,7 +3501,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                       onClick={async () => {
                         if (f.isVirtual && f.virtualType === 'official-form') {
                           const fileName = `Formulário - ${data.studyNumber}.pdf`;
-                          const path = `Solicitacoes_APR/${getGMT3Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
+                          const path = `Solicitacoes_APR/${new Date().getFullYear()}/${data.studyNumber.replace('PROV-', '').split('-REV')[0]}/${data.studyNumber.includes('-REV') ? 'REV' + data.studyNumber.split('-REV')[1] : 'REV0'}/Solicitacao/${fileName}`;
                           const url = await StorageService.getFileUrl(path);
                           if (url) {
                             window.open(url, '_blank');

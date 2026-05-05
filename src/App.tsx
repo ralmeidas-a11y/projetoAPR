@@ -16,7 +16,7 @@ import { FormType, User, UserRole, FormData, StudyStatus } from './types/types';
 import { NaturgyLogo, HeaderTitle, REVERSE_AREA_MAPPING } from './constants/constants';
 import { StorageService } from './services/storage';
 import { EmailService, EmailNotificationData } from './services/emailService';
-import { getGMT3ISOString, getGMT3DateString, normalizeArea, isAssignedToMe, isSystemAssigned, formatDate } from './utils/utils';
+import { getGMT3ISOString, normalizeArea, isAssignedToMe, isSystemAssigned, formatDate } from './utils/utils';
 import { useDialog } from './components/AppDialog';
 
 const App: React.FC = () => {
@@ -197,7 +197,7 @@ const App: React.FC = () => {
 
     try {
       // Atualizar lastAccess para hoje
-      const userWithAccess = { ...loggedUser, lastAccess: getGMT3ISOString() };
+      const userWithAccess = { ...loggedUser, lastAccess: new Date().toISOString() };
 
       // Salvar/Atualizar no Banco de Dados Local
       const savedUser = await StorageService.saveUser(userWithAccess);
@@ -349,7 +349,7 @@ const App: React.FC = () => {
           if (excelDate > 40000) {
             try {
               const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
-              return getGMT3DateString(jsDate);
+              return jsDate.toISOString().split('T')[0];
             } catch (e) { return str; }
           }
         }
@@ -478,7 +478,7 @@ const App: React.FC = () => {
             // Registrar cada alerta com o status atual da solicitação
             // Assim o ADM pode ver todo o histórico de alertas e em qual status cada um foi gerado
             const r = item.req;
-            const ackTimestamp = getGMT3ISOString();
+            const ackTimestamp = new Date().toISOString();
             const updateData: Partial<FormData> = {
               user_id: r.user_id || user.id,
               alertConfirmations: [...(r.alertConfirmations || []), `${user.name}|${ackTimestamp}|${item.req.status}`],
@@ -717,10 +717,10 @@ const App: React.FC = () => {
             holdRequestSeen: (status === StudyStatus.AGUARDANDO_INFORMACAO && req.status !== StudyStatus.AGUARDANDO_INFORMACAO) ? false : (additionalData?.holdRequestSeen !== undefined ? additionalData.holdRequestSeen : req.holdRequestSeen),
             cartaGeneratedAt: status === StudyStatus.REJEITADO ? null : req.cartaGeneratedAt,
             assignedTo: assignedTo !== undefined ? assignedTo : req.assignedTo,
-            startedAt: status === StudyStatus.EM_EXECUCAO ? (req.startedAt || getGMT3ISOString()) : req.startedAt,
-            completedAt: status === StudyStatus.CONCLUIDO ? (req.completedAt || getGMT3ISOString()) : req.completedAt,
-            qcRequestDate: status === StudyStatus.CONTROLE_QUALIDADE ? (req.qcRequestDate || getGMT3ISOString()) : req.qcRequestDate,
-            updatedAt: getGMT3ISOString(),
+            startedAt: status === StudyStatus.EM_EXECUCAO ? (req.startedAt || new Date().toISOString()) : req.startedAt,
+            completedAt: status === StudyStatus.CONCLUIDO ? (req.completedAt || new Date().toISOString()) : req.completedAt,
+            qcRequestDate: status === StudyStatus.CONTROLE_QUALIDADE ? (req.qcRequestDate || new Date().toISOString()) : req.qcRequestDate,
+            updatedAt: new Date().toISOString(),
             estimatedDeliveryDate: additionalData?.estimatedDeliveryDate !== undefined ? additionalData.estimatedDeliveryDate : req.estimatedDeliveryDate,
             userId: user?.email || req.userId,
             lastModifiedBy: user?.name || req.lastModifiedBy
@@ -1070,7 +1070,7 @@ const App: React.FC = () => {
 
     // If REPROVADO_CQ, analyst re-opens for corrections → revert to EM_EXECUCAO
     if (request.status === StudyStatus.REPROVADO_CQ) {
-      const now = getGMT3ISOString();
+      const now = new Date().toISOString();
       const updatedReq = { ...request, status: StudyStatus.EM_EXECUCAO, completedAt: undefined };
       setEditingRequest(updatedReq);
       updateRequestStatus(request.id, StudyStatus.EM_EXECUCAO, undefined, request.assignedTo, { completedAt: undefined });
@@ -1127,7 +1127,7 @@ const App: React.FC = () => {
     }
 
     if (needsStatusUpdate || needsAssignment) {
-      const now = getGMT3ISOString();
+      const now = new Date().toISOString();
       let updatedStudyNumber = request.studyNumber;
 
       // Se validado, remover PROV-
@@ -1160,7 +1160,7 @@ const App: React.FC = () => {
   const storageUpdateRef = React.useRef<any>(null);
 
   const handleUpdateRequestData = (updatedData: FormData) => {
-    const dataWithTimestamp = { ...updatedData, updatedAt: getGMT3ISOString() };
+    const dataWithTimestamp = { ...updatedData, updatedAt: new Date().toISOString() };
     // 1. Update UI state IMMEDIATELY (snappy)
     setAllRequests(prev => prev.map(r => r.id === dataWithTimestamp.id ? dataWithTimestamp : r));
     setEditingRequest(dataWithTimestamp);
@@ -1316,7 +1316,7 @@ const App: React.FC = () => {
             formType: originalRequest.formType,
             studyType: 'Revisão de Estudo',
             previousStudy: originalRequest.studyNumber,
-            requestDate: getGMT3DateString(),
+            requestDate: new Date().toISOString().split('T')[0],
             assignedTo: undefined,
             rejectionReason: undefined,
             selectedFiles: [],

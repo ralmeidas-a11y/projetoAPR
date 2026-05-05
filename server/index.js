@@ -47,9 +47,9 @@ async function resolveAnalystName(id) {
   try {
     const cleanId = String(id).trim();
     const paddedId = (/^\d+$/.test(cleanId) && cleanId.length < 8) ? cleanId.padStart(8, '0') : cleanId;
-    
+
     const result = await sql.query(`SELECT TOP 1 NomeCompleto FROM E_OPEMAN WHERE LTRIM(RTRIM(SAP)) = '${cleanId}' OR LTRIM(RTRIM(SAP)) = '${paddedId}'`);
-    
+
     return result.recordset.length > 0 ? result.recordset[0].NomeCompleto : id;
   } catch (err) {
     console.warn(`[AnalystLookup] Error resolving name for ${id}:`, err.message);
@@ -523,11 +523,11 @@ async function startServer() {
       }
     });
 
-    // 2.2 E_TIPESP - Mapeamento de sub-tipos de estudo para modelos de carta e prazos
+    // 2.2 E_TIPESP - Mapeamento de sub-tipos de estudo para modelos de carta
     app.get('/api/tipesp', async (req, res) => {
       try {
         const request = new sql.Request();
-        const result = await request.query`SELECT DESCRICAO, GRUPO1, GRUPDIAPRAZO FROM E_TIPESP`;
+        const result = await request.query`SELECT DESCRICAO, GRUPO1 FROM E_TIPESP`;
         res.json(result.recordset);
       } catch (err) {
         console.error('[E_TIPESP] Error fetching:', err);
@@ -753,6 +753,43 @@ END
       'Setorização ERDs': '510', 'Expansão GNV': '520', 'Estação de Liquefação - GNL': '530'
     };
 
+    const studySubTypeToLetterTemplate = {
+      'Comercial': 'rlt_carta_sepla_RESCOM',
+      'Residencial': 'rlt_carta_sepla_RESCOM',
+      'Industrial': 'rlt_carta_sepla_INDUSTRIAL',
+      'Climatização': 'rlt_carta_sepla_INDUSTRIAL',
+      'GNV': 'rlt_carta_sepla_INDUSTRIAL',
+      'GNC': 'rlt_carta_sepla_INDUSTRIAL',
+      'Termogeração': 'rlt_carta_sepla_TermoEletrico',
+      'MECOM': 'rlt_carta_sepla_GASEIFICA',
+      'Gaseificação Total': 'rlt_carta_sepla_GASEIFICA',
+      'Gaseificação Parcial': 'rlt_carta_sepla_GASEIFICA_PARC',
+      'Renovação': 'rlt_carta_sepla_RENOVACAOn',
+      'Simulação': 'rlt_carta_sepla_RENOVACAOn',
+      'Programado': 'rlt_carta_sepla_RENOVACAOn',
+      'Infra-estrutura': 'rlt_carta_sepla_RENOVACAOn',
+      'Cogeração': 'rlt_carta_sepla_INDUSTRIAL',
+      'Grande Comércio': 'rlt_carta_sepla_RESCOM',
+      'Residencial/Comercial': 'rlt_carta_sepla_RESCOM',
+      'Industrial/Geração Continua': 'rlt_carta_sepla_INDUSTRIAL',
+      'Geração de Ponta': 'rlt_carta_sepla_INDUSTRIAL',
+      'Geração Contínua': 'rlt_carta_sepla_INDUSTRIAL',
+      'Reforço': 'rlt_carta_sepla_RENOVACAOn',
+      'Remanejamento': 'rlt_carta_sepla_RENOVACAOn',
+      'Análise de Pressões e Vazões': 'rlt_carta_sepla_GENERICO',
+      ' Setorização ERDs': 'rlt_carta_sepla_INDUSTRIAL',
+      'Expansão GNV': 'rlt_carta_sepla_INDUSTRIAL',
+      'Estação de Liquefação - GNL': 'rlt_carta_sepla_INDUSTRIAL',
+      'Levantamento de Dados': 'rlt_carta_sepla_GENERICO',
+      'Consulta Avulsas': 'rlt_carta_sepla_GENERICO',
+      'Emergencial': 'rlt_carta_sepla_GENERICO',
+      'Mapas Temático': 'rlt_carta_sepla_GENERICO',
+      'GNV Frota': 'rlt_carta_sepla_INDUSTRIAL',
+      'Geração': 'rlt_carta_sepla_INDUSTRIAL',
+      'Geração de Emergência': 'rlt_carta_sepla_INDUSTRIAL',
+      'Definir': 'rlt_carta_sepla_GENERICO'
+    };
+
     const gniTypeToCode = {
       'Elaboração/Revisão de Modelos Matemáticos Winflow': '2',
       'Grandes Clientes (IND/GNV/GER/ETC) - Estudo de Viabilidade Técnica': '3',
@@ -913,7 +950,11 @@ END
         operationStartDate: getField('DATA_SOLIC_OPER', 'operationStartDate'),
         averageFlow: getField('VAZ_MEDIA', 'averageFlow'),
         peakFlow: getField('VAZ_PICO', 'peakFlow'),
-        neighborhood: getField('BAIRRO', 'neighborhood')
+        neighborhood: getField('BAIRRO', 'neighborhood'),
+
+        // Study sub-type and letter template mapping
+        studySubType: getField('studySubType') || meta.studySubType || '',
+        letterTemplate: getField('letterTemplate') || meta.letterTemplate || studySubTypeToLetterTemplate[meta.studySubType] || studySubTypeToLetterTemplate[String(meta.studySubType).trim()] || studySubTypeToLetterTemplate[getField('studySubType')] || 'rlt_carta_sepla_GENERICO'
       };
     };
 
@@ -1178,17 +1219,17 @@ END
       try {
         const { studyNumber } = req.params;
         console.log('[I_ESTPLA] Fetching connections for study:', studyNumber);
-        
+
         const sqlReq = new sql.Request();
         sqlReq.input('studyNumber', sql.VarChar, studyNumber || '');
-        
+
         const result = await sqlReq.query`
           SELECT OID, IDSIGEP, NRO_ESTUDO, PRESSAO, MATERIAL, DIAMETRO, LOGRADOURO, INDICACAO
           FROM I_ESTPLA 
           WHERE NRO_ESTUDO = @studyNumber OR CAST(IDSIGEP AS VARCHAR) = @studyNumber
           ORDER BY OID
         `;
-        
+
         console.log('[I_ESTPLA] Found:', result.recordset.length, 'connections');
         res.json({ success: true, data: result.recordset });
       } catch (err) {
@@ -1202,17 +1243,17 @@ END
       try {
         const { studyNumber } = req.params;
         console.log('[T_CHKLST] Fetching QC history for study:', studyNumber);
-        
+
         const sqlReq = new sql.Request();
         sqlReq.input('studyNumber', sql.VarChar, studyNumber || '');
-        
+
         const result = await sqlReq.query`
           SELECT IDCHKLST, FK_T_ESTPLA, STATUSCHK, OPERADOR_VALIDACAO, COMENTARIOS, DataValidacao
           FROM T_CHKLST 
           WHERE FK_T_ESTPLA = @studyNumber
           ORDER BY DataValidacao DESC
         `;
-        
+
         console.log('[T_CHKLST] Found:', result.recordset.length, 'records');
         res.json({ success: true, data: result.recordset });
       } catch (err) {
@@ -1569,8 +1610,8 @@ END
         }
 
         // Se encontró EMPRESA en G_MUNEST, usar; sino usar mapeamento tradicional
-        const mappedUnit = empresaFromMunest 
-          ? empresaFromMunest 
+        const mappedUnit = empresaFromMunest
+          ? empresaFromMunest
           : (unitMapping[data.empresa || data.naturgyUnit] || data.empresa || data.naturgyUnit || '');
 
         try {
@@ -1676,8 +1717,8 @@ END
             sqlReq.input('vazI', sql.Float, safeFloat(data.instantFlow || 0));
             sqlReq.input('cons', sql.Float, safeFloat(data.monthlyConsumption || 0));
 
-            sqlReq.input('pMax', sql.Float, safeFloat(data.presSolMax || 0));
-            sqlReq.input('pMin', sql.Float, safeFloat(data.minPressure || data.presSolMin || 0));
+            sqlReq.input('pMax', sql.Float, safeFloat(data.presSolMax || data.minPressureMax || 0));
+            sqlReq.input('pMin', sql.Float, safeFloat(data.presSolMin || data.minPressure || 0));
             sqlReq.input('hIn', sql.VarChar, String(data.horOpeIni || ''));
             sqlReq.input('hFin', sql.VarChar, String(data.horOpeFin || ''));
             sqlReq.input('dMes', sql.Int, safeInt(data.workDaysPerWeek || 0) * 4);
@@ -1900,9 +1941,9 @@ END
               // Verificar se veio do QC Modal (suporta múltiplas formas de detecção)
               const qcDataObj = data.qcData;
               const isFromQCModal = qcDataObj && (
-                qcDataObj.fromQCModal === true || 
-                qcDataObj.fromQCModal === 'true' || 
-                qcDataObj.qcStatusCQ === 'Aprovado' || 
+                qcDataObj.fromQCModal === true ||
+                qcDataObj.fromQCModal === 'true' ||
+                qcDataObj.qcStatusCQ === 'Aprovado' ||
                 qcDataObj.qcStatusCQ === 'Reprovado'
               );
 
@@ -2161,16 +2202,16 @@ END
             // 1. Status Change
             const oldS = String(previousRecord.STATUS || '');
             const newS = String(statusVal || '');
-            
+
             // Normalize: treat 100 and 330 as equivalent (both mean 'Em Análise')
             const normalizedOld = (oldS === '100' ? '330' : oldS);
             const normalizedNew = (newS === '100' ? '330' : newS);
-            
+
             if (normalizedOld !== normalizedNew) {
               changes.push({ field: 'status', old: oldS, new: newS, type: 'STATUS_CHANGE' });
 
               // *** I_INTREC Sync: Detect status transitions 200 -> 205 and 210 ***
-if (oldS === '200' && newS === '205') {
+              if (oldS === '200' && newS === '205') {
                 try {
                   const intRecReq = new sql.Request();
                   intRecReq.input('studyNro', sql.VarChar, effectiveNro);
@@ -2209,13 +2250,13 @@ if (oldS === '200' && newS === '205') {
                       WHERE COD_ESTUDO = @studyNro
                     `;
                   }
-console.log(`[I_INTREC] ✅ DATA_TER set for study ${effectiveNro} (status 210)`);
+                  console.log(`[I_INTREC] ✅ DATA_TER set for study ${effectiveNro} (status 210)`);
                 } catch (err) {
                   console.warn('[I_INTREC] Error setting DATA_TER:', err.message);
                 }
               }
             }
-              
+
             // 2. Responsible Change - only log when changing FROM system/ADRSis to another analyst
             const oldResp = String(previousRecord.RESP_SEPLA || '');
             const newResp = String(respSeplaValue || '');
@@ -2251,7 +2292,7 @@ console.log(`[I_INTREC] ✅ DATA_TER set for study ${effectiveNro} (status 210)`
               auditReq.input('studyNumber', sql.VarChar, data.studyNumber || null);
               auditReq.input('actionType', sql.VarChar, change.type);
               auditReq.input('fieldChanged', sql.VarChar, change.field);
-              
+
               let oldV = change.old;
               let newV = change.new;
 
@@ -2280,7 +2321,7 @@ console.log(`[I_INTREC] ✅ DATA_TER set for study ${effectiveNro} (status 210)`
                 INSERT INTO T_AUDIT (StudyNumber, ActionType, FieldChanged, OldValue, NewValue, UserId, UserName, Timestamp)
                 VALUES (@studyNumber, @actionType, @fieldChanged, @oldValue, @newValue, @userId, @userName, @timestamp)
               `;
-              
+
               // *** S_STAHIS: Legacy status history log ***
               if (change.field === 'status') {
                 try {
@@ -2289,7 +2330,7 @@ console.log(`[I_INTREC] ✅ DATA_TER set for study ${effectiveNro} (status 210)`
                   const usuarioRaw = String(data.lastModifiedBy || data.userId || data.user_id || '').trim();
                   const isNumber = /^\d+$/.test(usuarioRaw);
                   const usuario = isNumber ? usuarioRaw.padStart(8, '0') : usuarioRaw;
-                  
+
                   staReq.input('nro', sql.VarChar, effectiveNro || (previousRecord ? previousRecord.NRO_ESTUDO : ''));
                   staReq.input('status', sql.VarChar, String(change.new));
                   staReq.input('data', sql.Float, oaDate);
@@ -2621,7 +2662,7 @@ app.post('/api/maintenance/clear-response-memo', async (req, res) => {
       AND responseMemo IS NOT NULL 
       AND LEN(responseMemo) > 0
     `;
-    
+
     if (check.recordset[0].cnt > 0) {
       await sql.query`
         UPDATE Requests 
@@ -2631,7 +2672,7 @@ app.post('/api/maintenance/clear-response-memo', async (req, res) => {
         AND LEN(responseMemo) > 0
       `;
     }
-    
+
     res.json({ success: true, updated: check.recordset[0].cnt });
   } catch (err) {
     console.error('[Maintenance] Error:', err);
@@ -2643,7 +2684,7 @@ app.post('/api/maintenance/clear-response-memo', async (req, res) => {
 app.post('/api/folders/create', async (req, res) => {
   try {
     const { folderPath } = req.body;
-    
+
     if (!folderPath) {
       return res.status(400).json({ success: false, error: 'folderPath é obrigatório' });
     }
@@ -2660,6 +2701,18 @@ app.post('/api/folders/create', async (req, res) => {
     console.error('[Folders] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+startServer();
+
+res.json({ success: true, path: folderPath });
+    } else {
+  res.json({ success: true, path: folderPath, alreadyExists: true });
+}
+  } catch (err) {
+  console.error('[Folders] Error:', err);
+  res.status(500).json({ success: false, error: err.message });
+}
 });
 
 startServer();

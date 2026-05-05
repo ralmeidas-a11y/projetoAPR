@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { FormData, QCControlData, QCIteration, StudyStatus, User, UserRole } from '../types/types';
-import { formatDateTimeBR, getGMT3ISOString } from '../utils/utils';
+import { formatDateTimeBR } from '../utils/utils';
 import { StorageService } from '../services/storage';
 
 interface QCControlModalProps {
@@ -172,8 +172,8 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   const totalSecondary = Object.values(secondaryCounts).reduce<number>((a, b) => a + (Number(b) || 0), 0);
 
   const buildQCData = (): QCControlData => ({
-    qcRequestDate: existing.qcRequestDate || data.completedAt || getGMT3ISOString(),
-    qcValidationDate: getGMT3ISOString(),
+    qcRequestDate: existing.qcRequestDate || data.completedAt || new Date().toISOString(),
+    qcValidationDate: new Date().toISOString(),
     qcStatusCQ: qcStatus,
     qcSupervisor: supervisor,
     qcCriticalFailures: criticalCounts,
@@ -182,7 +182,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
       ...allIterations,
       {
         status: qcStatus === 'Definir' ? 'Aguardando' : qcStatus,
-        date: getGMT3ISOString(),
+        date: new Date().toISOString(),
         reviewer: currentUser?.name || supervisor,
       },
     ],
@@ -202,7 +202,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
       ...allIterations,
       {
         status: withReservations ? 'Aprovado com Ressalvas' : 'Aprovado',
-        date: getGMT3ISOString(),
+        date: new Date().toISOString(),
         reviewer: currentUser?.name || supervisor
       },
     ];
@@ -231,7 +231,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
     qc.qcStatusCQ = 'Reprovado';
     qc.qcIterations = [
       ...allIterations,
-      { status: 'Reprovado', date: getGMT3ISOString(), reviewer: currentUser?.name || supervisor },
+      { status: 'Reprovado', date: new Date().toISOString(), reviewer: currentUser?.name || supervisor },
     ];
     const rejectionItems: string[] = [];
     CRITICAL_FAILURES.forEach((f, i) => {
@@ -515,28 +515,28 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                       const dateB = new Date(b.validationDate || 0).getTime();
                       return dateB - dateA;
                     });
-                    
+
                     // Group by study number
                     const grouped: Record<string, any[]> = {};
                     sorted.forEach((it: any) => {
                       const studyNum = it.studyNumber || '';
-                    if (!studyNum || studyNum === 'N/A') return null;  // Skip empty or N/A
+                      if (!studyNum || studyNum === 'N/A') return null;  // Skip empty or N/A
                       if (!grouped[studyNum]) grouped[studyNum] = [];
                       grouped[studyNum].push(it);
                     });
-                    
+
                     // Sort groups by most recent iteration in each group (descending by study number)
                     const sortedGroups = Object.entries(grouped)
                       .filter(([num]) => num && num !== 'N/A' && num !== '')
                       .sort(([numA], [numB]) => {
-                      return numB.localeCompare(numA, undefined, { numeric: true });
-                    });
-                    
+                        return numB.localeCompare(numA, undefined, { numeric: true });
+                      });
+
                     return sortedGroups.map(([studyNum, iterations]: [string, any]) => {
                       const isExpanded = expandedGroups[studyNum] === undefined ? false : expandedGroups[studyNum];
                       return (
                         <div key={studyNum} className="mb-3">
-                          <button 
+                          <button
                             onClick={() => toggleGroup(studyNum)}
                             className="w-full text-[9px] font-black text-[#004080] uppercase tracking-wider mb-1 bg-slate-100 px-2 py-1.5 rounded flex items-center justify-between hover:bg-slate-200 transition-colors"
                           >
@@ -552,9 +552,9 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                                   className={`p-3 rounded-lg border text-[10px] font-bold cursor-pointer hover:shadow-md transition-all ${it.status === 'Aprovado' ? 'bg-green-50 border-green-200 text-green-700' :
                                     it.status === 'Reprovado' ? 'bg-red-50 border-red-200 text-red-700' :
                                       'bg-white border-slate-200 text-slate-500'
-                                  }`}
+                                    }`}
                                 >
-<div className="flex items-center justify-between">
+                                  <div className="flex items-center justify-between">
                                     <span className="uppercase tracking-wider font-black">{it.status}</span>
                                     <span className="text-[9px] opacity-70">{it.validationDate ? formatDateTimeBR(it.validationDate) : '-'}</span>
                                   </div>
