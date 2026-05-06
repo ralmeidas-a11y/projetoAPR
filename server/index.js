@@ -1741,7 +1741,9 @@ END
             sqlReq.input('idsigep', sql.BigInt, numericIDSIGEP);
 
             const isRevision = !!data.previousStudy;
-            sqlReq.input('nroAn', sql.VarChar, isRevision ? data.previousStudy : (effectiveNro || '')); // NRO_EST_AN = previousStudy ou próprio studyNumber
+            const cleanNroForAn = (effectiveNro || '').replace('PROV-', '');
+            const nroAnValue = isRevision ? data.previousStudy : cleanNroForAn;
+            sqlReq.input('nroAn', sql.VarChar, nroAnValue);
 
             const pressureToNormalize = data.suggestedPressureRange || data.pressure || '';
             const normalizedPressure = pressureToNormalize.substring(0, 2).toUpperCase();
@@ -1803,14 +1805,14 @@ END
               sqlReq.input('fd', sql.Float, safeFloat(data.diversificationFactor || data.diversification || 0));
               sqlReq.input('diversificar', sql.Float, sumResFlow);
             } else {
-              sqlReq.input('vazS', sql.Float, safeFloat(data.totalFlowRes || data.totalFlow || 0));
+              sqlReq.input('vazS', sql.Float, safeFloat(data.totalFlowRes || 0));
               sqlReq.input('numE', sql.Int, safeInt(data.totalClients || data.numClientsRes || 0));
               sqlReq.input('numE2', sql.Int, safeInt(data.numClientsCom || 0));
               sqlReq.input('vazS2', sql.Float, safeFloat(data.totalFlowCom || 0));
               sqlReq.input('vu', sql.Float, safeFloat(data.unitFlow || 0));
               sqlReq.input('fp', sql.Float, safeFloat(data.penetrationFactor || data.penetration || 0));
               sqlReq.input('fd', sql.Float, safeFloat(data.diversificationFactor || data.diversification || 0));
-              sqlReq.input('diversificar', sql.Float, safeFloat(data.totalFlowRes || data.totalFlow || 0));
+              sqlReq.input('diversificar', sql.Float, safeFloat(data.diversifiedFlow || data.totalFlowRes || 0));
             }
 
             // Detailed technical response parameters
@@ -2154,7 +2156,9 @@ END
           sqlReq.input('userId', sql.VarChar, data.userId || data.user_id || '');
           sqlReq.input('idsigep', sql.BigInt, data.idsigep || data.sigep || (previousRecord ? previousRecord.IDSIGEP : null));
           const isRevision = !!data.previousStudy;
-          sqlReq.input('nroAn', sql.VarChar, isRevision ? data.previousStudy : (effectiveNro || ''));
+          const cleanNroForAnReq = (effectiveNro || '').replace('PROV-', '');
+          const nroAnValueReq = isRevision ? data.previousStudy : cleanNroForAnReq;
+          sqlReq.input('nroAn', sql.VarChar, nroAnValueReq);
 
           await sqlReq.query(`
           IF EXISTS (SELECT 1 FROM Requests WHERE id = @id)

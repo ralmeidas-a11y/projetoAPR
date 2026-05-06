@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole, FormType, InterconnectionPoint, PlannedExtension } from '../types/types';
 import { formatDateTimeBR, calculateDeadline, isSystemAssigned } from '../utils/utils';
@@ -11,7 +10,6 @@ import { VAZAO_UNITARIA_DATA, DIVERSIFICACAO_DATA, VazaoUnitItem, Diversificacao
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { getLetterModel } from '../components/LetterModels';
-
 const VAZAO_UNITARIA_BY_CLIMATE = {
   CLASSE_A: {
     FRIA: { residential: 2.1, smallCommerce: 0.85 },
@@ -34,7 +32,6 @@ const VAZAO_UNITARIA_BY_CLIMATE = {
     QUENTE: { residential: 0.04, smallCommerce: 0.85 },
   },
 };
-
 const getVazaoUnitByClimateZone = (socioLevel, climateZone) => {
   const levels = VAZAO_UNITARIA_BY_CLIMATE;
   const levelKey = levels[socioLevel];
@@ -43,7 +40,6 @@ const getVazaoUnitByClimateZone = (socioLevel, climateZone) => {
   if (!climateKey) return 0.8;
   return climateKey.residential;
 };
-
 interface TechnicalExecutionPanelProps {
   data: FormData;
   allRequests?: FormData[];
@@ -54,7 +50,6 @@ interface TechnicalExecutionPanelProps {
   currentUser?: User;
   readOnly?: boolean;
 }
-
 export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = ({ data, allRequests = [], allUsers = [], currentUser, onBack, onStatusUpdate, onUpdateData, readOnly = false }) => {
   const { showToast, showAlert, showConfirm } = useDialog();
   const [activeTab, setActiveTab] = useState(0); // 0: Dados do Estudo, 1: Análise Técnica, 2: Resposta
@@ -72,7 +67,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [studyFiles, setStudyFiles] = useState<any[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [selectedStandardized, setSelectedStandardized] = useState<string | null>(null);
   const [selectedResponseObservation, setSelectedResponseObservation] = useState<string | null>(null);
   const [newCondInput, setNewCondInput] = useState('');
@@ -80,7 +74,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [editingObsIdx, setEditingObsIdx] = useState<number | null>(null);
   const [editingObsValue, setEditingObsValue] = useState('');
   const [showCartaPreview, setShowCartaPreview] = useState(false);
-
   const [fillingModal, setFillingModal] = useState<{
     queue: string[];
     index: number;
@@ -88,7 +81,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     vars: string[];
     values: Record<string, string>;
   } | null>(null);
-
   const [calcMode, setCalcMode] = useState<'auto' | 'manual'>('auto');
   const [manualCalc, setManualCalc] = useState({
     totalClients: 0,
@@ -96,7 +88,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     penetration: 1,
     diversification: 1
   });
-
   const [isExportingCarta, setIsExportingCarta] = useState(false);
   const [showQCModal, setShowQCModal] = useState(false);
   const [showHoldModal, setShowHoldModal] = useState(false);
@@ -113,11 +104,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [standardConditionsFilter, setStandardConditionsFilter] = useState('');
   const cartaRef = useRef<HTMLDivElement>(null);
   const hiddenCartaRef = useRef<HTMLDivElement>(null);
-
   const getPreviousStudy = (studyNumber: string | undefined) => {
     if (!studyNumber) return '-';
     const clean = studyNumber.replace('PROV-', '');
-
     // NRO_EST_AN logic: If ends with 01 → itself, else ends with 02/03/04 → subtract 1
     const suffixMatch = clean.match(/(\d+)(\d{2})$/);
     if (suffixMatch) {
@@ -130,7 +119,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         return String(prevNum);
       }
     }
-
     // Legacy fallback: -REV pattern
     const revMatch = studyNumber.match(/-REV(\d+)$/i);
     if (revMatch) {
@@ -141,7 +129,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
     return '-';
   };
-
   const getDiversificationFactor = (total: number) => {
     if (total <= 0) return 0;
     if (total < 100) return 1.00;
@@ -153,26 +140,22 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     if (total < 3000) return 0.50;
     return 0.47;
   };
-
   const responseObsList = useMemo(() =>
     (data.responseObservations || '').split('\n').filter(l => l.trim() !== ''),
     [data.responseObservations]
   );
-
   const previousStudyObs = useMemo(() => {
     if (!data.previousStudy || !allRequests) return [];
     const prev = allRequests.find(r => r.studyNumber === data.previousStudy);
     if (!prev || !prev.responseObservations) return [];
     return prev.responseObservations.split('\n').filter(l => l.trim() !== '');
   }, [data.previousStudy, allRequests]);
-
   const availableBlocks = useMemo(() => {
     const blocks = Object.entries(STANDARDIZED_CONDITIONS_BLOCKS).map(([id, block]) => ({
       id,
       ...block,
       availableItens: block.itens.filter(item => !responseObsList.includes(item))
     }));
-
     // Insert dynamic block between Bloco 6 and 7
     const idx6 = blocks.findIndex(b => b.id === 'Bloco 6');
     const prevBlock = {
@@ -181,23 +164,18 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       itens: previousStudyObs,
       availableItens: previousStudyObs.filter(item => !responseObsList.includes(item))
     };
-
     if (idx6 !== -1) {
       blocks.splice(idx6 + 1, 0, prevBlock);
     } else {
       blocks.push(prevBlock);
     }
-
     return blocks.filter(b => b.itens.length > 0 || b.id === 'PrevRevision');
   }, [responseObsList, previousStudyObs]);
-
   const filteredStandardItems = useMemo(() => {
     const filterTerm = standardConditionsFilter.toLowerCase();
     if (!filterTerm) return [];
-
     const seenItems = new Set<string>();
     const allItems: string[] = [];
-
     Object.values(STANDARDIZED_CONDITIONS_BLOCKS).forEach(block => {
       block.itens.forEach(item => {
         if (item.toLowerCase().includes(filterTerm) && !responseObsList.includes(item) && !seenItems.has(item)) {
@@ -206,48 +184,39 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         }
       });
     });
-
     return allItems;
   }, [standardConditionsFilter, responseObsList]);
-
   const toggleBlock = (blockId: string) => {
     setExpandedBlocks(prev =>
       prev.includes(blockId) ? prev.filter(id => id !== blockId) : [...prev, blockId]
     );
   };
-
   // Helper to add multiple items at once
   const handleUpdateResponseObs = (newList: string[]) => {
     if (!onUpdateData) return;
     handleUpdateData({ ...data, responseObservations: newList.join('\n') });
   };
-
   const extractVars = (text: string) => {
     const matches = text.match(/\[(.*?)\]/g);
     return matches ? Array.from(new Set(matches)) : [];
   };
-
   // Debounced auto-save effect
   useEffect(() => {
     if (readOnly || !onUpdateData) return;
-
     // Check if data changed and it's not the initial mount
     // to show "Salvo" briefly
     setLastSaved(new Date());
     setIsAutoSaving(false);
   }, [data, readOnly, onUpdateData]);
-
   const handleUpdateData = (newData: FormData) => {
     if (!onUpdateData || readOnly) return;
     setIsAutoSaving(true);
     onUpdateData(newData);
   };
-
   const handleAddCondition = (cond?: string) => {
     const toAdd = cond || selectedStandardized || '';
     if (!toAdd || !onUpdateData) return;
     if (responseObsList.includes(toAdd)) return;
-
     const vars = extractVars(toAdd);
     if (vars.length > 0) {
       setFillingModal({
@@ -262,20 +231,16 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       if (toAdd === selectedStandardized) setSelectedStandardized(null);
     }
   };
-
   const handleAddBlock = (itens: string[]) => {
     if (!onUpdateData) return;
     const newItens = itens.filter(item => !responseObsList.includes(item));
     if (newItens.length === 0) return;
-
     const withVars = newItens.filter(item => extractVars(item).length > 0);
     const withoutVars = newItens.filter(item => extractVars(item).length === 0);
-
     // Add those without vars immediately
     if (withoutVars.length > 0) {
       handleUpdateResponseObs([...responseObsList, ...withoutVars]);
     }
-
     // Queue those with vars
     if (withVars.length > 0) {
       setFillingModal({
@@ -287,19 +252,15 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       });
     }
   };
-
   const handleConfirmFilling = () => {
     if (!fillingModal) return;
-
     // Replace all vars in current item
     let finalized = fillingModal.currentItem;
     Object.entries(fillingModal.values).forEach(([placeholder, val]) => {
       finalized = finalized.split(placeholder).join(val || placeholder);
     });
-
     const newList = [...responseObsList, finalized];
     handleUpdateResponseObs(newList);
-
     // Process next in queue
     const nextIdx = fillingModal.index + 1;
     if (fillingModal.queue && nextIdx < fillingModal.queue.length) {
@@ -315,7 +276,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       setFillingModal(null);
     }
   };
-
   const handleRemoveCondition = (cond?: string) => {
     const toRemove = cond || selectedResponseObservation || '';
     if (!toRemove || !onUpdateData) return;
@@ -324,28 +284,23 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     if (toRemove === selectedResponseObservation) setSelectedResponseObservation(null);
     setEditingObsIdx(null);
   };
-
   const handleJustifyPreQC = async () => {
     if (readOnly || !onStatusUpdate) return;
-
     const confirm = await showConfirm(
       'Confirmar Envio Antecipado?',
       'Esta ação enviará a resposta ao solicitante e uma justificativa ao sistema PRGC informando que o envio foi feito antes do Controle de Qualidade devido ao prazo. O estudo ainda passará pelo processo de CQ posteriormente.'
     );
-
     if (confirm) {
       onStatusUpdate(data.id, StudyStatus.ENVIADO_SEM_CQ);
       showToast('Envio antecipado processado com sucesso!', 'success');
       onBack();
     }
   };
-
   const handleStartEditing = (idx: number, value: string) => {
     if (readOnly) return;
     setEditingObsIdx(idx);
     setEditingObsValue(value);
   };
-
   const handleSaveEdit = () => {
     if (editingObsIdx === null || !onUpdateData) return;
     const newList = [...responseObsList];
@@ -353,33 +308,26 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     handleUpdateResponseObs(newList);
     setEditingObsIdx(null);
   };
-
   const formatCurrency = (val: any) => {
     const n = Number(val);
     if (isNaN(n)) return '0,00';
     return n.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   };
-
   const handleExportCartaPDF = async (fromPreview: boolean = false) => {
     setIsExportingCarta(true);
-
     // Pequeno delay para garantir que o estado reativo assentou
     await new Promise(resolve => setTimeout(resolve, 500));
-
     try {
       let activeRequest = data;
       if (!data.cartaGeneratedAt && onUpdateData) {
         const now = new Date().toISOString();
         activeRequest = { ...data, cartaGeneratedAt: now };
         onUpdateData(activeRequest);
-
         // Ensure immediate database persistence for metadata
         await StorageService.addRequest(activeRequest);
-
         // Tempo para o estado persistir antes da captura
         await new Promise(resolve => setTimeout(resolve, 800));
       }
-
       // Usamos o elemento oculto dedicado que está SEMPRE no DOM
       const target = hiddenCartaRef.current;
       if (!target) {
@@ -418,7 +366,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
         await StorageService.uploadCartaResposta(activeRequest, pdf.output('blob'));
       }
-
       showToast('Carta Resposta salva com sucesso!', 'success');
       if (activeFolder === 'Resposta') {
         const files = await StorageService.getRequestFiles(data.id, 'Resposta');
@@ -433,12 +380,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       setIsExportingCarta(false);
     }
   };
-
   const renderCartaPaper = (reference: React.RefObject<HTMLDivElement>) => {
     const LetterModelComponent = getLetterModel(data.studySubType || '');
     return <LetterModelComponent data={data} allUsers={allUsers} currentUser={currentUser || null} reference={reference} />;
   };
-
   const renderCartaPreviewModal = () => {
     if (!showCartaPreview) return null;
     return (
@@ -456,7 +401,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </div>
               </div>
             </div>
-
             <div className="flex gap-2">
               <button
                 disabled={isExportingCarta}
@@ -474,7 +418,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               </button>
             </div>
           </div>
-
           <div className="flex-grow overflow-y-auto p-4 sm:p-12 bg-slate-300/50 flex flex-col items-center custom-scrollbar">
             {renderCartaPaper(cartaRef)}
           </div>
@@ -482,7 +425,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       </div>
     );
   };
-
   const handleAddCustomCondition = () => {
     const trimmed = newCondInput.trim();
     if (!trimmed) return;
@@ -498,7 +440,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const NETWORK_TYPES_EXT = ["Desconhecido", "Rede Externa", "Rede Interna", "Ramal"];
   const GAS_TYPES_EXT = ["GN", "GNC", "GNL", "GNS", "GLP"];
   const STATUS_EXT = ["Em Serviço", "Estudo (Abandonar)", "Estudo (Construir)", "Energizado"];
-
   // Row management for Interconnection Points
   const addInterconnectionPoint = () => {
     if (!onUpdateData) return;
@@ -515,7 +456,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       interconnectionPoints: [...(data.interconnectionPoints || []), newPoint]
     });
   };
-
   const updateInterconnectionPoint = (id: string, field: keyof InterconnectionPoint, value: string) => {
     if (!onUpdateData) return;
     const updated = (data.interconnectionPoints || []).map(p =>
@@ -523,13 +463,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     );
     handleUpdateData({ ...data, interconnectionPoints: updated });
   };
-
   const removeInterconnectionPoint = (id: string) => {
     if (!onUpdateData) return;
     const filtered = (data.interconnectionPoints || []).filter(p => p.id !== id);
     handleUpdateData({ ...data, interconnectionPoints: filtered });
   };
-
   // Row management for Planned Network Extensions
   const addPlannedExtension = () => {
     if (!onUpdateData) return;
@@ -549,7 +487,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       plannedExtensions: [...(data.plannedExtensions || []), newExt]
     });
   };
-
   const updatePlannedExtension = (id: string, field: keyof PlannedExtension, value: any) => {
     if (!onUpdateData) return;
     const updated = (data.plannedExtensions || []).map(p =>
@@ -557,13 +494,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     );
     handleUpdateData({ ...data, plannedExtensions: updated });
   };
-
   const removePlannedExtension = (id: string) => {
     if (!onUpdateData) return;
     const filtered = (data.plannedExtensions || []).filter(p => p.id !== id);
     handleUpdateData({ ...data, plannedExtensions: filtered });
   };
-
   // Timer logic
   useEffect(() => {
     let interval: any;
@@ -574,14 +509,12 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
     return () => clearInterval(interval);
   }, [isPaused, readOnly]);
-
   // Sync elapsed time periodically
   useEffect(() => {
     if (onUpdateData && elapsedTime > 0 && elapsedTime % 10 === 0) {
       onUpdateData({ ...data, totalExecutionTime: elapsedTime });
     }
   }, [elapsedTime, onUpdateData]);
-
   // Fetch study files when folder changes
   useEffect(() => {
     let isMounted = true;
@@ -604,12 +537,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     fetchFiles();
     return () => { isMounted = false; };
   }, [activeFolder, data.id]);
-
   // Consolidate estimatedDeliveryDate Logic and Repair Execution Dates
   useEffect(() => {
     let changed = false;
     const updated = { ...data };
-
     // 1. Repair estimatedDeliveryDate
     if (!data.estimatedDeliveryDate && data.requestDate) {
       const deadline = calculateDeadline(data.requestDate, data.formType || '');
@@ -618,7 +549,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         changed = true;
       }
     }
-
     // 2. Repair Inverted/Leaked Dates (Revision inheritance fix)
     if (data.status === StudyStatus.EM_EXECUCAO) {
       // If end-date exists but start-date is missing, it's swapped (usually inherited from parent)
@@ -631,40 +561,34 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         updated.completedAt = undefined;
         changed = true;
       }
-
       // Ensure startedAt is set if in execution
       if (!updated.startedAt) {
         updated.startedAt = new Date().toISOString();
         changed = true;
       }
     }
-
     if (changed && onUpdateData) {
       handleUpdateData(updated);
     }
   }, [data.requestDate, data.estimatedDeliveryDate, data.status, data.startedAt, data.completedAt, onUpdateData]);
-
   const totalPlannedExtension = useMemo(() => {
     return (data.plannedExtensions || []).reduce((acc, current) => acc + (Number(current.extension) || 0), 0);
   }, [data.plannedExtensions]);
-
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
-
   const getFO = (type: string) => type.split('-').pop() || '';
 
-  const isResidencial = data.studySubType?.toLowerCase() === 'residencial';
-  const hasResidentialComponent = Number(data.vazaoSol || 0) !== 0;
+  const isResidencial = ['residencial', 'residencial/comercial'].includes(data.studySubType?.toLowerCase() || '');
+  const hasResidentialComponent = Number(data.vazaoSol || 0) !== 0 || isResidencial;
   const totalClientsAuto = Number(data.numClientsRes || data.numEconomias || 0);
   const unitFlowAuto = 0.09;
   const penetrationAuto = 1;
   const diversificationAuto = getDiversificationFactor(totalClientsAuto);
   const totalFlowAuto = totalClientsAuto * unitFlowAuto * penetrationAuto * diversificationAuto;
-
   const currentCalc = calcMode === 'auto' ? {
     totalClients: totalClientsAuto,
     unitFlow: unitFlowAuto,
@@ -675,7 +599,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     ...manualCalc,
     totalFlow: manualCalc.totalClients * manualCalc.unitFlow * manualCalc.penetration * manualCalc.diversification
   };
-
   const handleApplyAutoCalc = () => {
     if (!onUpdateData || readOnly) return;
     setCalcMode('auto');
@@ -689,12 +612,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       penetration: penetrationAuto,
       diversificationFactor: diversificationAuto,
       diversification: diversificationAuto,
-      totalFlowRes: totalFlowAuto,
+      diversifiedFlow: totalFlowAuto, // Store calculated value here
       totalFlow: totalFlowAuto,
       calcMode: 'auto'
     });
   };
-
   const handleApplyManualCalc = () => {
     if (!onUpdateData || readOnly) return;
     const total = manualCalc.totalClients * manualCalc.unitFlow * manualCalc.penetration * manualCalc.diversification;
@@ -708,30 +630,25 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       penetration: manualCalc.penetration,
       diversificationFactor: manualCalc.diversification,
       diversification: manualCalc.diversification,
-      totalFlowRes: total,
+      diversifiedFlow: total, // Store calculated value here
       totalFlow: total,
       calcMode: 'manual'
     });
   };
-
   const validateAnalysisFields = () => {
     const missingFields: string[] = [];
-
     if (!data.networkGroup) missingFields.push('Grupo Rede');
     if (!data.responsePressureBase) missingFields.push('Pressão Resposta');
-
     if (!data.interconnectionPoints || data.interconnectionPoints.length === 0) {
       missingFields.push('Pelo menos um Ponto de Interligação');
     }
-
     if (!data.plannedExtensions || data.plannedExtensions.length === 0) {
       missingFields.push('Pelo menos uma Extensão de Rede Planificada');
     }
 
-    if (isResidencial && !data.totalFlowRes && !data.totalFlow) {
-      missingFields.push('Cálculo de Vazão Residencial');
+    if (isResidencial && !data.diversifiedFlow) {
+      missingFields.push('Cálculo de Vazão Residencial (Lembre-se de clicar em "Aplicar" na aba Análise Técnica > Realizando Análise)');
     }
-
     if (data.regSizingActive) {
       if (!data.regSizingFlow) missingFields.push('Vazão do Regulador');
       if (!data.regSizingCost) missingFields.push('Custo do Regulador');
@@ -739,67 +656,51 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       if (!data.regSizingOutPress) missingFields.push('P. Saída do Regulador');
       if (!data.regSizingFutureFlow) missingFields.push('Vazão Futura do Regulador');
     }
-
     if (!data.responseObservations || data.responseObservations.trim() === '') {
       missingFields.push('Observações Resposta');
     }
-
     return missingFields;
   };
-
   const handleGenerateGeogasLegend = () => {
     if (readOnly) return;
-
     const nroEstudo = data.studyNumber?.replace('PROV-', '') || '';
     const titulo = data.studyTitle || data.clientName || data.uteName || '';
     const municipio = data.city || '';
     const bairro = data.neighborhood || '';
     const localiz = data.address || '';
     const tipEst = data.studySubType || data.studyType || '';
-
-    const vSol = Number(data.vazaoSol || data.totalFlowRes || 0);
+    const vSol = Number(data.totalFlowRes || 0);
     const vSolCom = Number(data.totalFlowCom || 0);
-    const consumoTotal = (vSol + vSolCom).toString().replace('.', ',');
-
+    const consumoTotal = (vSol + vSolCom).toFixed(2).replace('.', ',');
     const minPress = data.minPressure || data.technicalMetadata?.minPressure || '1';
-
     const isFO02 = data.formType === FormType.EXPANSION_AREAS;
-
     let content = `<FNT name = "Arial"><p><_ITA><BOL>ID_ESTUDO: </BOL>${nroEstudo}</_ITA></p></FNT> <p></p>\n`;
     content += `<FNT name = "Arial"><p><_ITA><BOL>Título: </BOL>${titulo}</_ITA></p></FNT> \n`;
     content += `<FNT name = "Arial"><p><_ITA><BOL>Município: </BOL>${municipio}</_ITA></p></FNT> \n`;
-
     if (!isFO02) {
       content += `<FNT name = "Arial"><p><_ITA><BOL>Bairro: </BOL>${bairro}</_ITA></p></FNT> \n`;
     }
-
     content += `<FNT name = "Arial"><p><_ITA><BOL>Endereço: </BOL></_ITA><ITA>${localiz}</ITA></p></FNT> <p></p> \n`;
     content += `<FNT name = "Arial"><p><_ITA><UND><BOL>Dados Técnicos:</BOL></UND></_ITA></p></FNT> <p></p> \n`;
     content += `<FNT name = "Arial"><p><_ITA><BOL>Tipo de Mercado: </BOL>${tipEst}</_ITA></p></FNT> \n`;
     content += `<FNT name = "Arial"><p><_ITA><BOL>Consumo previsto: </BOL>${consumoTotal} m³(n)/h</_ITA></p></FNT> \n`;
     content += `<FNT name = "Arial"><p><_ITA><BOL>MinPop Solicitada: </BOL>${minPress} bar</_ITA></p></FNT>`;
-
     if (onUpdateData) {
       onUpdateData({ ...data, responseMemo: content });
       showToast('Legenda Geogas gerada com sucesso!', 'success');
     }
   };
-
   const handleCreateFolderOnServer = async () => {
     if (readOnly) return;
-
     const nroEstudo = data.studyNumber || '';
     if (!nroEstudo) {
       showToast('Estudo sem NRO_ESTUDO', 'error');
       return;
     }
-
     const ano = nroEstudo.substring(0, 4);
     const estudo = nroEstudo.substring(4, 8);
     const rev = nroEstudo.substring(8, 10);
-
     let basePath = 'C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\Teste de Criação de Pasta';
-
     try {
       const configRes = await fetch('/api/config');
       const config = await configRes.json();
@@ -809,24 +710,19 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     } catch (err) {
       console.warn('[handleCreateFolderOnServer] Using default path:', err);
     }
-
     const folderPath = `${basePath}\\${ano}\\${estudo}\\${rev}`;
-
     try {
       const response = await fetch('/api/folders/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folderPath }),
       });
-
       const result = await response.json();
-
       if (result.success) {
         const currentMemo = data.responseMemo || '';
         const newContent = currentMemo
           ? `${currentMemo}\n\n=== Pasta do Estudo ===\n${folderPath}`
           : `=== Pasta do Estudo ===\n${folderPath}`;
-
         if (onUpdateData) {
           onUpdateData({ ...data, responseMemo: newContent });
         }
@@ -839,25 +735,20 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Erro ao criar pasta no servidor', 'error');
     }
   };
-
   const handleImportPDF = async () => {
     if (readOnly) return;
-
     const nroEstudo = data.studyNumber || '';
     if (!nroEstudo) {
       showToast('Estudo sem NRO_ESTUDO', 'error');
       return;
     }
-
     try {
       const res = await fetch(`/api/files/folder/${nroEstudo}`);
       const result = await res.json();
-
       if (!result.files || result.files.length === 0) {
         showToast('Nenhum PDF encontrado na pasta do estudo', 'error');
         return;
       }
-
       setPdfFiles(result.files);
       setSelectedPdfFiles(new Set());
       setShowPdfSelectModal(true);
@@ -866,7 +757,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Erro ao importar PDF', 'error');
     }
   };
-
   const handleTogglePdfFile = (idx: number) => {
     const newSelected = new Set(selectedPdfFiles);
     if (newSelected.has(idx)) {
@@ -876,7 +766,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
     setSelectedPdfFiles(newSelected);
   };
-
   const checkExistingFiles = async (): Promise<Set<string>> => {
     const existingFiles = new Set<string>();
     try {
@@ -890,18 +779,15 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
     return existingFiles;
   };
-
   const handleImportSelectedPdfs = async () => {
     if (selectedPdfFiles.size === 0) {
       showToast('Selecione pelo menos um arquivo', 'error');
       return;
     }
-
     const existingFiles = await checkExistingFiles();
     const filesToImport = Array.from(selectedPdfFiles).map(idx => pdfFiles[idx]);
     const duplicates: string[] = [];
     const toImport: any[] = [];
-
     for (const file of filesToImport) {
       if (existingFiles.has(file.name)) {
         duplicates.push(file.name);
@@ -909,12 +795,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         toImport.push(file);
       }
     }
-
     if (duplicates.length > 0) {
       showToast(`Arquivo(s) já existem na Resposta: ${duplicates.join(', ')}`, 'error');
       return;
     }
-
     let successCount = 0;
     for (const file of toImport) {
       // Copy to Resposta folder first
@@ -930,12 +814,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       } catch (copyErr) {
         console.warn('[handleImportSelectedPdfs] Copy error:', copyErr);
       }
-
       // Then import to database
       const success = await importSingleFileQuiet(file);
       if (success) successCount++;
     }
-
     setShowPdfSelectModal(false);
     if (successCount > 0) {
       showToast(`${successCount} PDF(s) importado(s) com sucesso!`, 'success');
@@ -944,13 +826,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Erro ao importar arquivos', 'error');
     }
   };
-
   const importSingleFileQuiet = async (file: any): Promise<boolean> => {
     try {
       const fileRes = await fetch(`/api/files/read?path=${encodeURIComponent(file.path)}`);
       const fileData = await fileRes.json();
       if (!fileData.content) return false;
-
       const attachRes = await fetch('/api/attachments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -962,7 +842,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           contentBase64: fileData.content,
         }),
       });
-
       const attachResult = await attachRes.json();
       return !!(attachResult.message || attachResult.id);
     } catch (err) {
@@ -970,17 +849,14 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       return false;
     }
   };
-
   const importSingleFile = async (file: any) => {
     try {
       const fileRes = await fetch(`/api/files/read?path=${encodeURIComponent(file.path)}`);
       const fileData = await fileRes.json();
-
       if (!fileData.content) {
         showToast('Erro ao ler arquivo', 'error');
         return;
       }
-
       const attachRes = await fetch('/api/attachments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -992,9 +868,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           contentBase64: fileData.content,
         }),
       });
-
       const attachResult = await attachRes.json();
-
       if (attachResult.message || attachResult.id) {
         showToast('PDF importado: ' + file.name, 'success');
         setActiveFolder('Resposta');
@@ -1006,7 +880,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Erro ao importar PDF', 'error');
     }
   };
-
   const handleTechSubTabChange = (idx: number) => {
     if (idx === 2) { // Passos Resposta
       const missing = validateAnalysisFields();
@@ -1021,11 +894,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
     setActiveTechSubTab(idx);
   };
-
   const validateAllTechnicalFields = () => {
     return validateAnalysisFields();
   };
-
   const handleInitiateFinish = async () => {
     const missing = validateAllTechnicalFields();
     if (missing.length > 0) {
@@ -1037,34 +908,27 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
     setShowFinishModal(true);
   };
-
   const handleAttachFile = () => {
     fileInputRef.current?.click();
   };
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && onUpdateData) {
       const rawFiles = Array.from(e.target.files);
       const requestId = data.id;
-
       if (!requestId) {
         showToast('ID da solicitação não encontrado. Não é possível anexar arquivos.', 'error');
         return;
       }
-
       setIsLoadingFiles(true);
       try {
         // Upload each file to the server immediately
         for (const file of rawFiles) {
           await StorageService.uploadFile(requestId, activeFolder, file);
         }
-
         showToast(`${rawFiles.length} arquivo(s) anexado(s) com sucesso!`, 'success');
-
         // Refresh the file list from the server
         const updatedFiles = await StorageService.getRequestFiles(requestId, activeFolder);
         setStudyFiles(updatedFiles.filter((f: any) => f.name !== '.keep'));
-
         // Sync the local categorized metadata as well (optional but good for consistency)
         const updatedData = { ...data };
         if (activeFolder === 'Solicitacao') {
@@ -1088,7 +952,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       }
     }
   };
-
   const handleViewFile = async (file: any) => {
     try {
       if (file.fullPath) {
@@ -1100,7 +963,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         }
         return;
       }
-
       if (file.base64 && file.type) {
         setFilePreview({
           name: file.name,
@@ -1115,7 +977,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Erro ao visualizar arquivo', 'error');
     }
   };
-
   const handleDownloadFile = async (file: any) => {
     try {
       if (file.fullPath) {
@@ -1130,7 +991,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         }
         return;
       }
-
       if (file.base64 && file.type) {
         const link = document.createElement('a');
         link.href = `data:${file.type};base64,${file.base64}`;
@@ -1144,7 +1004,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Erro ao baixar arquivo', 'error');
     }
   };
-
   const handleResumeTimer = () => {
     if (readOnly) return;
     setIsPaused(false);
@@ -1154,10 +1013,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       handleUpdateStatus(StudyStatus.EM_EXECUCAO);
     }
   };
-
   const handleUpdateStatus = (status: StudyStatus, additional?: Partial<FormData>) => {
     const finalAdditional: Partial<FormData> = { ...additional };
-
     // Logic to prevent date inversion and improve persistence
     if (status === StudyStatus.EM_EXECUCAO) {
       finalAdditional.startedAt = data.startedAt || new Date().toISOString();
@@ -1166,10 +1023,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       if (status === StudyStatus.CONCLUIDO) {
         finalAdditional.completedAt = new Date().toISOString();
       }
-
       // Clear responseMemo when sending to CQ
       finalAdditional.responseMemo = '';
-
       // Auto-populate analyst info if assigned
       if (data.assignedTo) {
         const analyst = allUsers.find(u =>
@@ -1183,17 +1038,14 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         }
       }
     }
-
     onStatusUpdate(data.id || '', status, undefined, undefined, finalAdditional);
   };
-
   const handleFinishStudy = () => {
     // We pass totalExecutionTime via additionalData to avoid race conditions with onUpdateData
     handleUpdateStatus(StudyStatus.CONTROLE_QUALIDADE, { totalExecutionTime: elapsedTime });
     setShowFinishModal(false);
     onBack();
   };
-
   const handleFinalizeApproved = async () => {
     const confirmed = await showConfirm(
       'O estudo foi aprovado pelo Controle de Qualidade.\n\nDeseja concluir o estudo e enviar notificação ao solicitante?',
@@ -1203,15 +1055,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     handleUpdateStatus(StudyStatus.CONCLUIDO, { totalExecutionTime: elapsedTime });
     onBack();
   };
-
-
   const handlePauseToggle = () => setIsPaused(prev => !prev);
-
   const handleOpenHoldModal = () => {
     setHoldInfo('');
     setShowHoldModal(true);
   };
-
   const handleConfirmHold = () => {
     if (!holdInfo.trim()) return;
     onStatusUpdate(data.id || '', StudyStatus.AGUARDANDO_INFORMACAO, holdInfo, undefined, {
@@ -1221,30 +1069,22 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     setShowHoldModal(false);
     onBack();
   };
-
-
   const revisionHistory = useMemo(() => {
     if (!data.studyNumber) return [];
     const cleanCode = data.studyNumber.replace('PROV-', '');
-
     // Find revisions: studies where nroEstAn matches current study, OR previousStudy matches base code
     const suffixMatch = cleanCode.match(/(\d+)(\d{2})$/);
     const baseCode = suffixMatch ? suffixMatch[1] : cleanCode;
-
     return allRequests.filter(r => {
       if (r.id === data.id) return false;
-
       // Match by NRO_EST_AN
       if (r.nroEstAn && r.nroEstAn.replace('PROV-', '') === cleanCode) return true;
-
       // Match by previousStudy linking to base code
       if (r.previousStudy && r.previousStudy.replace('PROV-', '').startsWith(baseCode)) return true;
-
       // Legacy pattern: -REV
       const rClean = (r.studyNumber || '').replace('PROV-', '');
       const rMatch = rClean.match(/(.+)-REV\d+$/i);
       if (rMatch && rMatch[1] === baseCode) return true;
-
       return false;
     }).sort((a, b) => {
       const dateA = a.requestDate ? new Date(a.requestDate).getTime() : 0;
@@ -1252,33 +1092,26 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       return dateB - dateA;
     });
   }, [allRequests, data.id, data.studyNumber]);
-
   const renderTechnicalField = (label: string, value: any, unit: string = '') => (
     <div className="flex flex-col p-4 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</span>
       <span className="text-sm font-black text-slate-500">{value} <span className="text-[10px] font-normal text-slate-400">{unit}</span></span>
     </div>
   );
-
   const getFilesForActiveFolder = () => {
     // Sempre usar os arquivos do Storage como fonte de verdade.
     // Os dados locais (data.selectedFiles / categorizedFiles) podem estar desatualizados.
     const storageFiles = studyFiles.filter(f => f.name !== '.keep');
-
     // Se o Storage ainda está sendo carregado, não mostrar nada (evita dados fantasmas)
     if (isLoadingFiles) return [];
-
     // Adicionar entrada virtual do formulário oficial se ele existir no storage
     const hasOfficialForm = storageFiles.some(f => f.name.startsWith('Formulario'));
     if (activeFolder === 'Solicitacao' && data.studyNumber && !hasOfficialForm) {
       // Não adicionar virtual se o storage já tem o formulário real
       // Se não tiver nenhum formulário, não inventar um virtual
     }
-
     return storageFiles;
   };
-
-
   const renderCargaTable = (studyData: FormData = data) => {
     switch (studyData.formType) {
       case FormType.RESIDENTIAL_COMMERCIAL:
@@ -1382,17 +1215,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       default: return null;
     }
   };
-
   const renderTechSubTab0 = () => {
-
 
 
     // Logic to calculate Empresa and Estado based on Município
     const getEmpresaEstado = (municipio: string | undefined): { empresa: string, estado: string } => {
       if (!municipio) return { empresa: '-', estado: '-' };
-
       const normalizedCity = municipio.trim().toLowerCase();
-
       // Mapeamento baseado na imagem fornecida
       const mapping: Record<string, string> = {
         'alumínio': 'SPS',
@@ -1459,15 +1288,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         'volta redonda': 'CEGRIO',
         'votorantim': 'SPS'
       };
-
       const empresa = mapping[normalizedCity] || 'Não Mapeado';
       const estado = empresa === 'SPS' ? 'SP' : (empresa === 'CEG' || empresa === 'CEGRIO' ? 'RJ' : '-');
-
       return { empresa, estado };
     };
-
     const locationData = getEmpresaEstado(data.city);
-
     return (
       <div className={`space-y-6 animate-in fade-in duration-300 pb-12`}>
         {/* Identificação Card */}
@@ -1478,17 +1303,14 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </h4>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {renderTechnicalField('ID Estudo', data.studyNumber?.replace('PROV-', '') || 'N/A')}
-            {(() => {
-              const prevText = getPreviousStudy(data.studyNumber);
-              return renderTechnicalField('Estudo Anterior', prevText === '-' ? '-' : prevText);
-            })()}
+
+            {renderTechnicalField('Estudo Anterior', data.previousStudy || getPreviousStudy(data.studyNumber))}
             {renderTechnicalField('Data de Solicitação', formatDateTimeBR(data.createdAt))}
             {renderTechnicalField('Solicitante', data.requesterName || '-')}
             {renderTechnicalField('E-mail', data.email || 'NÃO UTILIZAR ESSE REGISTRO')}
             {renderTechnicalField('Área Solicitante', data.requesterArea || 'Desconhecido')}
           </div>
         </div>
-
         {/* Localização Card */}
         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
           <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
@@ -1537,7 +1359,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             )}
           </div>
         </div>
-
         {/* Histórico de Revisões Card */}
         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
           <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
@@ -1597,7 +1418,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </div>
           )}
         </div>
-
         {/* Parâmetros Técnicos & Demanda */}
         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
           <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
@@ -1607,9 +1427,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {renderTechnicalField('Tipo de Gás', data.gasType || '-')}
             {renderTechnicalField('Faixa de Pressão', data.suggestedPressureRange || '-')}
-
             {renderTechnicalField('Pressão Min.', data.suggestedPressureRange === 'BP-N' ? '19 mbar' : (data.suggestedPressureRange?.startsWith('MP-N') ? '1 bar' : (formatCurrency(data.minPressure) + ' bar')))}
-
             <div className="flex gap-4 items-center pl-2 pt-5">
               <div className="flex items-center gap-2">
                 <input type="checkbox" className="w-4 h-4 accent-blue-600 rounded disabled:opacity-75 disabled:cursor-not-allowed" checked={!!data.mapReceived} readOnly disabled />
@@ -1621,7 +1439,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               </div>
             </div>
           </div>
-
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 pt-6 border-t border-slate-100">
             {renderTechnicalField('Nº de Clientes Residenciais', data.numClientsRes || '0')}
             {renderTechnicalField('Vazão Residencial', formatCurrency(data.totalFlowRes), 'm³/h')}
@@ -1629,7 +1446,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             {renderTechnicalField('Vazão Com. Ind. Etc', formatCurrency(data.totalFlowCom), 'm³/h')}
           </div>
         </div>
-
         {/* Controle da Análise */}
         <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
           <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
@@ -1640,18 +1456,14 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             <div className="col-span-1 lg:col-span-3">
               {renderTechnicalField('Nomes GNI', data.gniName || '-')}
             </div>
-
             {renderTechnicalField('Tipo de Estudo', data.studyType || '-')}
             {renderTechnicalField('Sub-tipo de Estudo', data.studySubType || '-')}
             {renderTechnicalField('Dificuldade', data.difficulty || '-')}
-
             {renderTechnicalField('Responsável Estudo', (() => {
               if (data.analystName && data.analystName !== data.assignedTo) return data.analystName;
               if (!data.assignedTo) return '-';
-
               const normalize = (s: any) => String(s || '').trim().replace(/^0+/, '');
               const target = normalize(data.assignedTo);
-
               const analyst = allUsers.find(u =>
                 normalize(u.id) === target ||
                 normalize(u.email) === target ||
@@ -1660,7 +1472,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               return analyst ? analyst.name : data.assignedTo;
             })())}
           </div>
-
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 pt-6 border-t border-slate-100">
             {renderTechnicalField('Entrada Real', data.validationDate ? formatDateTimeBR(data.validationDate) : '-')}
             {renderTechnicalField('Entrega Prevista', data.estimatedDeliveryDate ? formatDateTimeBR(data.estimatedDeliveryDate) : '-')}
@@ -1668,7 +1479,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             {renderTechnicalField('Término Execução', data.completedAt ? formatDateTimeBR(data.completedAt) : '-')}
           </div>
         </div>
-
         {/* Comentários */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm flex flex-col">
@@ -1680,7 +1490,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               {data.comments || "Registro de Segurança / Sem anotações adicionais."}
             </div>
           </div>
-
           <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm flex flex-col">
             <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest mb-6 flex items-center gap-3">
               <i className="fa-solid fa-message text-orange-500"></i>
@@ -1691,623 +1500,613 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </div>
           </div>
         </div>
-
       </div>
     );
   };
-
-
   const renderTechSubTab1 = () => {
     return (
-      <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm space-y-8">
-        <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest flex items-center gap-3 border-b border-slate-100 pb-4">
-          Realizando Análise
-        </h4>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            <div className="grid grid-cols-3 gap-4">
-              {/* Grupo Rede Selection */}
-              <div className="flex flex-col p-4 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Grupo Rede</span>
-                {readOnly ? (
-                  <span className="text-sm font-black text-slate-500">{data.networkGroup || '-'}</span>
-                ) : (
-                  <select
-                    className="bg-transparent border-0 text-sm font-black text-[#004080] focus:ring-0 outline-none w-full cursor-pointer"
-                    value={data.networkGroup !== undefined ? data.networkGroup : ""}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val) {
-                        if (onUpdateData) handleUpdateData({ ...data, networkGroup: undefined, networkDescription: '' });
-                        return;
-                      }
-                      const code = parseInt(val);
-                      const group = NETWORK_GROUPS.find(g => g.grupoRede === code);
-                      if (onUpdateData) {
-                        handleUpdateData({
-                          ...data,
-                          networkGroup: code,
-                          networkDescription: group?.descricao || ''
-                        });
-                      }
-                    }}
-                  >
-                    <option value="">Selecione...</option>
-                    {NETWORK_GROUPS.map(g => (
-                      <option key={g.grupoRede} value={g.grupoRede}>
-                        {g.grupoRede}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Descrição - Brought automatically from Grupo Rede */}
-              <div className="col-span-2 flex flex-col p-4 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Descrição</span>
-                <span className="text-sm font-black text-[#004080] min-h-[20px]">
-                  {data.networkDescription || (data.networkGroup !== undefined ? NETWORK_GROUPS.find(g => g.grupoRede === data.networkGroup)?.descricao : '-') || '-'}
-                </span>
-              </div>
-
-              {renderTechnicalField('Estudo Anterior', getPreviousStudy(data.studyNumber))}
-            </div>
-
-            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 grid grid-cols-5 gap-2 text-center">
-              {/* Pressão Resposta (Base Selection) */}
-              <div className="flex flex-col">
-                <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Pressão resposta</span>
-                {readOnly ? (
-                  <span className="text-xs font-black">{data.responsePressureBase || '-'}</span>
-                ) : (
-                  <select
-                    className="bg-transparent border-0 text-xs font-black text-[#004080] focus:ring-0 outline-none p-0 h-auto text-center cursor-pointer"
-                    value={data.responsePressureBase || ""}
-                    onChange={(e) => {
-                      const base = e.target.value;
-                      if (!base) {
-                        if (onUpdateData) handleUpdateData({
-                          ...data,
-                          responsePressureBase: undefined,
-                          responseMaxPo: undefined,
-                          responseMin: undefined,
-                          responseGarantia: undefined,
-                          responseUnit: undefined
-                        });
-                        return;
-                      }
-                      const pressureObj = PRESSURE_BASES.find(p => p.base === base);
-                      if (onUpdateData && pressureObj) {
-                        handleUpdateData({
-                          ...data,
-                          responsePressureBase: base,
-                          responseMaxPo: pressureObj.pmax,
-                          responseMin: pressureObj.pmin,
-                          responseGarantia: pressureObj.pgarantia,
-                          responseUnit: pressureObj.unidade
-                        });
-                      }
-                    }}
-                  >
-                    <option value="">Sel...</option>
-                    {PRESSURE_BASES.map(p => (
-                      <option key={p.base} value={p.base}>{p.base}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* MaxPo */}
-              <div className="flex flex-col">
-                <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">MaxPo</span>
-                <span className="text-xs font-black">
-                  {data.responseMaxPo !== undefined ? `${data.responseMaxPo} ${data.responseUnit}` : '-'}
-                </span>
-              </div>
-
-              {/* Min */}
-              <div className="flex flex-col">
-                <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Min</span>
-                <span className="text-xs font-black">
-                  {data.responseMin !== undefined ? `${data.responseMin} ${data.responseUnit}` : '-'}
-                </span>
-              </div>
-
-              {/* Garantia */}
-              <div className="flex flex-col">
-                <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Garantia</span>
-                <span className="text-xs font-black">
-                  {data.responseGarantia !== undefined ? `${data.responseGarantia} ${data.responseUnit}` : '-'}
-                </span>
-              </div>
-
-              {/* Pressão Calculada */}
-              <div className="flex flex-col">
-                <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Pressão Calculada</span>
-                {readOnly ? (
-                  <span className="text-xs font-black text-indigo-600">{data.responseCalculatedPressure || '-'}</span>
-                ) : (
-                  <input
-                    type="text"
-                    className="bg-transparent border-0 text-xs font-black text-indigo-600 focus:ring-0 outline-none p-0 h-auto text-center"
-                    placeholder="-"
-                    value={data.responseCalculatedPressure || ''}
-                    onChange={(e) => {
-                      if (onUpdateData) handleUpdateData({ ...data, responseCalculatedPressure: e.target.value });
-                    }}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* SECTION: PONTO(S) DE INTERLIGAÇÃO(ÕES) */}
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080]">Ponto(s) de Interligação(ões)</h5>
-              {!readOnly && (
-                <button onClick={addInterconnectionPoint} className="text-[9px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center gap-1">
-                  <i className="fa-solid fa-plus text-[8px]"></i> Adicionar Linha
-                </button>
-              )}
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left bg-slate-50 rounded-xl overflow-hidden text-xs">
-                <thead className="bg-[#004080] text-white">
-                  <tr>
-                    <th className="p-2 font-normal">Pressão</th>
-                    <th className="p-2 font-normal">Material</th>
-                    <th className="p-2 font-normal">Diâmetro</th>
-                    <th className="p-2 font-normal">Ponto de interligação logradouro</th>
-                    <th className="p-2 font-normal">Comentário</th>
-                    {!readOnly && <th className="p-2 w-10"></th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white border border-slate-200">
-                  {(!data.interconnectionPoints || data.interconnectionPoints.length === 0) && (
-                    <tr><td colSpan={6} className="p-4 text-center text-slate-400 bg-white">Nenhum ponto de interligação adicionado.</td></tr>
+      <>
+        <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm space-y-8">
+          <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest flex items-center gap-3 border-b border-slate-100 pb-4">
+            Realizando Análise
+          </h4>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="grid grid-cols-3 gap-4">
+                {/* Grupo Rede Selection */}
+                <div className="flex flex-col p-4 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Grupo Rede</span>
+                  {readOnly ? (
+                    <span className="text-sm font-black text-slate-500">{data.networkGroup || '-'}</span>
+                  ) : (
+                    <select
+                      className="bg-transparent border-0 text-sm font-black text-[#004080] focus:ring-0 outline-none w-full cursor-pointer"
+                      value={data.networkGroup !== undefined ? data.networkGroup : ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) {
+                          if (onUpdateData) handleUpdateData({ ...data, networkGroup: undefined, networkDescription: '' });
+                          return;
+                        }
+                        const code = parseInt(val);
+                        const group = NETWORK_GROUPS.find(g => g.grupoRede === code);
+                        if (onUpdateData) {
+                          handleUpdateData({
+                            ...data,
+                            networkGroup: code,
+                            networkDescription: group?.descricao || ''
+                          });
+                        }
+                      }}
+                    >
+                      <option value="">Selecione...</option>
+                      {NETWORK_GROUPS.map(g => (
+                        <option key={g.grupoRede} value={g.grupoRede}>
+                          {g.grupoRede}
+                        </option>
+                      ))}
+                    </select>
                   )}
-                  {(data.interconnectionPoints || []).map((point) => (
-                    <tr key={point.id}>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0"
-                          value={point.pressure}
-                          onChange={(e) => updateInterconnectionPoint(point.id, 'pressure', e.target.value)}
-                        >
-                          {PRESSURE_BASES.map(pb => (
-                            <option key={pb.base} value={pb.base}>{pb.base}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0"
-                          value={point.material}
-                          onChange={(e) => updateInterconnectionPoint(point.id, 'material', e.target.value)}
-                        >
-                          {MATERIALS.map(m => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0"
-                          value={point.diameter}
-                          onChange={(e) => updateInterconnectionPoint(point.id, 'diameter', e.target.value)}
-                        >
-                          {DIAMETERS.map(d => (
-                            <option key={d} value={d}>{d}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2 bg-white">
-                        <input
-                          type="text"
-                          disabled={readOnly}
-                          placeholder="Ex: Rua das Flores, 123"
-                          className="w-full bg-transparent border-0 focus:ring-0 p-0 text-xs text-slate-600 italic"
-                          value={point.location}
-                          onChange={(e) => updateInterconnectionPoint(point.id, 'location', e.target.value)}
-                        />
-                      </td>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0 text-slate-400"
-                          value={point.comment}
-                          onChange={(e) => updateInterconnectionPoint(point.id, 'comment', e.target.value)}
-                        >
-                          {INTERCONNECTION_COMMENTS.map(c => (
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
-                      </td>
-                      {!readOnly && (
-                        <td className="p-2 bg-white text-center">
-                          <button onClick={() => removeInterconnectionPoint(point.id)} className="text-red-400 hover:text-red-600 transition-colors">
-                            <i className="fa-solid fa-trash-can text-[10px]"></i>
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* SECTION: EXTENSÕES REDES PLANIFICADAS */}
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080]">Extensões Redes Planificadas</h5>
-              {!readOnly && (
-                <button onClick={addPlannedExtension} className="text-[9px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center gap-1">
-                  <i className="fa-solid fa-plus text-[8px]"></i> Adicionar Rede
-                </button>
-              )}
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left bg-slate-50 rounded-xl overflow-hidden text-xs">
-                <thead className="bg-[#004080] text-white">
-                  <tr>
-                    <th className="p-2 font-normal">Material</th>
-                    <th className="p-2 font-normal">Diâmetro</th>
-                    <th className="p-2 font-normal text-center">Extensão (m)</th>
-                    <th className="p-2 font-normal">Tipo de Rede</th>
-                    <th className="p-2 font-normal text-center">Válvulas</th>
-                    <th className="p-2 font-normal">Pressão</th>
-                    <th className="p-2 font-normal">Gás</th>
-                    <th className="p-2 font-normal">Status</th>
-                    {!readOnly && <th className="p-2 w-10"></th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white border border-slate-200">
-                  {(!data.plannedExtensions || data.plannedExtensions.length === 0) && (
-                    <tr key="empty"><td colSpan={9} className="p-4 text-center text-slate-400 bg-white">Nenhuma extensão planificada adicionada.</td></tr>
-                  )}
-                  {(data.plannedExtensions || []).map((ext) => (
-                    <tr key={ext.id}>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0"
-                          value={ext.material}
-                          onChange={(e) => updatePlannedExtension(ext.id, 'material', e.target.value)}
-                        >
-                          {MATERIALS.map(m => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0"
-                          value={ext.diameter}
-                          onChange={(e) => updatePlannedExtension(ext.id, 'diameter', e.target.value)}
-                        >
-                          {DIAMETERS.map(d => (
-                            <option key={d} value={d}>{d}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2 bg-white">
-                        <input
-                          type="number"
-                          disabled={readOnly}
-                          className="w-16 border-slate-200 rounded p-1 text-xs text-center"
-                          value={ext.extension}
-                          onChange={(e) => updatePlannedExtension(ext.id, 'extension', e.target.value === '' ? '' : Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0"
-                          value={ext.networkType}
-                          onChange={(e) => updatePlannedExtension(ext.id, 'networkType', e.target.value)}
-                        >
-                          {NETWORK_TYPES_EXT.map(nt => (
-                            <option key={nt} value={nt}>{nt}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2 bg-white">
-                        <input
-                          type="number"
-                          disabled={readOnly}
-                          className="w-12 border-slate-200 rounded p-1 text-xs text-center"
-                          value={ext.valves}
-                          onChange={(e) => updatePlannedExtension(ext.id, 'valves', Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0"
-                          value={ext.pressure}
-                          onChange={(e) => updatePlannedExtension(ext.id, 'pressure', e.target.value)}
-                        >
-                          <option>AP</option>
-                          <option>MP</option>
-                          <option>BP</option>
-                        </select>
-                      </td>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0 text-center font-bold text-[#004080]"
-                          value={ext.gasType}
-                          onChange={(e) => updatePlannedExtension(ext.id, 'gasType', e.target.value)}
-                        >
-                          {GAS_TYPES_EXT.map(gt => (
-                            <option key={gt} value={gt}>{gt}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-2 bg-white">
-                        <select
-                          disabled={readOnly}
-                          className="bg-transparent border-0 text-xs w-full focus:ring-0 text-slate-500 font-medium"
-                          value={ext.status}
-                          onChange={(e) => updatePlannedExtension(ext.id, 'status', e.target.value)}
-                        >
-                          {STATUS_EXT.map(st => (
-                            <option key={st} value={st}>{st}</option>
-                          ))}
-                        </select>
-                      </td>
-                      {!readOnly && (
-                        <td className="p-2 bg-white text-center">
-                          <button onClick={() => removePlannedExtension(ext.id)} className="text-red-400 hover:text-red-600 transition-colors">
-                            <i className="fa-solid fa-trash-can text-[10px]"></i>
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex justify-start pr-2 pt-2 gap-4 items-center">
-              <span className="text-[10px] uppercase font-black text-slate-400">Extensão Total:</span>
-              <span className="text-sm font-black text-[#004080] bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">
-                {totalPlannedExtension} m
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className={`space-y-6 ${!hasResidentialComponent ? 'opacity-40 grayscale pointer-events-none select-none' : ''}`}>
-              {!hasResidentialComponent && (
-                <div className="bg-orange-50 border border-orange-100 p-2 rounded-lg mb-2 text-center">
-                  <p className="text-[8px] font-black text-orange-600 uppercase tracking-tighter italic">Disponível apenas se houver vazão residencial solicitada</p>
                 </div>
-              )}
-              <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-3 shadow-sm relative">
-                {/* Popovers alinhados ao topo do card (nome do cálculo) */}
-                {showVazaoModal && (
-                  <div className="absolute right-full top-0 mr-4 z-[1000] w-[450px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 animate-in fade-in zoom-in-95 duration-200 origin-right">
-                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
-                      <span className="text-[10px] font-black text-[#004080] uppercase tracking-widest">Tabela de Vazão Unitária</span>
-                      <button onClick={(e) => { e.stopPropagation(); setShowVazaoModal(false); }} className="text-slate-300 hover:text-slate-500">
-                        <i className="fa-solid fa-xmark text-xs"></i>
-                      </button>
-                    </div>
-                    <table className="w-full border border-slate-300 text-[10px]">
-                      <thead className="bg-slate-100 text-slate-700 font-bold">
-                        <tr>
-                          <th rowSpan={2} className="border p-1.5 text-center whitespace-nowrap w-1">Nível Socioeconômico</th>
-                          <th colSpan={3} className="border p-1.5 text-center">Zona climática</th>
-                        </tr>
-                        <tr>
-                          <th className="border p-1.5 text-center">Fria</th>
-                          <th className="border p-1.5 text-center">Normal</th>
-                          <th className="border p-1.5 text-center">Quente</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[
-                          ["Classe A", "2,1", "1,5", "0,21"],
-                          ["Classe B", "1,5", "1,4", "0,13"],
-                          ["Classe C", "1,1", "0,8", "0,09"],
-                          ["Classe D/E", "0,8", "0,6", "0,04"],
-                        ].map((row, i) => (
-                          <tr key={i} className="hover:bg-slate-50 transition-colors">
-                            <td className="border p-1.5 font-bold text-slate-600 bg-slate-50/50 text-center whitespace-nowrap">{row[0]}</td>
-                            {row.slice(1).map((cell, j) => (
-                              <td
-                                key={j}
-                                className="border p-1.5 text-center cursor-pointer hover:bg-indigo-600 hover:text-white font-black transition-all"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const val = parseFloat(cell.replace(',', '.'));
-                                  setManualCalc(prev => ({ ...prev, unitFlow: val }));
-                                  setShowVazaoModal(false);
-                                }}
-                              >
-                                {cell}
-                              </td>
+                {/* Descrição - Brought automatically from Grupo Rede */}
+                <div className="col-span-2 flex flex-col p-4 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Descrição</span>
+                  <span className="text-sm font-black text-[#004080] min-h-[20px]">
+                    {data.networkDescription || (data.networkGroup !== undefined ? NETWORK_GROUPS.find(g => g.grupoRede === data.networkGroup)?.descricao : '-') || '-'}
+                  </span>
+                </div>
+
+                {renderTechnicalField('Estudo Anterior', data.previousStudy || getPreviousStudy(data.studyNumber))}
+              </div>
+              <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 grid grid-cols-5 gap-2 text-center">
+                {/* Pressão Resposta (Base Selection) */}
+                <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Pressão resposta</span>
+                  {readOnly ? (
+                    <span className="text-xs font-black">{data.responsePressureBase || '-'}</span>
+                  ) : (
+                    <select
+                      className="bg-transparent border-0 text-xs font-black text-[#004080] focus:ring-0 outline-none p-0 h-auto text-center cursor-pointer"
+                      value={data.responsePressureBase || ""}
+                      onChange={(e) => {
+                        const base = e.target.value;
+                        if (!base) {
+                          if (onUpdateData) handleUpdateData({
+                            ...data,
+                            responsePressureBase: undefined,
+                            responseMaxPo: undefined,
+                            responseMin: undefined,
+                            responseGarantia: undefined,
+                            responseUnit: undefined
+                          });
+                          return;
+                        }
+                        const pressureObj = PRESSURE_BASES.find(p => p.base === base);
+                        if (onUpdateData && pressureObj) {
+                          handleUpdateData({
+                            ...data,
+                            responsePressureBase: base,
+                            responseMaxPo: pressureObj.pmax,
+                            responseMin: pressureObj.pmin,
+                            responseGarantia: pressureObj.pgarantia,
+                            responseUnit: pressureObj.unidade
+                          });
+                        }
+                      }}
+                    >
+                      <option value="">Sel...</option>
+                      {PRESSURE_BASES.map(p => (
+                        <option key={p.base} value={p.base}>{p.base}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {/* MaxPo */}
+                <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">MaxPo</span>
+                  <span className="text-xs font-black">
+                    {data.responseMaxPo !== undefined ? `${data.responseMaxPo} ${data.responseUnit}` : '-'}
+                  </span>
+                </div>
+                {/* Min */}
+                <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Min</span>
+                  <span className="text-xs font-black">
+                    {data.responseMin !== undefined ? `${data.responseMin} ${data.responseUnit}` : '-'}
+                  </span>
+                </div>
+                {/* Garantia */}
+                <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Garantia</span>
+                  <span className="text-xs font-black">
+                    {data.responseGarantia !== undefined ? `${data.responseGarantia} ${data.responseUnit}` : '-'}
+                  </span>
+                </div>
+                {/* Pressão Calculada */}
+                <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 mb-1">Pressão Calculada</span>
+                  {readOnly ? (
+                    <span className="text-xs font-black text-indigo-600">{data.responseCalculatedPressure || '-'}</span>
+                  ) : (
+                    <input
+                      type="text"
+                      className="bg-transparent border-0 text-xs font-black text-indigo-600 focus:ring-0 outline-none p-0 h-auto text-center"
+                      placeholder="-"
+                      value={data.responseCalculatedPressure || ''}
+                      onChange={(e) => {
+                        if (onUpdateData) handleUpdateData({ ...data, responseCalculatedPressure: e.target.value });
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+              {/* SECTION: PONTO(S) DE INTERLIGAÇÃO(ÕES) */}
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080]">Ponto(s) de Interligação(ões)</h5>
+                {!readOnly && (
+                  <button onClick={addInterconnectionPoint} className="text-[9px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center gap-1">
+                    <i className="fa-solid fa-plus text-[8px]"></i> Adicionar Linha
+                  </button>
+                )}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left bg-slate-50 rounded-xl overflow-hidden text-xs">
+                  <thead className="bg-[#004080] text-white">
+                    <tr>
+                      <th className="p-2 font-normal">Pressão</th>
+                      <th className="p-2 font-normal">Material</th>
+                      <th className="p-2 font-normal">Diâmetro</th>
+                      <th className="p-2 font-normal">Ponto de interligação logradouro</th>
+                      <th className="p-2 font-normal">Comentário</th>
+                      {!readOnly && <th className="p-2 w-10"></th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white border border-slate-200">
+                    {(!data.interconnectionPoints || data.interconnectionPoints.length === 0) && (
+                      <tr><td colSpan={6} className="p-4 text-center text-slate-400 bg-white">Nenhum ponto de interligação adicionado.</td></tr>
+                    )}
+                    {(data.interconnectionPoints || []).map((point) => (
+                      <tr key={point.id}>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0"
+                            value={point.pressure}
+                            onChange={(e) => updateInterconnectionPoint(point.id, 'pressure', e.target.value)}
+                          >
+                            {PRESSURE_BASES.map(pb => (
+                              <option key={pb.base} value={pb.base}>{pb.base}</option>
                             ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                          </select>
+                        </td>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0"
+                            value={point.material}
+                            onChange={(e) => updateInterconnectionPoint(point.id, 'material', e.target.value)}
+                          >
+                            {MATERIALS.map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0"
+                            value={point.diameter}
+                            onChange={(e) => updateInterconnectionPoint(point.id, 'diameter', e.target.value)}
+                          >
+                            {DIAMETERS.map(d => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 bg-white">
+                          <input
+                            type="text"
+                            disabled={readOnly}
+                            placeholder="Ex: Rua das Flores, 123"
+                            className="w-full bg-transparent border-0 focus:ring-0 p-0 text-xs text-slate-600 italic"
+                            value={point.location}
+                            onChange={(e) => updateInterconnectionPoint(point.id, 'location', e.target.value)}
+                          />
+                        </td>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0 text-slate-400"
+                            value={point.comment}
+                            onChange={(e) => updateInterconnectionPoint(point.id, 'comment', e.target.value)}
+                          >
+                            {INTERCONNECTION_COMMENTS.map(c => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </td>
+                        {!readOnly && (
+                          <td className="p-2 bg-white text-center">
+                            <button onClick={() => removeInterconnectionPoint(point.id)} className="text-red-400 hover:text-red-600 transition-colors">
+                              <i className="fa-solid fa-trash-can text-[10px]"></i>
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* SECTION: EXTENSÕES REDES PLANIFICADAS */}
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080]">Extensões Redes Planificadas</h5>
+                {!readOnly && (
+                  <button onClick={addPlannedExtension} className="text-[9px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center gap-1">
+                    <i className="fa-solid fa-plus text-[8px]"></i> Adicionar Rede
+                  </button>
+                )}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left bg-slate-50 rounded-xl overflow-hidden text-xs">
+                  <thead className="bg-[#004080] text-white">
+                    <tr>
+                      <th className="p-2 font-normal">Material</th>
+                      <th className="p-2 font-normal">Diâmetro</th>
+                      <th className="p-2 font-normal text-center">Extensão (m)</th>
+                      <th className="p-2 font-normal">Tipo de Rede</th>
+                      <th className="p-2 font-normal text-center">Válvulas</th>
+                      <th className="p-2 font-normal">Pressão</th>
+                      <th className="p-2 font-normal">Gás</th>
+                      <th className="p-2 font-normal">Status</th>
+                      {!readOnly && <th className="p-2 w-10"></th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white border border-slate-200">
+                    {(!data.plannedExtensions || data.plannedExtensions.length === 0) && (
+                      <tr key="empty"><td colSpan={9} className="p-4 text-center text-slate-400 bg-white">Nenhuma extensão planificada adicionada.</td></tr>
+                    )}
+                    {(data.plannedExtensions || []).map((ext) => (
+                      <tr key={ext.id}>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0"
+                            value={ext.material}
+                            onChange={(e) => updatePlannedExtension(ext.id, 'material', e.target.value)}
+                          >
+                            {MATERIALS.map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0"
+                            value={ext.diameter}
+                            onChange={(e) => updatePlannedExtension(ext.id, 'diameter', e.target.value)}
+                          >
+                            {DIAMETERS.map(d => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 bg-white">
+                          <input
+                            type="number"
+                            disabled={readOnly}
+                            className="w-16 border-slate-200 rounded p-1 text-xs text-center"
+                            value={ext.extension}
+                            onChange={(e) => updatePlannedExtension(ext.id, 'extension', e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </td>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0"
+                            value={ext.networkType}
+                            onChange={(e) => updatePlannedExtension(ext.id, 'networkType', e.target.value)}
+                          >
+                            {NETWORK_TYPES_EXT.map(nt => (
+                              <option key={nt} value={nt}>{nt}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 bg-white">
+                          <input
+                            type="number"
+                            disabled={readOnly}
+                            className="w-12 border-slate-200 rounded p-1 text-xs text-center"
+                            value={ext.valves}
+                            onChange={(e) => updatePlannedExtension(ext.id, 'valves', Number(e.target.value))}
+                          />
+                        </td>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0"
+                            value={ext.pressure}
+                            onChange={(e) => updatePlannedExtension(ext.id, 'pressure', e.target.value)}
+                          >
+                            <option>AP</option>
+                            <option>MP</option>
+                            <option>BP</option>
+                          </select>
+                        </td>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0 text-center font-bold text-[#004080]"
+                            value={ext.gasType}
+                            onChange={(e) => updatePlannedExtension(ext.id, 'gasType', e.target.value)}
+                          >
+                            {GAS_TYPES_EXT.map(gt => (
+                              <option key={gt} value={gt}>{gt}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 bg-white">
+                          <select
+                            disabled={readOnly}
+                            className="bg-transparent border-0 text-xs w-full focus:ring-0 text-slate-500 font-medium"
+                            value={ext.status}
+                            onChange={(e) => updatePlannedExtension(ext.id, 'status', e.target.value)}
+                          >
+                            {STATUS_EXT.map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+                        </td>
+                        {!readOnly && (
+                          <td className="p-2 bg-white text-center">
+                            <button onClick={() => removePlannedExtension(ext.id)} className="text-red-400 hover:text-red-600 transition-colors">
+                              <i className="fa-solid fa-trash-can text-[10px]"></i>
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-start pr-2 pt-2 gap-4 items-center">
+                <span className="text-[10px] uppercase font-black text-slate-400">Extensão Total:</span>
+                <span className="text-sm font-black text-[#004080] bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">
+                  {totalPlannedExtension} m
+                </span>
+              </div>
+            </div>
+            <div className="space-y-6">
+              <div className={`space-y-6 ${!hasResidentialComponent ? 'opacity-40 grayscale pointer-events-none select-none' : ''}`}>
+                {!hasResidentialComponent && (
+                  <div className="bg-orange-50 border border-orange-100 p-2 rounded-lg mb-2 text-center">
+                    <p className="text-[8px] font-black text-orange-600 uppercase tracking-tighter italic">Disponível apenas para estudos residenciais ou com vazão solicitada</p>
                   </div>
                 )}
-
-                {showDiversificacaoModal && (
-                  <div className="absolute right-full top-0 mr-4 z-[1000] w-[350px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 animate-in fade-in zoom-in-95 duration-200 origin-right">
-                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
-                      <span className="text-[10px] font-black text-[#004080] uppercase tracking-widest">Tabela de Diversificação</span>
-                      <button onClick={(e) => { e.stopPropagation(); setShowDiversificacaoModal(false); }} className="text-slate-300 hover:text-slate-500">
-                        <i className="fa-solid fa-xmark text-xs"></i>
-                      </button>
-                    </div>
-
-                    <div className="overflow-hidden border border-slate-200 rounded-xl shadow-sm">
-                      <table className="w-full border-collapse border border-slate-200">
-                        <thead className="bg-slate-100">
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-3 shadow-sm relative">
+                  {/* Popovers alinhados ao topo do card (nome do cálculo) */}
+                  {showVazaoModal && (
+                    <div className="absolute right-full top-0 mr-4 z-[1000] w-[450px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 animate-in fade-in zoom-in-95 duration-200 origin-right">
+                      <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                        <span className="text-[10px] font-black text-[#004080] uppercase tracking-widest">Tabela de Vazão Unitária</span>
+                        <button onClick={(e) => { e.stopPropagation(); setShowVazaoModal(false); }} className="text-slate-300 hover:text-slate-500">
+                          <i className="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                      </div>
+                      <table className="w-full border border-slate-300 text-[10px]">
+                        <thead className="bg-slate-100 text-slate-700 font-bold">
                           <tr>
-                            <th className="p-2 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 text-center whitespace-nowrap w-1">Número de Economias</th>
-                            <th className="p-2 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 text-center">FD</th>
+                            <th rowSpan={2} className="border p-1.5 text-center whitespace-nowrap w-1">Nível Socioeconômico</th>
+                            <th colSpan={3} className="border p-1.5 text-center">Zona climática</th>
+                          </tr>
+                          <tr>
+                            <th className="border p-1.5 text-center">Fria</th>
+                            <th className="border p-1.5 text-center">Normal</th>
+                            <th className="border p-1.5 text-center">Quente</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {DIVERSIFICACAO_DATA.map((item) => (
-                            <tr
-                              key={item.id}
-                              className="hover:bg-emerald-50 cursor-pointer group transition-all"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setManualCalc(prev => ({ ...prev, diversification: item.fator }));
-                                setShowDiversificacaoModal(false);
-                              }}
-                            >
-                              <td className="p-2 text-[10px] font-bold text-slate-600 group-hover:text-emerald-700 text-center whitespace-nowrap">
-                                {item.faixa.split(' ')[0]} {item.faixa.split(' ')[1]} {item.faixa.split(' ')[2]}
-                              </td>
-                              <td className="p-2 text-[10px] font-black text-slate-400 text-center group-hover:text-emerald-600">
-                                {item.fator.toFixed(2)}
-                              </td>
+                        <tbody>
+                          {[
+                            ["Classe A", "2,1", "1,5", "0,21"],
+                            ["Classe B", "1,5", "1,4", "0,13"],
+                            ["Classe C", "1,1", "0,8", "0,09"],
+                            ["Classe D/E", "0,8", "0,6", "0,04"],
+                          ].map((row, i) => (
+                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                              <td className="border p-1.5 font-bold text-slate-600 bg-slate-50/50 text-center whitespace-nowrap">{row[0]}</td>
+                              {row.slice(1).map((cell, j) => (
+                                <td
+                                  key={j}
+                                  className="border p-1.5 text-center cursor-pointer hover:bg-indigo-600 hover:text-white font-black transition-all"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const val = parseFloat(cell.replace(',', '.'));
+                                    setManualCalc(prev => ({ ...prev, unitFlow: val }));
+                                    setShowVazaoModal(false);
+                                  }}
+                                >
+                                  {cell}
+                                </td>
+                              ))}
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                )}
-
-                <div className="flex justify-between items-center group">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-black text-[#004080]">Cálculo Residencial</span>
-                    <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Base PE.05306 / NT-200</span>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => setCalcMode('auto')}
-                      className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${calcMode === 'auto' ? 'bg-[#004080] text-white' : 'bg-white border border-slate-200 text-slate-400'}`}
-                    >
-                      Auto
-                    </button>
-                    <button
-                      onClick={() => {
-                        setCalcMode('manual');
-                        setManualCalc({
-                          totalClients: totalClientsAuto,
-                          unitFlow: unitFlowAuto,
-                          penetration: penetrationAuto,
-                          diversification: diversificationAuto
-                        });
-                      }}
-                      className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${calcMode === 'manual' ? 'bg-[#004080] text-white' : 'bg-white border border-slate-200 text-slate-400'}`}
-                    >
-                      Man
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-3 mt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500">Total Clientes</span>
-                    {calcMode === 'auto' ? (
-                      <span className="text-sm font-black text-[#004080]">{currentCalc.totalClients}</span>
-                    ) : (
-                      <input
-                        type="number"
-                        className="w-16 bg-white border border-slate-200 rounded p-1 text-xs font-black text-right outline-none focus:ring-1 focus:ring-indigo-500"
-                        value={manualCalc.totalClients}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setManualCalc(prev => ({ ...prev, totalClients: val, diversification: getDiversificationFactor(val) }));
+                  )}
+                  {showDiversificacaoModal && (
+                    <div className="absolute right-full top-0 mr-4 z-[1000] w-[350px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 animate-in fade-in zoom-in-95 duration-200 origin-right">
+                      <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                        <span className="text-[10px] font-black text-[#004080] uppercase tracking-widest">Tabela de Diversificação</span>
+                        <button onClick={(e) => { e.stopPropagation(); setShowDiversificacaoModal(false); }} className="text-slate-300 hover:text-slate-500">
+                          <i className="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                      </div>
+                      <div className="overflow-hidden border border-slate-200 rounded-xl shadow-sm">
+                        <table className="w-full border-collapse border border-slate-200">
+                          <thead className="bg-slate-100">
+                            <tr>
+                              <th className="p-2 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 text-center whitespace-nowrap w-1">Número de Economias</th>
+                              <th className="p-2 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 text-center">FD</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {DIVERSIFICACAO_DATA.map((item) => (
+                              <tr
+                                key={item.id}
+                                className="hover:bg-emerald-50 cursor-pointer group transition-all"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setManualCalc(prev => ({ ...prev, diversification: item.fator }));
+                                  setShowDiversificacaoModal(false);
+                                }}
+                              >
+                                <td className="p-2 text-[10px] font-bold text-slate-600 group-hover:text-emerald-700 text-center whitespace-nowrap">
+                                  {item.faixa.split(' ')[0]} {item.faixa.split(' ')[1]} {item.faixa.split(' ')[2]}
+                                </td>
+                                <td className="p-2 text-[10px] font-black text-slate-400 text-center group-hover:text-emerald-600">
+                                  {item.fator.toFixed(2)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center group">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] uppercase font-black text-[#004080]">Cálculo Residencial</span>
+                      <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Base PE.05306 / NT-200</span>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setCalcMode('auto')}
+                        className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${calcMode === 'auto' ? 'bg-[#004080] text-white' : 'bg-white border border-slate-200 text-slate-400'}`}
+                      >
+                        Auto
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCalcMode('manual');
+                          setManualCalc({
+                            totalClients: totalClientsAuto,
+                            unitFlow: unitFlowAuto,
+                            penetration: penetrationAuto,
+                            diversification: diversificationAuto
+                          });
                         }}
-                      />
-                    )}
+                        className={`px-2 py-1 rounded text-[8px] font-black uppercase transition-all ${calcMode === 'manual' ? 'bg-[#004080] text-white' : 'bg-white border border-slate-200 text-slate-400'}`}
+                      >
+                        Man
+                      </button>
+                    </div>
                   </div>
-
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                      Vazão Unitária
-                      {calcMode === 'manual' && (
-                        <i
-                          className="fa-solid fa-circle-info text-indigo-400 cursor-pointer hover:text-indigo-600 transition-colors text-[11px]"
-                          onClick={() => {
-                            setShowVazaoModal(!showVazaoModal);
-                            setShowDiversificacaoModal(false);
+                  <div className="space-y-3 mt-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-500">Total Clientes</span>
+                      {calcMode === 'auto' ? (
+                        <span className="text-sm font-black text-[#004080]">{currentCalc.totalClients}</span>
+                      ) : (
+                        <input
+                          type="number"
+                          className="w-16 bg-white border border-slate-200 rounded p-1 text-xs font-black text-right outline-none focus:ring-1 focus:ring-indigo-500"
+                          value={manualCalc.totalClients}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setManualCalc(prev => ({ ...prev, totalClients: val, diversification: getDiversificationFactor(val) }));
                           }}
-                          title="Clique para ver a tabela"
                         />
                       )}
-                    </span>
-                    {calcMode === 'auto' ? (
-                      <span className="text-sm font-black text-[#004080]">{currentCalc.unitFlow.toFixed(2)}</span>
-                    ) : (
-                      <input
-                        type="number"
-                        step="0.001"
-                        className="w-16 bg-white border border-slate-200 rounded p-1 text-xs font-black text-right outline-none focus:ring-1 focus:ring-indigo-500"
-                        value={manualCalc.unitFlow}
-                        onChange={(e) => setManualCalc(prev => ({ ...prev, unitFlow: Number(e.target.value) }))}
-                      />
-                    )}
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500">F. Penetração</span>
-                    {calcMode === 'auto' ? (
-                      <span className="text-sm font-black text-[#004080]">{currentCalc.penetration}</span>
-                    ) : (
-                      <input
-                        type="number"
-                        step="0.1"
-                        className="w-16 bg-white border border-slate-200 rounded p-1 text-xs font-black text-right outline-none focus:ring-1 focus:ring-indigo-500"
-                        value={manualCalc.penetration}
-                        onChange={(e) => setManualCalc(prev => ({ ...prev, penetration: Number(e.target.value) }))}
-                      />
-                    )}
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                      F. Diversificação
-                      {calcMode === 'manual' && (
-                        <i
-                          className="fa-solid fa-circle-info text-emerald-400 cursor-pointer hover:text-emerald-600 transition-colors text-[11px]"
-                          onClick={() => {
-                            setShowDiversificacaoModal(!showDiversificacaoModal);
-                            setShowVazaoModal(false);
-                          }}
-                          title="Tabela de Diversificação"
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                        Vazão Unitária
+                        {calcMode === 'manual' && (
+                          <i
+                            className="fa-solid fa-circle-info text-indigo-400 cursor-pointer hover:text-indigo-600 transition-colors text-[11px]"
+                            onClick={() => {
+                              setShowVazaoModal(!showVazaoModal);
+                              setShowDiversificacaoModal(false);
+                            }}
+                            title="Clique para ver a tabela"
+                          />
+                        )}
+                      </span>
+                      {calcMode === 'auto' ? (
+                        <span className="text-sm font-black text-[#004080]">{currentCalc.unitFlow.toFixed(2)}</span>
+                      ) : (
+                        <input
+                          type="number"
+                          step="0.001"
+                          className="w-16 bg-white border border-slate-200 rounded p-1 text-xs font-black text-right outline-none focus:ring-1 focus:ring-indigo-500"
+                          value={manualCalc.unitFlow}
+                          onChange={(e) => setManualCalc(prev => ({ ...prev, unitFlow: Number(e.target.value) }))}
                         />
                       )}
-                    </span>
-                    {calcMode === 'auto' ? (
-                      <span className="text-sm font-black text-[#004080]">{currentCalc.diversification.toFixed(2)}</span>
-                    ) : (
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="w-16 bg-white border border-slate-200 rounded p-1 text-xs font-black text-right outline-none focus:ring-1 focus:ring-indigo-500"
-                        value={manualCalc.diversification}
-                        onChange={(e) => setManualCalc(prev => ({ ...prev, diversification: Number(e.target.value) }))}
-                      />
-                    )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-500">F. Penetração</span>
+                      {calcMode === 'auto' ? (
+                        <span className="text-sm font-black text-[#004080]">{currentCalc.penetration}</span>
+                      ) : (
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-16 bg-white border border-slate-200 rounded p-1 text-xs font-black text-right outline-none focus:ring-1 focus:ring-indigo-500"
+                          value={manualCalc.penetration}
+                          onChange={(e) => setManualCalc(prev => ({ ...prev, penetration: Number(e.target.value) }))}
+                        />
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                        F. Diversificação
+                        {calcMode === 'manual' && (
+                          <i
+                            className="fa-solid fa-circle-info text-emerald-400 cursor-pointer hover:text-emerald-600 transition-colors text-[11px]"
+                            onClick={() => {
+                              setShowDiversificacaoModal(!showDiversificacaoModal);
+                              setShowVazaoModal(false);
+                            }}
+                            title="Tabela de Diversificação"
+                          />
+                        )}
+                      </span>
+                      {calcMode === 'auto' ? (
+                        <span className="text-sm font-black text-[#004080]">{currentCalc.diversification.toFixed(2)}</span>
+                      ) : (
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-16 bg-white border border-slate-200 rounded p-1 text-xs font-black text-right outline-none focus:ring-1 focus:ring-indigo-500"
+                          value={manualCalc.diversification}
+                          onChange={(e) => setManualCalc(prev => ({ ...prev, diversification: Number(e.target.value) }))}
+                        />
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center border-t border-slate-200 pt-3 mt-1">
+                      <span className="text-xs font-black text-slate-700">Vazão Total</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg font-black text-orange-600">
+                          {currentCalc.totalFlow.toFixed(3).replace('.', ',')} <span className="text-[10px] lowercase font-bold text-slate-400">m³/h</span>
+                        </span>
+                        {!readOnly && (
+                          <button
+                            onClick={() => calcMode === 'auto' ? handleApplyAutoCalc() : handleApplyManualCalc()}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-1 active:scale-95"
+                            title="Aplicar vazão calculada aos dados do estudo"
+                          >
+                            <i className="fa-solid fa-check-double"></i> Aplicar
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-
-                  <div className="flex justify-between items-center border-t border-slate-200 pt-3 mt-1">
-                    <span className="text-xs font-black text-slate-700">Vazão Total (m³/h)</span>
-                    <span className="text-lg font-black text-orange-600">
-                      {currentCalc.totalFlow.toFixed(3).replace('.', ',')}
-                    </span>
-                  </div>
+                  <p className="text-[9px] text-slate-400 italic leading-tight px-2">
+                    *Sempre consultar a Norma para os fatores necessários para a diversificação, pressão mínima e perda de carga admissível.
+                  </p>
                 </div>
-
-                <p className="text-[9px] text-slate-400 italic leading-tight px-2">
-                  *Sempre consultar a Norma para os fatores necessários para a diversificação, pressão mínima e perda de carga admissível.
-                </p>
               </div>
               <div className="flex justify-between items-center mb-4 text-xs font-black text-[#004080] uppercase">
                 Dimensionar Regulador?
@@ -2321,13 +2120,12 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               </div>
               <div className={`space-y-2 transition-all duration-300 ${!data.regSizingActive ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-indigo-700">Vazão</span>
+                  <span className="text-[10px] font-bold text-indigo-700">Vazão (m³/h)</span>
                   <input
                     type="text"
                     value={data.regSizingFlow || ''}
                     onChange={(e) => onUpdateData && handleUpdateData({ ...data, regSizingFlow: e.target.value })}
                     disabled={readOnly || !data.regSizingActive}
-                    placeholder="m³/h"
                     className="w-20 p-1 bg-white border border-indigo-200 rounded text-xs text-right"
                   />
                 </div>
@@ -2365,232 +2163,224 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   />
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-indigo-700">Vazão Futura</span>
+                  <span className="text-[10px] font-bold text-indigo-700">Vazão Futura (m³/h)</span>
                   <input
                     type="text"
                     value={data.regSizingFutureFlow || ''}
                     onChange={(e) => onUpdateData && handleUpdateData({ ...data, regSizingFutureFlow: e.target.value })}
                     disabled={readOnly || !data.regSizingActive}
-                    placeholder="m³/h"
                     className="w-20 p-1 bg-white border border-indigo-200 rounded text-xs text-right"
                   />
                 </div>
               </div>
             </div>
           </div>
-        </div>
-
-        <div className="flex flex-col md:flex-row gap-6 items-center pt-6 border-t border-slate-100">
-          {/* LEFT: Standardized Conditions (Grouped by Blocks) */}
-          <div className="flex-1 space-y-2">
-            <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080] mb-2 text-center md:text-left">Condições Padronizadas</h5>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                type="text"
-                placeholder="Filtrar condições..."
-                value={standardConditionsFilter}
-                onChange={(e) => setStandardConditionsFilter(e.target.value)}
-                className="flex-1 px-3 py-1.5 text-[10px] border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400"
-              />
-              {standardConditionsFilter && (
-                <button
-                  onClick={() => setStandardConditionsFilter('')}
-                  className="text-[9px] text-slate-400 hover:text-slate-600 px-2"
-                  title="Limpar filtro"
-                >
-                  <i className="fa-solid fa-times"></i>
-                </button>
-              )}
-            </div>
-            <div className="h-44 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-medium leading-relaxed custom-scrollbar">
-              <div className="space-y-2">
-                {standardConditionsFilter && filteredStandardItems.length > 0 ? (
-                  <div className="text-[9px] text-slate-500 mb-2 px-1">{filteredStandardItems.length} item(s) encontrado(s)</div>
-                ) : null}
-                {standardConditionsFilter ? (
-                  filteredStandardItems.length === 0 ? (
-                    <div className="p-4 text-center text-slate-400 italic">Nenhum item encontrado</div>
-                  ) : (
-                    filteredStandardItems.map((item, idx) => (
-                      <div
-                        key={idx}
-                        onDoubleClick={() => !readOnly && handleAddCondition(item)}
-                        className="p-2 rounded-lg hover:bg-white hover:border-slate-200 cursor-copy text-slate-500 border border-transparent"
-                        title="Clique duplo para adicionar"
-                      >
-                        <span className="text-[9px]">• {item}</span>
-                      </div>
-                    ))
-                  )
-                ) : availableBlocks.length === 0 ? (
-                  <div className="p-4 text-center text-slate-400 italic">Nenhuma condição padrão disponível.</div>
-                ) : (
-                  availableBlocks.map(block => {
-                    const isExpanded = expandedBlocks.includes(block.id);
-                    return (
-                      <div key={block.id} className="space-y-1">
+          <div className="flex flex-col md:flex-row gap-6 items-center pt-6 border-t border-slate-100">
+            {/* LEFT: Standardized Conditions (Grouped by Blocks) */}
+            <div className="flex-1 space-y-2">
+              <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080] mb-2 text-center md:text-left">Condições Padronizadas</h5>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  placeholder="Filtrar condições..."
+                  value={standardConditionsFilter}
+                  onChange={(e) => setStandardConditionsFilter(e.target.value)}
+                  className="flex-1 px-3 py-1.5 text-[10px] border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400"
+                />
+                {standardConditionsFilter && (
+                  <button
+                    onClick={() => setStandardConditionsFilter('')}
+                    className="text-[9px] text-slate-400 hover:text-slate-600 px-2"
+                    title="Limpar filtro"
+                  >
+                    <i className="fa-solid fa-times"></i>
+                  </button>
+                )}
+              </div>
+              <div className="h-44 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-medium leading-relaxed custom-scrollbar">
+                <div className="space-y-2">
+                  {standardConditionsFilter && filteredStandardItems.length > 0 ? (
+                    <div className="text-[9px] text-slate-500 mb-2 px-1">{filteredStandardItems.length} item(s) encontrado(s)</div>
+                  ) : null}
+                  {standardConditionsFilter ? (
+                    filteredStandardItems.length === 0 ? (
+                      <div className="p-4 text-center text-slate-400 italic">Nenhum item encontrado</div>
+                    ) : (
+                      filteredStandardItems.map((item, idx) => (
                         <div
-                          onClick={() => {
-                            if (block.id === 'PrevRevision' && block.itens.length === 0) {
-                              showAlert('Não há registro de estudo anterior para este código ou o estudo selecionado não possui observações.', 'Sem Estudo Anterior', 'warning');
-                              return;
-                            }
-                            setSelectedStandardized(block.id);
-                            toggleBlock(block.id);
-                          }}
-                          onDoubleClick={() => {
-                            if (block.id === 'PrevRevision' && block.itens.length === 0) {
-                              showAlert('Não há registro de estudo anterior para este código ou o estudo selecionado não possui observações.', 'Sem Estudo Anterior', 'warning');
-                              return;
-                            }
-                            !readOnly && handleAddBlock(block.itens);
-                          }}
-                          className={`p-2 rounded-lg cursor-pointer transition-colors border flex items-center gap-2 ${selectedStandardized === block.id ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 hover:bg-slate-200 text-[#004080] border-slate-200'}`}
+                          key={idx}
+                          onDoubleClick={() => !readOnly && handleAddCondition(item)}
+                          className="p-2 rounded-lg hover:bg-white hover:border-slate-200 cursor-copy text-slate-500 border border-transparent"
+                          title="Clique duplo para adicionar"
                         >
-                          <i className={`fa-solid ${isExpanded ? 'fa-chevron-down' : 'fa-chevron-right'} text-[8px] transition-transform`}></i>
-                          <div className="flex-grow flex justify-between items-center group">
-                            <span className="font-black uppercase tracking-tight">{block.descricao}</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (block.id === 'PrevRevision' && block.itens.length === 0) {
-                                  showAlert('Não há registro de estudo anterior para este código ou o estudo selecionado não possui observações.', 'Sem Estudo Anterior', 'warning');
-                                  return;
-                                }
-                                !readOnly && handleAddBlock(block.itens);
-                              }}
-                              className={`text-[9px] px-1.5 rounded bg-white font-black hover:scale-110 active:scale-95 transition-all shadow-sm ${selectedStandardized === block.id ? 'text-indigo-600' : 'text-[#004080]'}`}
-                              title="Incluir todo o bloco"
-                            >
-                              INCLUIR <i className="fa-solid fa-plus-circle ml-1"></i>
-                            </button>
-                          </div>
+                          <span className="text-[9px]">• {item}</span>
                         </div>
-                        {isExpanded && (
-                          <div className="pl-6 space-y-1 animate-in slide-in-from-top-1 duration-200">
-                            {block.itens.map((item, idx) => {
-                              const isAdded = responseObsList.includes(item);
-                              return (
-                                <div
-                                  key={idx}
-                                  onDoubleClick={() => !readOnly && !isAdded && handleAddCondition(item)}
-                                  className={`p-2 rounded-lg text-[9px] transition-colors border border-transparent ${isAdded ? 'opacity-40 line-through select-none' : 'hover:bg-white hover:border-slate-200 cursor-copy text-slate-500 italic'}`}
-                                  title={isAdded ? "Já adicionado" : "Clique duplo para adicionar individualmente"}
-                                >
-                                  • {item}
-                                </div>
-                              );
-                            })}
+                      ))
+                    )
+                  ) : availableBlocks.length === 0 ? (
+                    <div className="p-4 text-center text-slate-400 italic">Nenhuma condição padrão disponível.</div>
+                  ) : (
+                    availableBlocks.map(block => {
+                      const isExpanded = expandedBlocks.includes(block.id);
+                      return (
+                        <div key={block.id} className="space-y-1">
+                          <div
+                            onClick={() => {
+                              if (block.id === 'PrevRevision' && block.itens.length === 0) {
+                                showAlert('Não há registro de estudo anterior para este código ou o estudo selecionado não possui observações.', 'Sem Estudo Anterior', 'warning');
+                                return;
+                              }
+                              setSelectedStandardized(block.id);
+                              toggleBlock(block.id);
+                            }}
+                            onDoubleClick={() => {
+                              if (block.id === 'PrevRevision' && block.itens.length === 0) {
+                                showAlert('Não há registro de estudo anterior para este código ou o estudo selecionado não possui observações.', 'Sem Estudo Anterior', 'warning');
+                                return;
+                              }
+                              !readOnly && handleAddBlock(block.itens);
+                            }}
+                            className={`p-2 rounded-lg cursor-pointer transition-colors border flex items-center gap-2 ${selectedStandardized === block.id ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 hover:bg-slate-200 text-[#004080] border-slate-200'}`}
+                          >
+                            <i className={`fa-solid ${isExpanded ? 'fa-chevron-down' : 'fa-chevron-right'} text-[8px] transition-transform`}></i>
+                            <div className="flex-grow flex justify-between items-center group">
+                              <span className="font-black uppercase tracking-tight">{block.descricao}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (block.id === 'PrevRevision' && block.itens.length === 0) {
+                                    showAlert('Não há registro de estudo anterior para este código ou o estudo selecionado não possui observações.', 'Sem Estudo Anterior', 'warning');
+                                    return;
+                                  }
+                                  !readOnly && handleAddBlock(block.itens);
+                                }}
+                                className={`text-[9px] px-1.5 rounded bg-white font-black hover:scale-110 active:scale-95 transition-all shadow-sm ${selectedStandardized === block.id ? 'text-indigo-600' : 'text-[#004080]'}`}
+                                title="Incluir todo o bloco"
+                              >
+                                INCLUIR <i className="fa-solid fa-plus-circle ml-1"></i>
+                              </button>
+                            </div>
+                          </div>
+                          {isExpanded && (
+                            <div className="pl-6 space-y-1 animate-in slide-in-from-top-1 duration-200">
+                              {block.itens.map((item, idx) => {
+                                const isAdded = responseObsList.includes(item);
+                                return (
+                                  <div
+                                    key={idx}
+                                    onDoubleClick={() => !readOnly && !isAdded && handleAddCondition(item)}
+                                    className={`p-2 rounded-lg text-[9px] transition-colors border border-transparent ${isAdded ? 'opacity-40 line-through select-none' : 'hover:bg-white hover:border-slate-200 cursor-copy text-slate-500 italic'}`}
+                                    title={isAdded ? "Já adicionado" : "Clique duplo para adicionar individualmente"}
+                                  >
+                                    • {item}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* MIDDLE: Buttons */}
+            <div className="flex flex-row md:flex-col gap-2 justify-center">
+              <button
+                onClick={() => {
+                  const block = availableBlocks.find(b => b.id === selectedStandardized);
+                  if (block) handleAddBlock(block.itens);
+                }}
+                disabled={readOnly || !selectedStandardized}
+                className="bg-[#004080] text-white px-3 py-1 rounded-md text-[10px] font-black hover:bg-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-tighter"
+              >
+                Adicionar <i className="fa-solid fa-angles-right ml-1"></i>
+              </button>
+              <button
+                onClick={() => handleRemoveCondition()}
+                disabled={readOnly || !selectedResponseObservation}
+                className="bg-white border border-slate-200 text-[#004080] px-3 py-1 rounded-md text-[10px] font-black hover:bg-slate-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-tighter"
+              >
+                <i className="fa-solid fa-angles-left mr-1"></i> Remover
+              </button>
+            </div>
+            {/* RIGHT: Response Observations */}
+            <div className="flex-1 space-y-2">
+              <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080] mb-2 text-center md:text-left">Observações Resposta</h5>
+              {!readOnly && (
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    placeholder="Nova observação personalizada..."
+                    className="flex-1 text-[10px] p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
+                    value={newCondInput}
+                    onChange={(e) => setNewCondInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddCustomCondition()}
+                  />
+                  <button
+                    onClick={handleAddCustomCondition}
+                    className="px-3 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 border border-indigo-100 transition-colors"
+                  >
+                    <i className="fa-solid fa-plus text-[10px]"></i>
+                  </button>
+                </div>
+              )}
+              <div className="h-48 flex flex-col bg-slate-50 border border-slate-200 rounded-xl p-2 shadow-inner">
+                <div className="flex-1 overflow-y-auto space-y-1 mb-1 pr-1 custom-scrollbar">
+                  {responseObsList.length === 0 ? (
+                    <div className="text-[10px] text-slate-400 italic p-4 text-center">Nenhuma condição adicionada. Use os botões centrais, clique duas vezes ou crie uma personalizada acima.</div>
+                  ) : (
+                    responseObsList.map((obs, idx) => (
+                      <div
+                        key={`${obs}-${idx}`}
+                        onClick={() => !readOnly && setSelectedResponseObservation(obs)}
+                        onDoubleClick={() => !readOnly && handleRemoveCondition(obs)}
+                        className={`p-2 rounded-lg transition-colors select-none relative group ${selectedResponseObservation === obs ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-slate-200 text-slate-700 font-medium'}`}
+                      >
+                        {editingObsIdx === idx ? (
+                          <input
+                            autoFocus
+                            className="w-full bg-white text-slate-800 p-1 rounded border border-indigo-300 outline-none text-[10px]"
+                            value={editingObsValue}
+                            onChange={(e) => setEditingObsValue(e.target.value)}
+                            onBlur={handleSaveEdit}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit();
+                              if (e.key === 'Escape') setEditingObsIdx(null);
+                            }}
+                          />
+                        ) : (
+                          <div className="flex justify-between items-center">
+                            <span className="flex-grow">{obs}</span>
+                            {!readOnly && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleStartEditing(idx, obs); }}
+                                className={`opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-black/10 transition-all ${selectedResponseObservation === obs ? 'text-white' : 'text-indigo-500'}`}
+                                title="Editar observação"
+                              >
+                                <i className="fa-solid fa-pen-to-square text-[8px]"></i>
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* MIDDLE: Buttons */}
-          <div className="flex flex-row md:flex-col gap-2 justify-center">
-            <button
-              onClick={() => {
-                const block = availableBlocks.find(b => b.id === selectedStandardized);
-                if (block) handleAddBlock(block.itens);
-              }}
-              disabled={readOnly || !selectedStandardized}
-              className="bg-[#004080] text-white px-3 py-1 rounded-md text-[10px] font-black hover:bg-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-tighter"
-            >
-              Adicionar <i className="fa-solid fa-angles-right ml-1"></i>
-            </button>
-            <button
-              onClick={() => handleRemoveCondition()}
-              disabled={readOnly || !selectedResponseObservation}
-              className="bg-white border border-slate-200 text-[#004080] px-3 py-1 rounded-md text-[10px] font-black hover:bg-slate-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-tighter"
-            >
-              <i className="fa-solid fa-angles-left mr-1"></i> Remover
-            </button>
-          </div>
-
-          {/* RIGHT: Response Observations */}
-          <div className="flex-1 space-y-2">
-            <h5 className="text-[10px] uppercase font-black tracking-widest text-[#004080] mb-2 text-center md:text-left">Observações Resposta</h5>
-
-            {!readOnly && (
-              <div className="flex gap-1">
-                <input
-                  type="text"
-                  placeholder="Nova observação personalizada..."
-                  className="flex-1 text-[10px] p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
-                  value={newCondInput}
-                  onChange={(e) => setNewCondInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddCustomCondition()}
-                />
-                <button
-                  onClick={handleAddCustomCondition}
-                  className="px-3 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 border border-indigo-100 transition-colors"
-                >
-                  <i className="fa-solid fa-plus text-[10px]"></i>
-                </button>
-              </div>
-            )}
-
-            <div className="h-48 flex flex-col bg-slate-50 border border-slate-200 rounded-xl p-2 shadow-inner">
-              <div className="flex-1 overflow-y-auto space-y-1 mb-1 pr-1 custom-scrollbar">
-                {responseObsList.length === 0 ? (
-                  <div className="text-[10px] text-slate-400 italic p-4 text-center">Nenhuma condição adicionada. Use os botões centrais, clique duas vezes ou crie uma personalizada acima.</div>
-                ) : (
-                  responseObsList.map((obs, idx) => (
-                    <div
-                      key={`${obs}-${idx}`}
-                      onClick={() => !readOnly && setSelectedResponseObservation(obs)}
-                      onDoubleClick={() => !readOnly && handleRemoveCondition(obs)}
-                      className={`p-2 rounded-lg transition-colors select-none relative group ${selectedResponseObservation === obs ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-slate-200 text-slate-700 font-medium'}`}
-                    >
-                      {editingObsIdx === idx ? (
-                        <input
-                          autoFocus
-                          className="w-full bg-white text-slate-800 p-1 rounded border border-indigo-300 outline-none text-[10px]"
-                          value={editingObsValue}
-                          onChange={(e) => setEditingObsValue(e.target.value)}
-                          onBlur={handleSaveEdit}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEdit();
-                            if (e.key === 'Escape') setEditingObsIdx(null);
-                          }}
-                        />
-                      ) : (
-                        <div className="flex justify-between items-center">
-                          <span className="flex-grow">{obs}</span>
-                          {!readOnly && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleStartEditing(idx, obs); }}
-                              className={`opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-black/10 transition-all ${selectedResponseObservation === obs ? 'text-white' : 'text-indigo-500'}`}
-                              title="Editar observação"
-                            >
-                              <i className="fa-solid fa-pen-to-square text-[8px]"></i>
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </>
     );
   };
-
   const renderTechSubTab2 = () => {
     return (
       <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm space-y-6">
         <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest flex items-center gap-3 border-b border-slate-100 pb-4">
           Passos Resposta
         </h4>
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="p-5 border border-slate-200 rounded-2xl relative">
             <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos Geogas</span>
@@ -2614,7 +2404,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa Geogas</li>
             </ul>
           </div>
-
           <div className="p-5 border border-slate-200 rounded-2xl relative">
             <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos QGis</span>
             <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
@@ -2626,7 +2415,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa QGis</li>
             </ul>
           </div>
-
           <div className="p-5 border border-slate-200 rounded-2xl relative bg-indigo-50/50">
             <span className="absolute -top-3 left-4 bg-indigo-50/50 px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Envio</span>
             <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-700">
@@ -2648,7 +2436,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               >
                 <i className="fa-solid fa-paper-plane"></i> Justificar Envio Antes do Controle
               </li>
-
               <li
                 onClick={() => setShowQCModal(true)}
                 className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${data.qcData ||
@@ -2665,7 +2452,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </ul>
           </div>
         </div>
-
         <div className="flex-grow flex flex-col min-h-[300px]">
           <div className="flex justify-between items-center mb-2">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Copiar Código:</span>
@@ -2700,7 +2486,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       </div>
     );
   };
-
   const renderTabContent = () => {
     switch (activeTab) {
       case 0: // Análise Técnica
@@ -2717,7 +2502,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </button>
               ))}
             </div>
-
             <div className="flex-grow overflow-y-auto custom-scrollbar px-2 pb-12 mb-4">
               {activeTechSubTab === 0 && renderTechSubTab0()}
               {activeTechSubTab === 1 && renderTechSubTab1()}
@@ -2756,7 +2540,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       default: return null;
     }
   };
-
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-slate-50 font-sans animate-in fade-in duration-300 overflow-hidden">
       {/* Overlay de Resume Prompt (Somente ao interagir pausado) */}
@@ -2790,7 +2573,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         </div>
       )}
       <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileChange} />
-
       {/* HISTORY MODAL */}
       {showHistoryModal && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/70 backdrop-blur-md">
@@ -2806,7 +2588,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 <i className="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
-
             <div className="flex-grow overflow-y-auto space-y-4 pr-3 custom-scrollbar">
               {revisionHistory.length === 0 ? (
                 <div className="text-center py-24 flex flex-col items-center">
@@ -2852,7 +2633,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
         </div>
       )}
-
       {/* PREVIEW MODAL */}
       {previewStudy && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-6">
@@ -2889,19 +2669,16 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   </div>
                 </div>
               </div>
-
               <div className="space-y-6">
                 <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Dados Técnicos da Versão</h4>
                 {renderCargaTable(previewStudy)}
               </div>
-
               <div className="space-y-6">
                 <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Observações da Época</h4>
                 <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 text-xs italic text-slate-500 leading-relaxed">
                   {previewStudy.comments || "Sem observações registradas nesta versão."}
                 </div>
               </div>
-
               {/* Points de Interligação */}
               <div className="space-y-6">
                 <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Ponto(s) de Interligação(ões)</h4>
@@ -2934,7 +2711,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   <p className="text-xs italic text-slate-400">Nenhum ponto de interligação registrado nesta versão.</p>
                 )}
               </div>
-
               {/* Extensões Redes Planificadas */}
               <div className="space-y-6">
                 <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest border-b pb-2">Extensões Redes Planificadas</h4>
@@ -2982,7 +2758,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
         </div>
       )}
-
       {/* FILE PREVIEW MODAL */}
       {filePreview && (
         <div className="fixed inset-0 z-[350] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-6">
@@ -3016,7 +2791,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
         </div>
       )}
-
       {/* MODAL SELECIONAR PDF */}
       {showPdfSelectModal && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
@@ -3026,20 +2800,19 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </div>
             <h3 className="text-lg font-black text-[#004080] text-center uppercase tracking-tight mb-2">Selecionar Arquivo(s) PDF</h3>
             <p className="text-slate-500 text-center text-xs mb-6">Escolha um ou mais arquivos para importar para a pasta Resposta</p>
-
             <div className="space-y-2 max-h-60 overflow-y-auto mb-6">
               {pdfFiles.map((file, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleTogglePdfFile(idx)}
                   className={`w-full text-left p-3 rounded-lg border transition-all flex items-center gap-3 ${selectedPdfFiles.has(idx)
-                      ? 'border-indigo-500 bg-indigo-50'
-                      : 'border-slate-200 hover:border-indigo-500'
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-slate-200 hover:border-indigo-500'
                     }`}
                 >
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${selectedPdfFiles.has(idx)
-                      ? 'bg-indigo-500 border-indigo-500'
-                      : 'border-slate-300'
+                    ? 'bg-indigo-500 border-indigo-500'
+                    : 'border-slate-300'
                     }`}>
                     {selectedPdfFiles.has(idx) && (
                       <i className="fa-solid fa-check text-white text-[10px]"></i>
@@ -3050,7 +2823,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </button>
               ))}
             </div>
-
             <div className="flex gap-3">
               <button
                 onClick={() => setShowPdfSelectModal(false)}
@@ -3069,7 +2841,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
         </div>
       )}
-
       {/* MODAL CANCELAR */}
       {showCancelModal && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
@@ -3086,7 +2857,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
         </div>
       )}
-
       {/* MODAL CONCLUIR */}
       {showFinishModal && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
@@ -3104,13 +2874,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
         </div>
       )}
-
       {/* HEADER FIXO */}
       <div className="bg-white px-6 py-4 flex items-center border-b border-slate-200 shadow-sm z-10">
         <button onClick={onBack} className="py-2.5 px-2.5 rounded-lg bg-slate-50 text-slate-400 hover:text-[#004080] hover:bg-white border border-slate-100 flex items-center justify-center transition-all active:scale-95 shadow-sm">
           <i className="fa-solid fa-arrow-left text-xs"></i>
         </button>
-
         <div className="ml-8 flex items-center gap-6">
           <div>
             <div className="flex items-center gap-3">
@@ -3120,9 +2888,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Centro de Engenharia e Planejamento de Rede</p>
           </div>
         </div>
-
         <div className="flex-grow"></div>
-
         {!readOnly && (
           <div className="flex items-center gap-12 pr-12 border-r border-slate-100 mr-12">
             <div className="text-right flex flex-col items-end">
@@ -3145,14 +2911,12 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </div>
           </div>
         )}
-
         <div className="flex items-center gap-3">
           <div className="py-2 px-2 bg-slate-100 rounded-lg text-slate-400 hover:text-[#004080] border border-slate-100 flex items-center justify-center transition-all font-black shadow-sm">
             ?
           </div>
         </div>
       </div>
-
       <div className="flex-grow flex flex-col md:flex-row overflow-hidden bg-slate-50/20">
         {/* Sidebar Lateral - Compacted Width and Padding */}
         <div className="w-full md:w-80 bg-white border-r border-slate-200 p-6 flex flex-col gap-6 shrink-0 shadow-sm">
@@ -3173,7 +2937,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               </button>
             ))}
           </div>
-
           <div className="flex-grow flex flex-col min-h-0">
             <h5 className="px-3 text-[9px] font-black text-slate-300 uppercase tracking-widest mb-4 flex items-center gap-2">
               <i className="fa-solid fa-folder-open text-[8px]"></i> Pastas
@@ -3193,9 +2956,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                       {t}
                     </div>
                   </button>
-
                   <div className="flex items-center gap-1 pr-2">
-
                     {activeFolder === t && !readOnly && (
                       <button onClick={(e) => { e.stopPropagation(); handleAttachFile(); }} className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-orange-500 shadow-sm hover:scale-110 border border-slate-100 transition-all active:scale-95" title="Anexar arquivo">
                         <i className="fa-solid fa-plus-circle text-[10px]"></i>
@@ -3206,7 +2967,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               ))}
             </div>
           </div>
-
           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 shadow-inner">
             <div className="flex items-center justify-between mb-3">
               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Arquivos em: <span className="text-indigo-600">{activeFolder}</span></span>
@@ -3245,7 +3005,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                       <i className="fa-solid fa-download text-[8px]"></i>
                       Baixar
                     </button>
-
                     <button
                       onClick={async () => {
                         if (f.isVirtual && f.virtualType === 'official-form') {
@@ -3273,7 +3032,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </div>
           </div>
         </div>
-
         {/* Área Central de Trabalho */}
         <div
           className="flex-grow p-10 overflow-hidden flex flex-col min-w-0 relative"
@@ -3283,7 +3041,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               const target = e.target as HTMLElement;
               const isDownloadBtn = target.closest('button')?.innerText.toLowerCase().includes('baixar');
               const isViewBtn = target.closest('button')?.title.toLowerCase().includes('visualizar');
-
               if (!isDownloadBtn && !isViewBtn) {
                 e.stopPropagation();
                 setShowResumePrompt(true);
@@ -3300,7 +3057,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           {renderTabContent()}
         </div>
       </div>
-
       {/* RODAPÉ DE CONTROLE PRINCIPAL */}
       <div className="bg-white border-t border-slate-200 px-10 py-5 flex items-center justify-between shadow-2xl z-20">
         {!readOnly ? (
@@ -3313,7 +3069,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 <i className={`fa-solid ${isPaused ? 'fa-play' : 'fa-pause'} text-sm`}></i>
                 {isPaused ? 'Retomar Cronômetro' : 'Pausar Cronômetro'}
               </button>
-
               <button
                 onClick={handleOpenHoldModal}
                 className="px-8 py-4 bg-orange-50 text-orange-600 border border-orange-100 rounded-[1.5rem] font-black uppercase text-[11px] tracking-widest hover:bg-orange-500 hover:text-white transition-all active:scale-95 shadow-lg flex items-center gap-3"
@@ -3321,7 +3076,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 <i className="fa-solid fa-circle-question text-sm"></i>
                 Pedir Informação
               </button>
-
               <button
                 onClick={() => setShowCancelModal(true)}
                 className="px-8 py-4 bg-white text-red-500 border border-red-100 rounded-[1.5rem] font-black uppercase text-[11px] tracking-widest hover:bg-red-50 transition-all active:scale-95 shadow-lg flex items-center gap-3"
@@ -3330,7 +3084,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 Cancelar
               </button>
             </div>
-
             <button
               onClick={handleInitiateFinish}
               className="px-20 py-5 bg-[#004080] text-white rounded-[2rem] font-black uppercase text-xs tracking-[0.1em] shadow-2xl shadow-blue-100 hover:bg-indigo-600 transition-all active:translate-y-0.5 flex items-center gap-5"
@@ -3372,7 +3125,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             )}
           </div>
         )}
-
         <div className="hidden lg:block text-right">
           <p className="text-[9px] text-slate-300 font-black uppercase tracking-[0.1em] leading-none mb-1.5"></p>
           <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest opacity-50"></p>
@@ -3386,7 +3138,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           onClose={() => setBrowsingRevision(null)}
         />
       )}
-
       {/* ── Variable Filler Modal ── */}
       {fillingModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-200">
@@ -3402,13 +3153,11 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 </span>
               )}
             </div>
-
             <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 italic text-slate-600 text-[11px] leading-relaxed relative">
                 <i className="fa-solid fa-quote-left absolute -top-2 -left-1 text-slate-200 text-xl"></i>
                 "{fillingModal.currentItem}"
               </div>
-
               <div className="space-y-4">
                 {fillingModal.vars.map(v => (
                   <div key={v} className="space-y-1.5">
@@ -3433,7 +3182,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 ))}
               </div>
             </div>
-
             <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
               <button
                 onClick={() => setFillingModal(null)}
@@ -3516,9 +3264,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         />
       )}
       {/* Vazão Unitária Modal (Removed as it is now a popover) */}
-
       {/* Fator de Diversificação Modal (Removed as it is now a popover) */}
-
       {/* Off-screen hidden carta for background SVG/PNG export */}
       <div style={{ position: 'fixed', top: 0, left: '-9999px', width: '1200px', pointerEvents: 'none', background: 'white', zIndex: -1 }}>
         {renderCartaPaper(hiddenCartaRef)}

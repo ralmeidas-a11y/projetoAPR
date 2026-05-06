@@ -1,16 +1,13 @@
 import React from 'react';
 import { FormData, User } from '../../types/types';
-
 interface LetterModelProps {
   data: FormData;
   allUsers: User[];
   currentUser: User | null;
   reference: React.RefObject<HTMLDivElement>;
 }
-
 export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, currentUser, reference }) => {
   const docDate = data.cartaGeneratedAt || data.completedAt || new Date().toISOString();
-
   const assignedUser = allUsers.find(u => {
     const matchId = u.id === data.assignedTo;
     const matchEmail = u.email?.toLowerCase() === data.assignedTo?.toLowerCase();
@@ -18,7 +15,6 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
     const matchSAP = u.sap && data.assignedTo?.replace(/^0+/, '') === u.sap.replace(/^0+/, '');
     return matchId || matchEmail || matchGB || matchSAP;
   }) || (data.assignedTo === currentUser?.id || data.assignedTo === currentUser?.email ? currentUser : null);
-
   const toTitleCase = (str: string) => {
     if (!str || str === 'Responsável Técnico' || str === 'Empresa' || str === 'Cargo') return str;
     return str.toLowerCase().split(' ').map(word => {
@@ -26,23 +22,19 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
       return word.charAt(0).toUpperCase() + word.slice(1);
     }).join(' ');
   };
-
   const analystName = toTitleCase(assignedUser?.name || data.assignedToName || data.analystName || 'Responsável Técnico').trim();
   const analystCompany = toTitleCase(assignedUser?.company || data.analystCompany || 'Empresa').trim();
   const analystRole = toTitleCase(assignedUser?.roleDescription || data.analystRole || 'Cargo').trim();
   const analystGB = (assignedUser?.gb || data.analystGB || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
-
   const validUntilDate = (() => {
     const d = new Date(docDate);
     d.setFullYear(d.getFullYear() + 1);
     return d.toLocaleDateString('pt-BR');
   })();
-
   const formatCurrency = (value: any) => {
     if (value === undefined || value === null || isNaN(Number(value))) return '0,00';
     return Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
-
   return (
     <div
       ref={reference}
@@ -54,7 +46,6 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
           PE.05306-FO.06 Rev.01/23.11 • Resposta de Estudo de Rede
         </span>
       </div>
-
       <div className="flex justify-between items-start mb-2 ml-10">
         <div className="flex flex-col">
           <span className="text-[14px] font-black text-slate-900 tracking-tight">{data.studyNumber?.replace('PROV-', '')}</span>
@@ -64,7 +55,6 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
           <img src="/logo.png" alt="Naturgy" className="h-28 object-contain mb-1" />
         </div>
       </div>
-
       <div className="ml-10 space-y-4 flex-grow flex flex-col">
         <div className="border border-black">
           <div className="bg-slate-200 px-3 py-0.5 border-b border-black">
@@ -115,12 +105,10 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
                 </tr>
               </tbody>
             </table>
-
             <div className="mt-2 p-3 bg-slate-50 border border-black rounded shadow-inner min-h-[60px]">
               <span className="font-black uppercase text-[9px] text-slate-400 mb-1 block">Localização:</span>
               <span className="text-[11px] leading-tight whitespace-normal break-words block">{data.address || '-'}</span>
             </div>
-
             <div className="col-span-12 mt-3 border border-black">
               <table className="w-full text-center divide-y divide-black divide-x border-collapse text-[10px] font-black table-auto">
                 <thead className="bg-[#f0f0f0]">
@@ -161,51 +149,91 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
             </div>
           </div>
         </div>
+        <div className="flex gap-2 items-stretch">
+          <div className={`border border-black flex flex-col ${data.regSizingActive ? 'w-[70%]' : 'w-full'}`}>
+            <div className="bg-slate-200 px-3 py-0.5 border-b border-black">
+              <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Redes Dimensionadas:</span>
+            </div>
+            <div className="p-0 flex-grow">
+              <table className="w-full text-center border-collapse text-[8px] font-black table-auto h-full">
+                <thead className="bg-white border-b border-black">
+                  <tr className="divide-x divide-black uppercase">
+                    <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Extensão (m)</th>
+                    <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Ø (mm)</th>
+                    <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Material</th>
+                    <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Pressão</th>
+                    <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Gás</th>
+                    <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Válvulas</th>
+                  </tr>
 
-        <div className="border border-black w-[70%]">
-          <div className="bg-slate-200 px-3 py-0.5 border-b border-black">
-            <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Redes Dimensionadas:</span>
-          </div>
-          <div className="p-0">
-            <table className="w-full text-center border-collapse text-[8px] font-black table-auto">
-              <thead className="bg-white border-b border-black">
-                <tr className="divide-x divide-black uppercase">
-                  <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Extensão (m)</th>
-                  <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Ø (mm)</th>
-                  <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Material</th>
-                  <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Pressão</th>
-                  <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Gás</th>
-                  <th className="py-1 px-1 whitespace-normal break-words align-middle text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Válvulas</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-black bg-blue-50/30">
-                  <td colSpan={6} style={{ textAlign: 'center', verticalAlign: 'middle', padding: '4px 0' }} className="text-center font-black uppercase text-[7px] text-blue-700 tracking-tighter">
-                    {data.plannedExtensions?.[0]?.networkType || data.networkDescription || 'Rede Externa'}
-                  </td>
-                </tr>
-                {(data.plannedExtensions && data.plannedExtensions.length > 0) ? data.plannedExtensions.map((ext, idx) => (
-                  <tr key={idx} className="divide-x divide-black uppercase border-b border-black/10 text-center" style={{ textAlign: 'center' }}>
-                    <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.extension}</td>
-                    <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.diameter}</td>
-                    <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.material}</td>
-                    <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.pressure}</td>
-                    <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.gasType}</td>
-                    <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.valves}</td>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-black bg-blue-50/30">
+                    <td colSpan={6} style={{ textAlign: 'center', verticalAlign: 'middle', padding: '4px 0' }} className="text-center font-black uppercase text-[7px] text-blue-700 tracking-tighter">
+                      {data.plannedExtensions?.[0]?.networkType || data.networkDescription || 'Rede Externa'}
+                    </td>
                   </tr>
-                )) : (
-                  <tr className="divide-x divide-black"><td colSpan={6} className="p-2"></td></tr>
-                )}
-                {Array.from({ length: Math.max(0, 10 - (data.plannedExtensions?.length || 0)) }).map((_, i) => (
-                  <tr key={`fake-${i}`} className="divide-x divide-black">
-                    <td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+                  {(data.plannedExtensions && data.plannedExtensions.length > 0) ? data.plannedExtensions.map((ext, idx) => (
+                    <tr key={idx} className="divide-x divide-black uppercase border-b border-black/10 text-center" style={{ textAlign: 'center' }}>
+                      <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.extension}</td>
+                      <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.diameter}</td>
+                      <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.material}</td>
+                      <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.pressure}</td>
+                      <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.gasType}</td>
+                      <td className="py-2 px-1 whitespace-normal break-words" style={{ verticalAlign: 'middle', textAlign: 'center' }}>{ext.valves}</td>
+                    </tr>
+                  )) : (
+                    <tr className="divide-x divide-black"><td colSpan={6} className="p-2"></td></tr>
+                  )}
+                  {Array.from({ length: Math.max(0, 10 - (data.plannedExtensions?.length || 0)) }).map((_, i) => (
+                    <tr key={`fake-${i}`} className="divide-x divide-black">
+                      <td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td><td className="py-1">&nbsp;</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
+          {data.regSizingActive && (
+            <div className="border border-black w-[30%] flex flex-col">
+              <table className="w-full h-full text-center border-collapse text-[10px] font-black table-fixed">
+                <tbody>
+                  <tr className="bg-slate-200 border-b border-black">
+                    <td colSpan={2} className="py-1 px-1 leading-tight uppercase">ERM Distrital Projetada</td>
+                  </tr>
+                  <tr className="bg-slate-200 border-b border-black">
+                    <td colSpan={2} className="py-0.5 px-1 uppercase text-[9px]">Pressões</td>
+                  </tr>
+                  <tr className="bg-slate-200 border-b border-black divide-x divide-black uppercase">
+                    <td className="py-0.5 px-1 w-1/2">Entrada</td>
+                    <td className="py-0.5 px-1 w-1/2">Saída</td>
+                  </tr>
+                  <tr className="bg-white border-b border-black divide-x divide-black h-6 text-center">
+                    <td className="py-0.5 px-1">{data.regSizingInPress ? `${data.regSizingInPress} bar` : ''}</td>
+                    <td className="py-0.5 px-1">{data.regSizingOutPress ? `${data.regSizingOutPress} bar` : ''}</td>
+                  </tr>
+                  <tr className="bg-slate-200 border-b border-black">
+                    <td colSpan={2} className="py-0.5 px-1 uppercase text-[9px]">Vazão Inicial</td>
+                  </tr>
+                  <tr className="bg-white border-b border-black h-6 text-center">
+                    <td colSpan={2} className="py-0.5 px-1 text-blue-700">
+                      {data.regSizingFlow ? formatCurrency(data.regSizingFlow) : '0,00'} m³/h
+                    </td>
+                  </tr>
+                  <tr className="bg-slate-200 border-b border-black">
+                    <td colSpan={2} className="py-0.5 px-1 uppercase text-[9px]">Vazão Futura</td>
+                  </tr>
+                  <tr className="bg-white h-6 text-center">
+                    <td colSpan={2} className="py-0.5 px-1 text-blue-700">
+                      {data.regSizingFutureFlow ? formatCurrency(data.regSizingFutureFlow) : '0,00'} m³/h
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-
         <div className="border border-black flex h-8 items-center text-[10px] font-black">
           <div className="bg-slate-200 h-full flex items-center px-4 border-r border-black shrink-0">
             <span className="uppercase text-slate-800">Pressões Normativas:</span>
@@ -216,7 +244,6 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
             <span>Garantia: {data.responseGarantia ?? ' - '} {(data.responseUnit === 'mbar' || (data.responseCalculatedPressure || '').toString().toUpperCase().includes('BP-N') || (data.responsePressureBase || '').toString().toUpperCase().includes('BP-N')) ? 'mbar' : 'bar'}</span>
           </div>
         </div>
-
         <div className="border border-black min-h-[140px]">
           <div className="bg-slate-200 h-6 flex items-center px-3 border-b border-black">
             <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Pontos de Interligações:</span>
@@ -231,7 +258,6 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
             )}
           </div>
         </div>
-
         <div className="border border-black min-h-[200px] flex flex-col">
           <div className="bg-slate-200 h-6 flex items-center px-3 border-b border-black">
             <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Condições e Observações:</span>
@@ -245,9 +271,7 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
             ))}
           </div>
         </div>
-
         <div className="flex-grow"></div>
-
         <div className="pt-8 flex justify-around items-end">
           <div className="flex flex-col items-center">
             <div className="w-56 border-t border-black mb-1"></div>
@@ -264,7 +288,6 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
             <span className="text-[10px] font-bold text-slate-900 tracking-tighter text-center">Chefe da Análise e Planificação da Rede</span>
           </div>
         </div>
-
         <div className="pt-10 flex flex-col items-end gap-1 mt-4">
           <p className="text-[9px] font-black text-slate-900 tracking-widest text-right italic">
             {`Documento gerado pelo gb ${analystGB} ${analystName === 'Responsável Técnico' ? '' : analystName} em ${new Date(docDate).toLocaleDateString('pt-BR')} às ${new Date(docDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}

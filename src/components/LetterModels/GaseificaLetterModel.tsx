@@ -121,7 +121,7 @@ export const GaseificaLetterModel: React.FC<LetterModelProps> = ({ data, allUser
                 <span className="font-black uppercase text-[9px] text-slate-400 mb-1 block">Localização:</span>
                 <span className="text-[11px] leading-tight whitespace-normal break-words block">{data.address || '-'}</span>
               </div>
-              
+
               <div className="flex flex-col gap-1 w-[200px] shrink-0">
                 {/* Nº Clientes Residenciais */}
                 <div className="border border-black overflow-hidden bg-white">
@@ -151,7 +151,7 @@ export const GaseificaLetterModel: React.FC<LetterModelProps> = ({ data, allUser
                     <span className="text-[10px] font-black uppercase text-slate-800">Vazão Total Informada m³/h</span>
                   </div>
                   <div className="py-1 text-center text-[10px] font-black">
-                    {formatCurrency(data.vazaoSol || data.totalFlow)}
+                    {formatCurrency((Number(data.totalFlowRes) || 0) + (Number(data.totalFlowCom) || 0))}
                   </div>
                 </div>
               </div>
@@ -220,22 +220,22 @@ export const GaseificaLetterModel: React.FC<LetterModelProps> = ({ data, allUser
                 <tr className="bg-white border-b border-black divide-x divide-black h-6">
                   <td className="py-0.5 px-1 uppercase">
                     {(() => {
-                      const isBP = data.responseUnit === 'mbar' || 
-                                   ['BP-N', 'BP-P', 'BPN', 'BPP'].some(b => 
-                                     (data.responsePressureBase || '').toString().toUpperCase().includes(b) || 
-                                     (data.responseCalculatedPressure || '').toString().toUpperCase().includes(b)
-                                   );
+                      const isBP = data.responseUnit === 'mbar' ||
+                        ['BP-N', 'BP-P', 'BPN', 'BPP'].some(b =>
+                          (data.responsePressureBase || '').toString().toUpperCase().includes(b) ||
+                          (data.responseCalculatedPressure || '').toString().toUpperCase().includes(b)
+                        );
                       const unit = isBP ? 'mbar' : 'bar';
                       return (data as any).regSizingInPress ? `${(data as any).regSizingInPress} ${unit}` : '';
                     })()}
                   </td>
                   <td className="py-0.5 px-1 uppercase">
                     {(() => {
-                      const isBP = data.responseUnit === 'mbar' || 
-                                   ['BP-N', 'BP-P', 'BPN', 'BPP'].some(b => 
-                                     (data.responsePressureBase || '').toString().toUpperCase().includes(b) || 
-                                     (data.responseCalculatedPressure || '').toString().toUpperCase().includes(b)
-                                   );
+                      const isBP = data.responseUnit === 'mbar' ||
+                        ['BP-N', 'BP-P', 'BPN', 'BPP'].some(b =>
+                          (data.responsePressureBase || '').toString().toUpperCase().includes(b) ||
+                          (data.responseCalculatedPressure || '').toString().toUpperCase().includes(b)
+                        );
                       const unit = isBP ? 'mbar' : 'bar';
                       return (data as any).regSizingOutPress ? `${(data as any).regSizingOutPress} ${unit}` : '';
                     })()}
@@ -246,7 +246,7 @@ export const GaseificaLetterModel: React.FC<LetterModelProps> = ({ data, allUser
                 </tr>
                 <tr className="bg-white border-b border-black h-6">
                   <td colSpan={2} className="py-0.5 px-1 text-blue-700">
-                    {(data as any).regSizingFlow ? `${formatCurrency((data as any).regSizingFlow)} m³/h` : 'm³/h'}
+                    {formatCurrency((data as any).regSizingFlow || 0)} m³/h
                   </td>
                 </tr>
                 <tr className="bg-slate-200 border-b border-black">
@@ -254,7 +254,7 @@ export const GaseificaLetterModel: React.FC<LetterModelProps> = ({ data, allUser
                 </tr>
                 <tr className="bg-white h-6">
                   <td colSpan={2} className="py-0.5 px-1 text-blue-700">
-                    {(data as any).regSizingFutureFlow ? `${formatCurrency((data as any).regSizingFutureFlow)} m³/h` : 'm³/h'}
+                    {formatCurrency((data as any).regSizingFutureFlow || 0)} m³/h
                   </td>
                 </tr>
               </tbody>

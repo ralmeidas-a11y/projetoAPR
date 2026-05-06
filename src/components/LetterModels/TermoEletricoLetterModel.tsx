@@ -1,13 +1,11 @@
 import React from 'react';
 import { FormData, User } from '../../types/types';
-
 interface LetterModelProps {
   data: FormData;
   allUsers: User[];
   currentUser: User | null;
   reference: React.RefObject<HTMLDivElement>;
 }
-
 export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, currentUser, reference }) => {
   const docDate = data.cartaGeneratedAt || data.completedAt || new Date().toISOString();
 
@@ -18,7 +16,6 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
     const matchSAP = u.sap && data.assignedTo?.replace(/^0+/, '') === u.sap.replace(/^0+/, '');
     return matchId || matchEmail || matchGB || matchSAP;
   }) || (data.assignedTo === currentUser?.id || data.assignedTo === currentUser?.email ? currentUser : null);
-
   const toTitleCase = (str: string) => {
     if (!str || str === 'Responsável Técnico' || str === 'Empresa' || str === 'Cargo') return str;
     return str.toLowerCase().split(' ').map(word => {
@@ -26,23 +23,19 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
       return word.charAt(0).toUpperCase() + word.slice(1);
     }).join(' ');
   };
-
   const analystName = toTitleCase(assignedUser?.name || data.assignedToName || data.analystName || 'Responsável Técnico').trim();
   const analystCompany = toTitleCase(assignedUser?.company || data.analystCompany || 'Empresa').trim();
   const analystRole = toTitleCase(assignedUser?.roleDescription || data.analystRole || 'Cargo').trim();
   const analystGB = (assignedUser?.gb || data.analystGB || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
-
   const validUntilDate = (() => {
     const d = new Date(docDate);
     d.setFullYear(d.getFullYear() + 1);
     return d.toLocaleDateString('pt-BR');
   })();
-
   const formatCurrency = (value: any) => {
     if (value === undefined || value === null || isNaN(Number(value))) return '0,00';
     return Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
-
   return (
     <div
       ref={reference}
@@ -54,7 +47,6 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
           PE.05306-FO.06 Rev.01/23.11 • Resposta de Estudo de Rede
         </span>
       </div>
-
       <div className="flex justify-between items-start mb-2 ml-10">
         <div className="flex flex-col">
           <span className="text-[14px] font-black text-slate-900 tracking-tight">{data.studyNumber?.replace('PROV-', '')}</span>
@@ -64,7 +56,6 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
           <img src="/logo.png" alt="Naturgy" className="h-28 object-contain mb-1" />
         </div>
       </div>
-
       <div className="ml-10 space-y-4 flex-grow flex flex-col">
         <div className="border border-black">
           <div className="bg-slate-200 px-3 py-0.5 border-b border-black">
@@ -115,19 +106,17 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
                 </tr>
               </tbody>
             </table>
-
             <div className="mt-2 p-3 bg-slate-50 border border-black rounded shadow-inner min-h-[60px]">
               <span className="font-black uppercase text-[9px] text-slate-400 mb-1 block">Localização:</span>
               <span className="text-[11px] leading-tight whitespace-normal break-words block">{data.address || '-'}</span>
             </div>
-
             <div className="col-span-12 mt-3 border border-black">
               <table className="w-full text-center divide-y divide-black divide-x border-collapse text-[10px] font-black table-auto">
                 <thead className="bg-[#f0f0f0]">
                   <tr className="divide-x divide-black">
-                    <th className="w-1/3 py-1 text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Vazão Solicitada (m³/h)</th>
-                    <th className="w-1/3 py-1 text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Pressão Mínima Solicitada (bar)</th>
-                    <th className="py-1 text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Pressão Calculada no Cliente (bar)</th>
+                    <th className="w-1/3 py-1 text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Vazão Solicitada</th>
+                    <th className="w-1/3 py-1 text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Pressão Mínima Solicitada</th>
+                    <th className="py-1 text-center" style={{ textAlign: 'center', verticalAlign: 'middle' }}>Pressão Calculada no Cliente</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black">
@@ -164,7 +153,6 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
             </div>
           </div>
         </div>
-
         <div className="border border-black w-[70%]">
           <div className="bg-slate-200 px-3 py-0.5 border-b border-black">
             <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Redes Dimensionadas:</span>
@@ -223,7 +211,6 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
             )}
           </div>
         </div>
-
         <div className="border border-black min-h-[200px] flex flex-col">
           <div className="bg-slate-200 h-6 flex items-center px-3 border-b border-black">
             <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Condições e Observações:</span>
@@ -237,9 +224,7 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
             ))}
           </div>
         </div>
-
         <div className="flex-grow"></div>
-
         <div className="pt-8 flex justify-around items-end">
           <div className="flex flex-col items-center">
             <div className="w-56 border-t border-black mb-1"></div>
@@ -256,7 +241,6 @@ export const TermoEletricoLetterModel: React.FC<LetterModelProps> = ({ data, all
             <span className="text-[10px] font-bold text-slate-900 tracking-tighter text-center">Chefe da Análise e Planificação da Rede</span>
           </div>
         </div>
-
         <div className="pt-10 flex flex-col items-end gap-1 mt-4">
           <p className="text-[9px] font-black text-slate-900 tracking-widest text-right italic">
             {`Documento gerado pelo gb ${analystGB} ${analystName === 'Responsável Técnico' ? '' : analystName} em ${new Date(docDate).toLocaleDateString('pt-BR')} às ${new Date(docDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
