@@ -2224,8 +2224,9 @@ END
                   const checkIntRec = await intRecReq.query`SELECT 1 FROM I_INTREC WHERE COD_ESTUDO = @studyNro`;
                   if (checkIntRec.recordset.length === 0) {
                     await intRecReq.query`
-                      INSERT INTO I_INTREC (COD_ESTUDO, IDSIGEP, DATA_INI, ATIVIDADE)
-                      VALUES (@studyNro, @studyNro, @dataIni, 'Generación')
+                      DECLARE @NewObjectID int = ISNULL((SELECT MAX(OBJECTID) FROM I_INTREC), 0) + 1;
+                      INSERT INTO I_INTREC (OBJECTID, COD_ESTUDO, IDSIGEP, DATA_INI, ATIVIDADE)
+                      VALUES (@NewObjectID, @studyNro, @studyNro, @dataIni, 'Generación')
                     `;
                     console.log(`[I_INTREC] ✅ DATA_INI set for study ${effectiveNro}`);
                   }
@@ -2245,8 +2246,9 @@ END
                   const checkIntRec = await intRecReq.query`SELECT 1 FROM I_INTREC WHERE COD_ESTUDO = @studyNro`;
                   if (checkIntRec.recordset.length === 0) {
                     await intRecReq.query`
-                      INSERT INTO I_INTREC (COD_ESTUDO, IDSIGEP, DATA_TER, TEMPO, ATIVIDADE)
-                      VALUES (@studyNro, @studyNro, @dataTer, @studyTempo, 'Generación')
+                      DECLARE @NewObjectID int = ISNULL((SELECT MAX(OBJECTID) FROM I_INTREC), 0) + 1;
+                      INSERT INTO I_INTREC (OBJECTID, COD_ESTUDO, IDSIGEP, DATA_TER, TEMPO, ATIVIDADE)
+                      VALUES (@NewObjectID, @studyNro, @studyNro, @dataTer, @studyTempo, 'Generación')
                     `;
                   } else {
                     await intRecReq.query`
