@@ -723,7 +723,8 @@ const App: React.FC = () => {
             updatedAt: new Date().toISOString(),
             estimatedDeliveryDate: additionalData?.estimatedDeliveryDate !== undefined ? additionalData.estimatedDeliveryDate : req.estimatedDeliveryDate,
             userId: user?.email || req.userId,
-            lastModifiedBy: user?.name || req.lastModifiedBy
+            lastModifiedBy: user?.name || req.lastModifiedBy,
+            userSap: user?.sap || req.userSap || null
           };
 
           // Limpar dados de QC da revisão anterior quando enviando para nova revisão de CQ

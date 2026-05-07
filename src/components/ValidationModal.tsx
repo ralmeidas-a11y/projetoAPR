@@ -3,6 +3,7 @@ import { FormData, StudyStatus, FormType, User } from '../types/types';
 import { isSystemAssigned, calculateDeadline } from '../utils/utils';
 import { PRESSURE_BASES } from '../constants/constants';
 import { useDialog } from './AppDialog';
+import { LocationPickerModal } from './LocationPickerModal';
 
 interface ValidationModalProps {
   initialData: FormData;
@@ -24,6 +25,7 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
   const { showAlert } = useDialog();
   const [assignedAnalyst, setAssignedAnalyst] = useState(initialData?.assignedTo || 'ADRSis - SISTEMA');
   const [hasInteractedWithAnalyst, setHasInteractedWithAnalyst] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
 
   // Sincroniza o analista selecionado com a lista de executores (resolvendo SAP/Email para ID interno ou SAP)
   // APENAS se o usuário ainda não tiver interagido manualmente com o seletor.
@@ -157,6 +159,16 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
               >
                 <i className="fa-solid fa-folder-open"></i>
                 Ver Pasta
+              </button>
+            )}
+            {initialData?.latitude && initialData?.longitude && (
+              <button
+                onClick={() => setShowLocationPicker(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest border border-blue-100 shadow-sm active:scale-95"
+                title="Ver localização no mapa"
+              >
+                <i className="fa-solid fa-map-marker-alt"></i>
+                Ver Localização
               </button>
             )}
           </div>
@@ -435,6 +447,21 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
           </div>
         </div>
       </div>
+
+      {showLocationPicker && (
+        <LocationPickerModal
+          isOpen={showLocationPicker}
+          onClose={() => setShowLocationPicker(false)}
+          initialLocation={{
+            latitude: initialData?.latitude,
+            longitude: initialData?.longitude,
+            address: initialData?.address,
+            neighborhood: initialData?.neighborhood,
+            city: initialData?.city
+          }}
+          readOnly={true}
+        />
+      )}
     </div>
   );
 };

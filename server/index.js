@@ -2237,7 +2237,10 @@ END
 
               if (newS === '210') {
                 try {
-                  const studyTempo = previousRecord ? previousRecord.Tempo : null;
+                  // Priority: 1) totalExecutionTime from meta_data (sent by frontend), 2) previousRecord.Tempo
+                  const studyTempo = (data.totalExecutionTime !== undefined && data.totalExecutionTime !== null) 
+                    ? data.totalExecutionTime 
+                    : (previousRecord ? previousRecord.Tempo : null);
                   const intRecReq = new sql.Request();
                   intRecReq.input('studyNro', sql.VarChar, effectiveNro);
                   intRecReq.input('studyTempo', sql.Float, studyTempo);
@@ -2333,7 +2336,8 @@ END
                 try {
                   const staReq = new sql.Request();
                   const oaDate = dateToOADate(new Date());
-                  const usuarioRaw = String(data.lastModifiedBy || data.userId || data.user_id || '').trim();
+                  // Priority: 1) userSap from meta_data (SAP code from frontend), 2) lastModifiedBy, 3) userId, 4) user_id
+                  const usuarioRaw = String(data.userSap || data.lastModifiedBy || data.userId || data.user_id || '').trim();
                   const isNumber = /^\d+$/.test(usuarioRaw);
                   const usuario = isNumber ? usuarioRaw.padStart(8, '0') : usuarioRaw;
 

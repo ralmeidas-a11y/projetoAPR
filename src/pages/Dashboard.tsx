@@ -543,7 +543,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     return str.split('T')[0];
                   };
 
-                  const deadlineStr = normalizeDate(req.estimatedDeliveryDate);
+                  const deadlineStr = normalizeDate(req.dtEntregaPrevista || req.estimatedDeliveryDate);
                   const isUrgent = (() => {
                     if (!deadlineStr) return false;
                     // Ignorar status concluídos/cancelados/rejeitados
@@ -598,7 +598,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                       </td>
                       <td className="px-5 py-3.5 text-center">
-                        <p className={`text-xs font-semibold ${isUrgent ? 'text-orange-600' : 'text-slate-700'}`}>{req.estimatedDeliveryDate ? formatDate(req.estimatedDeliveryDate) : '-'}</p>
+                        <p className={`text-xs font-semibold ${isUrgent ? 'text-orange-600' : 'text-slate-700'}`}>{req.dtEntregaPrevista ? formatDate(req.dtEntregaPrevista) : (req.estimatedDeliveryDate ? formatDate(req.estimatedDeliveryDate) : '-')}</p>
                       </td>
                       <td className="px-5 py-3.5 text-center align-middle">
                         {req.status === StudyStatus.CONCLUIDO ? (

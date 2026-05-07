@@ -234,6 +234,7 @@ export interface FormData {
 
   deadlineDays?: number;
   estimatedDeliveryDate?: string;
+  dtEntregaPrevista?: string; // T_ESTPLA - Prazo do estudo planejado
   comments?: string;
 
   selectedFiles?: any[]; // Arquivos enviados pelo solicitante
@@ -257,6 +258,7 @@ export interface FormData {
   difficulty?: string;
   validatorObservations?: string;
   validationDate?: string;
+  userSap?: string; // Código SAP do usuário que fez a última alteração
   networkGroup?: number;
   networkDescription?: string;
   responsePressureBase?: string;

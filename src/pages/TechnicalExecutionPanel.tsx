@@ -4,6 +4,7 @@ import { formatDateTimeBR, calculateDeadline, isSystemAssigned } from '../utils/
 import { StorageService } from '../services/storage';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { QCControlModal } from '../components/QCControlModal';
+import { LocationPickerModal } from '../components/LocationPickerModal';
 import { useDialog } from '../components/AppDialog';
 import { NETWORK_GROUPS, PRESSURE_BASES, STANDARDIZED_CONDITIONS_BLOCKS } from '../constants/constants';
 import { VAZAO_UNITARIA_DATA, DIVERSIFICACAO_DATA, VazaoUnitItem, DiversificacaoItem } from '../constants/calculationData';
@@ -101,6 +102,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [pdfFiles, setPdfFiles] = useState<any[]>([]);
   const [selectedPdfFiles, setSelectedPdfFiles] = useState<Set<number>>(new Set());
   const [showPdfSelectModal, setShowPdfSelectModal] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [standardConditionsFilter, setStandardConditionsFilter] = useState('');
   const cartaRef = useRef<HTMLDivElement>(null);
   const hiddenCartaRef = useRef<HTMLDivElement>(null);
@@ -1330,6 +1332,13 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             {renderTechnicalField('Empresa', locationData.empresa)}
             {(data.latitude && data.longitude) && (
               <div className="col-span-2 lg:col-span-4 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setShowLocationPicker(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-colors shadow-md"
+                >
+                  <i className="fa-solid fa-map-pin"></i>
+                  Ver no Mapa
+                </button>
                 <a
                   href={data.address
                     ? `https://www.google.com/maps/place/${encodeURIComponent(data.address)}`
@@ -3261,6 +3270,20 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           currentUser={currentUser}
           readOnly={true}
           onClose={() => setShowQCModal(false)}
+        />
+      )}
+      {showLocationPicker && (
+        <LocationPickerModal
+          isOpen={showLocationPicker}
+          onClose={() => setShowLocationPicker(false)}
+          initialLocation={{
+            latitude: data.latitude,
+            longitude: data.longitude,
+            address: data.address,
+            neighborhood: data.neighborhood,
+            city: data.city
+          }}
+          readOnly={true}
         />
       )}
       {/* Vazão Unitária Modal (Removed as it is now a popover) */}

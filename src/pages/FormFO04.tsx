@@ -198,15 +198,28 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
             <div className="col-span-12 flex flex-col gap-1">
               <label className={requiredLabelClass}>Endereço:</label>
               <div className="flex items-center gap-2">
-                <input name="address" value={data.address || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white flex-grow`} />
-                <button
-                  type="button"
-                  onClick={() => setShowLocationPicker(true)}
-                  className="px-3 py-1.5 bg-[#004080] text-white text-xs font-bold uppercase rounded hover:bg-[#003060] transition-colors whitespace-nowrap"
-                >
-                  <i className="fa-solid fa-map-marked-alt mr-1"></i>
-                  Buscar no Mapa
-                </button>
+                <input name="address" value={data.address || ''} onChange={handleInputChange} disabled={readOnly} className={`${inputBaseClass} border border-slate-200 bg-white flex-grow`} />
+                {(data.latitude && data.longitude) ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowLocationPicker(true)}
+                    className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold uppercase rounded hover:bg-green-700 transition-colors whitespace-nowrap"
+                  >
+                    <i className="fa-solid fa-map-marked-alt mr-1"></i>
+                    {readOnly ? 'Ver no Mapa' : 'Buscar no Mapa'}
+                  </button>
+                ) : (
+                  !readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => setShowLocationPicker(true)}
+                      className="px-3 py-1.5 bg-[#004080] text-white text-xs font-bold uppercase rounded hover:bg-[#003060] transition-colors whitespace-nowrap"
+                    >
+                      <i className="fa-solid fa-map-marked-alt mr-1"></i>
+                      Buscar no Mapa
+                    </button>
+                  )
+                )}
               </div>
             </div>
             <div className="col-span-12 md:col-span-4 flex flex-col gap-1">
@@ -346,6 +359,7 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
           neighborhood: data.neighborhood,
           city: data.city
         }}
+        readOnly={readOnly}
       />
     </div>
   );
