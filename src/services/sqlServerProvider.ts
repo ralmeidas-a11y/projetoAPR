@@ -5,7 +5,7 @@ export class SQLServerProvider implements StorageProvider {
   private apiUrl: string;
 
   constructor() {
-    this.apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    this.apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
   }
 
   // --- Profile Operations ---

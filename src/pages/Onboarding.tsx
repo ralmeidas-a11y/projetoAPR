@@ -199,7 +199,6 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                   <input
                     type="password"
                     required
-                    value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-[#004080] focus:bg-white transition-all text-sm font-medium text-slate-700"
                     placeholder="Mínimo 6 caracteres"
@@ -211,7 +210,6 @@ export const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                   <input
                     type="password"
                     required
-                    value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     className="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-[#004080] focus:bg-white transition-all text-sm font-medium text-slate-700"
                     placeholder="Repita a senha"

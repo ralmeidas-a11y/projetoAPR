@@ -85,7 +85,6 @@ export const PasswordChange: React.FC<PasswordChangeProps> = ({ user, onComplete
               <input 
                 type="password"
                 required
-                value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Mínimo 6 caracteres"
                 className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-[#004080] focus:bg-white transition-all text-sm font-medium"
@@ -100,7 +99,6 @@ export const PasswordChange: React.FC<PasswordChangeProps> = ({ user, onComplete
               <input 
                 type="password"
                 required
-                value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Repita a nova senha"
                 className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:border-[#004080] focus:bg-white transition-all text-sm font-medium"

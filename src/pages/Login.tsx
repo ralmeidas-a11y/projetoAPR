@@ -12,6 +12,7 @@ interface LoginProps {
 export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const passwordRef = React.useRef<HTMLInputElement>(null);
   const [isAutoEmail, setIsAutoEmail] = useState(false);
   const [error, setError] = useState('');
   const [isDetecting, setIsDetecting] = useState(true);
@@ -32,7 +33,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
             const { email: savedEmail, password: savedPassword } = JSON.parse(savedData);
             if (savedEmail) {
               setEmail(savedEmail);
-              if (savedPassword) setPassword(savedPassword);
+              if (savedPassword) {
+                setPassword(savedPassword);
+                if (passwordRef.current) passwordRef.current.value = savedPassword;
+              }
               setRememberMe(true);
             }
           } catch (e) { /* ignore parse error */ }
@@ -142,7 +146,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                     readOnly={isAutoEmail}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder={isDetecting ? "Detectando conta..." : "E-mail ou GB (SAP)"}
+                    placeholder={isDetecting ? "Detectando conta..." : "E-mail ou GB"}
                     className={`w-full pl-11 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder-white/60 ${isAutoEmail ? 'bg-white/20 border-white/40' : 'focus:border-white/60'}`}
                   />
                 </div>
@@ -157,7 +161,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                   <input
                     type="password"
                     required
-                    value={password}
+                    ref={passwordRef}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Sua senha"
                     className="w-full pl-11 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder-white/60 focus:border-white/60"
