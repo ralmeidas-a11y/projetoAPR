@@ -55,9 +55,16 @@ export const AuditLog: React.FC<AuditLogProps> = ({ currentUser }) => {
     }
   };
 
-  const handleSearch = () => {
-    fetchLogs();
-  };
+  const filteredLogs = logs.filter(log => {
+    const studyMatch = !filterStudyNumber || 
+      (log.StudyNumber && log.StudyNumber.toLowerCase().includes(filterStudyNumber.toLowerCase()));
+    const userMatch = !filterUser || 
+      (log.UserName && log.UserName.toLowerCase().includes(filterUser.toLowerCase())) ||
+      (log.UserEmail && log.UserEmail.toLowerCase().includes(filterUser.toLowerCase())) ||
+      (log.UserId && log.UserId.toLowerCase().includes(filterUser.toLowerCase()));
+    const actionMatch = !filterActionType || log.ActionType === filterActionType;
+    return studyMatch && userMatch && actionMatch;
+  });
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-';
@@ -111,12 +118,20 @@ export const AuditLog: React.FC<AuditLogProps> = ({ currentUser }) => {
       return statusCodeToText[value] || value;
     }
 
-    // Deadlines are ISO strings
+    // Deadlines are ISO strings, but might contain Justification text
     if (field === 'prazo' && value !== '-') {
       try {
-        const date = new Date(value);
+        let datePart = value;
+        let justificationPart = '';
+        if (value.includes(' (Justificativa:')) {
+            const parts = value.split(' (Justificativa:');
+            datePart = parts[0];
+            justificationPart = ' (Justificativa:' + parts[1];
+        }
+        
+        const date = new Date(datePart);
         if (!isNaN(date.getTime())) {
-          return date.toLocaleDateString('pt-BR');
+          return date.toLocaleDateString('pt-BR') + justificationPart;
         }
       } catch { return value; }
     }
@@ -193,13 +208,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ currentUser }) => {
               className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#004080]"
             />
           </div>
-          <button
-            onClick={handleSearch}
-            className="px-6 py-3 bg-[#004080] text-white rounded-xl font-bold text-xs uppercase hover:bg-orange-500 transition-all"
-          >
-            <i className="fa-solid fa-search mr-2"></i>
-            Buscar
-          </button>
+          
         </div>
       </div>
 
@@ -223,14 +232,14 @@ export const AuditLog: React.FC<AuditLogProps> = ({ currentUser }) => {
                     <i className="fa-solid fa-circle-notch fa-spin text-2xl text-[#004080]"></i>
                   </td>
                 </tr>
-              ) : logs.length === 0 ? (
+              ) : filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-20 text-center text-slate-400 text-sm">
                     Nenhum registro encontrado.
                   </td>
                 </tr>
               ) : (
-                logs.map((log) => (
+                filteredLogs.map((log) => (
                   <tr key={log.ID} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors duration-200">
                     <td className="px-5 py-3.5">
                       <span className="text-xs text-slate-600">{formatDate(log.Timestamp)}</span>
@@ -285,7 +294,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ currentUser }) => {
         {/* Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
           <span className="text-[10px] text-slate-500">
-            Total: {logs.length} registros
+            Total: {filteredLogs.length} de {logs.length} registros
           </span>
           <button
             onClick={() => { setFilterStudyNumber(''); setFilterActionType(''); setFilterUser(''); fetchLogs(); }}

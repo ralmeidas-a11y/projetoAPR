@@ -94,11 +94,15 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
     if (!dateStr) return false;
     return /^\d{4}-\d{2}-\d{2}/.test(dateStr) && !isNaN(new Date(dateStr).getTime());
   };
-  const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState(
-    isValidISODate(initialData?.estimatedDeliveryDate)
-      ? initialData.estimatedDeliveryDate
-      : calculateDeadline(initialData?.requestDate, initialData?.formType || '')
-  );
+
+  const initialDeadlineStr = isValidISODate(initialData?.estimatedDeliveryDate)
+    ? initialData!.estimatedDeliveryDate
+    : calculateDeadline(initialData?.requestDate, initialData?.formType || '');
+
+  const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState(initialDeadlineStr);
+  const [deadlineJustification, setDeadlineJustification] = useState('');
+
+  const isDeadlineChanged = estimatedDeliveryDate !== initialDeadlineStr;
 
   const handleConfirm = () => {
     const today = new Date().toISOString();
@@ -116,6 +120,11 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
       finalDeadline = calculateDeadline(basisDate, initialData?.formType || '');
     }
 
+    if (isDeadlineChanged && !deadlineJustification.trim()) {
+      showAlert('Por favor, informe a justificativa para a alteração do prazo.', 'Campo Obrigatório', 'warning');
+      return;
+    }
+
     onConfirm(assignedAnalyst, {
       gasType,
       suggestedPressureRange,
@@ -128,7 +137,8 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
       difficulty,
       validatorObservations,
       estimatedDeliveryDate: finalDeadline,
-      validationDate: validationDate
+      validationDate: validationDate,
+      deadlineJustification: isDeadlineChanged ? deadlineJustification : undefined
     });
   };
 
@@ -292,6 +302,20 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
               <p className="text-[9px] text-slate-400 font-bold mt-2 uppercase">
                 {initialData?.formType === 'PE.00492-FO.02' ? '* 7 dias corridos' : '* 5 dias úteis'}
               </p>
+              
+              {isDeadlineChanged && (
+                <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <label className="block text-[10px] font-black text-red-500 uppercase tracking-widest mb-1">
+                    Justificativa da Alteração *
+                  </label>
+                  <textarea
+                    value={deadlineJustification}
+                    onChange={(e) => setDeadlineJustification(e.target.value)}
+                    placeholder="Informe o motivo para a alteração do prazo original..."
+                    className="w-full p-2.5 border border-red-200 bg-red-50/30 rounded-xl outline-none focus:border-red-500 text-xs font-bold text-slate-700 min-h-[60px]"
+                  />
+                </div>
+              )}
             </div>
           </div>
 

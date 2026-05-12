@@ -30,6 +30,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
   const [newPhone, setNewPhone] = useState('');
   const [newArea, setNewArea] = useState('');
   const [newNaturgyUnit, setNewNaturgyUnit] = useState('');
+  const [newFolderPath, setNewFolderPath] = useState('');
   const [userToReset, setUserToReset] = useState<User | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     'Usuários Ativos': true,
@@ -88,7 +89,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
         isActive: isActive,
         phone: newPhone,
         area: newArea,
-        naturgyUnit: newNaturgyUnit
+        naturgyUnit: newNaturgyUnit,
+        folderPath: newFolderPath
       });
     } else {
       // Criptografar a senha padrão '123456'
@@ -111,7 +113,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
         isActive: isActive,
         phone: newPhone,
         area: newArea,
-        naturgyUnit: newNaturgyUnit
+        naturgyUnit: newNaturgyUnit,
+        folderPath: newFolderPath
       };
       onCreateUser(newUser);
     }
@@ -132,6 +135,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
     setNewPhone('');
     setNewArea('');
     setNewNaturgyUnit('');
+    setNewFolderPath('');
     setEditingUser(null);
     setShowCreateForm(false);
   };
@@ -146,6 +150,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
     setNewRoleDescription(user.roleDescription || '');
     setNewGB(user.gb || '');
     setNewSAP(user.sap || '');
+    setNewFolderPath(user.folderPath || '');
     setIsActive(user.isActive !== false);
     setShowCreateForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -252,6 +257,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                   className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:border-[#004080] focus:ring-2 focus:ring-blue-100 text-sm font-medium transition-colors cursor-text"
                 />
               </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[#004080] uppercase tracking-widest ml-1">Caminho de Arquivos</label>
+                <input
+                  type="text"
+                  required
+                  value={newFolderPath}
+                  onChange={e => setNewFolderPath(e.target.value)}
+                  placeholder="C:\Users\00805217\OneDrive - NATURGY\ADR - ADR\BDSEPLA\ESTUDOS"
+                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:border-[#004080] focus:ring-2 focus:ring-blue-100 text-sm font-medium transition-colors cursor-text"
+                />
+              </div>
               <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-4 pt-6 col-span-1 md:col-span-3 border-t border-slate-200 mt-2">
                 <div className="flex flex-wrap items-center gap-6">
                   <label className="flex items-center gap-3 cursor-pointer group">
@@ -319,8 +335,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
             </thead>
             <tbody className="divide-y divide-slate-100">
               {[
-                { label: 'Usuários Ativos', list: users.filter(u => u.role !== UserRole.SOLICITANTE && u.isActive !== false), icon: 'fa-user-check', color: 'text-[#004080]', bgColor: 'bg-blue-50/30' },
-                { label: 'Usuários Inativos', list: users.filter(u => u.role !== UserRole.SOLICITANTE && u.isActive === false), icon: 'fa-user-slash', color: 'text-red-500', bgColor: 'bg-red-50/30' }
+                { label: 'Usuários Ativos', list: users.filter(u => u.role !== UserRole.SOLICITANTE && u.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '')), icon: 'fa-user-check', color: 'text-[#004080]', bgColor: 'bg-blue-50/30' },
+                { label: 'Usuários Inativos', list: users.filter(u => u.role !== UserRole.SOLICITANTE && u.isActive === false).sort((a, b) => (a.name || '').localeCompare(b.name || '')), icon: 'fa-user-slash', color: 'text-red-500', bgColor: 'bg-red-50/30' }
               ].map(group => group.list.length > 0 && (
                 <React.Fragment key={group.label}>
                   <tr className={`${group.bgColor} border-y border-slate-100/50 cursor-pointer hover:bg-slate-100/50 transition-colors`} onClick={() => toggleGroup(group.label)}>
@@ -346,7 +362,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                       <td className="px-6 py-3.5">
                         <p className="text-sm font-semibold text-[#004080]">{u.name}</p>
                         <p className="text-[11px] text-slate-400 mt-0.5">{u.email}</p>
-                        {(u.company || u.roleDescription || u.gb || u.sap) && (
+                        {(u.company || u.roleDescription || u.gb || u.sap || u.folderPath) && (
                           <p className="text-[10px] text-slate-500 mt-1.5 flex flex-wrap items-center gap-1.5">
                             <i className="fa-solid fa-briefcase text-slate-300 text-[9px]"></i>
                             <span>{u.company || '-'}</span>
@@ -356,6 +372,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
                             <span className="text-slate-400">Usuário: {u.gb || '-'}</span>
                             <span className="text-slate-200">•</span>
                             <span className="text-orange-600 font-medium">GB: {u.sap || '-'}</span>
+                          </p>
+                        )}
+                        {u.folderPath && (
+                          <p className="text-[9px] text-indigo-500 mt-1 flex items-center gap-1">
+                            <i className="fa-solid fa-folder text-[8px]"></i>
+                            <span className="truncate max-w-[300px]" title={u.folderPath}>{u.folderPath}</span>
                           </p>
                         )}
                       </td>

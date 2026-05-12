@@ -4,6 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
+const PDFDocument = require('pdfkit');
 require('dotenv').config();
 
 const serverStartTime = new Date();
@@ -142,11 +143,13 @@ async function startServer() {
           ALTER TABLE Users_Solicitantes ADD [area] VARCHAR(100) NULL;
       IF COL_LENGTH('Users_Solicitantes', 'naturgyUnit') IS NULL
           ALTER TABLE Users_Solicitantes ADD [naturgyUnit] VARCHAR(100) NULL;
-      IF COL_LENGTH('Users_Solicitantes', 'sap') IS NULL
+IF COL_LENGTH('Users_Solicitantes', 'sap') IS NULL
           ALTER TABLE Users_Solicitantes ADD [sap] VARCHAR(100) NULL;
-      IF COL_LENGTH('Users_Solicitantes', 'isActive') IS NULL
+        IF COL_LENGTH('Users_Solicitantes', 'isActive') IS NULL
           ALTER TABLE Users_Solicitantes ADD [isActive] BIT DEFAULT 1;
-    `;
+        IF COL_LENGTH('Users_Solicitantes', 'folderPath') IS NULL
+          ALTER TABLE Users_Solicitantes ADD [folderPath] VARCHAR(500) NULL;
+      `;
 
     // 1b. Create T_AUDIT Table if not exists
     console.log('[Server] Checking T_AUDIT table...');
@@ -572,7 +575,7 @@ async function startServer() {
             -- Use ISNULL/COALESCE to pull from legacy if modern is empty
             ISNULL(NULLIF(RTRIM(LTRIM(U.[gb])), ''), RTRIM(LTRIM(E.USUARIO))) as [gb],
             ISNULL(NULLIF(RTRIM(LTRIM(U.[sap])), ''), RTRIM(LTRIM(E.SAP))) as [sap],
-            U.[phone], U.[area], U.[naturgyUnit],
+            U.[phone], U.[area], U.[naturgyUnit], U.[folderPath],
             CAST(ISNULL(U.[isActive], 1) as bit) as isActive,
             CAST(U.[profileComplete] as bit) as profileComplete, 
             CAST(U.[requiresPasswordChange] as bit) as requiresPasswordChange, 
@@ -597,6 +600,7 @@ async function startServer() {
             NULL as [phone],
             RTRIM(LTRIM(DEPARTMENT)) as [area],
             RTRIM(LTRIM(EMPRESA)) as [naturgyUnit],
+            NULL as [folderPath],
             CAST(CASE 
               WHEN UPPER(LTRIM(RTRIM(CAST(FUNCIONARIO as varchar(50))))) IN ('1', 'S', 'SIM', 'V', 'VERDADEIRO', 'TRUE') THEN 1 
               ELSE 0 
@@ -628,7 +632,7 @@ async function startServer() {
     // 4. POST Upsert User
     app.post('/api/users', async (req, res) => {
       try {
-        const { id, email, name, role, password, department, profileComplete, requiresPasswordChange, permissions, company, roleDescription, gb, sap, phone, area, naturgyUnit, isActive } = req.body;
+        const { id, email, name, role, password, department, profileComplete, requiresPasswordChange, permissions, company, roleDescription, gb, sap, phone, area, naturgyUnit, isActive, folderPath } = req.body;
 
         const request = new sql.Request();
         request.input('id', sql.VarChar, id || '');
@@ -643,6 +647,7 @@ async function startServer() {
         request.input('phone', sql.VarChar, phone || '');
         request.input('area', sql.VarChar, area || '');
         request.input('naturgyUnit', sql.VarChar, naturgyUnit || '');
+        request.input('folderPath', sql.VarChar, folderPath || '');
         request.input('profileComplete', sql.Bit, profileComplete ? 1 : 0);
         request.input('reqPassReset', sql.Bit, requiresPasswordChange ? 1 : 0);
         request.input('isActiveBit', sql.Bit, (isActive === undefined || isActive === true) ? 1 : 0);
@@ -682,7 +687,7 @@ async function startServer() {
                 email = @email, name = @name, role = @role, 
                 password = @finalPwd, department = @department,
                 company = @company, roleDescription = @roleDescription, gb = @gb, sap = @sap,
-                phone = @phone, area = @area, naturgyUnit = @naturgyUnit,
+                phone = @phone, area = @area, naturgyUnit = @naturgyUnit, folderPath = @folderPath,
                 profileComplete = @profileComplete, requiresPasswordChange = @reqPassReset,
                 isActive = @isActiveBit
              WHERE id = @id
@@ -690,9 +695,9 @@ async function startServer() {
           ELSE
           BEGIN
              INSERT INTO Users_Solicitantes 
-                (id, email, name, role, password, department, company, roleDescription, gb, sap, phone, area, naturgyUnit, profileComplete, requiresPasswordChange, isActive)
+                (id, email, name, role, password, department, company, roleDescription, gb, sap, phone, area, naturgyUnit, folderPath, profileComplete, requiresPasswordChange, isActive)
              VALUES 
-                (@id, @email, @name, @role, @finalPwd, @department, @company, @roleDescription, @gb, @sap, @phone, @area, @naturgyUnit, @profileComplete, @reqPassReset, @isActiveBit)
+                (@id, @email, @name, @role, @finalPwd, @department, @company, @roleDescription, @gb, @sap, @phone, @area, @naturgyUnit, @folderPath, @profileComplete, @reqPassReset, @isActiveBit)
 END
         `;
 
@@ -2123,14 +2128,35 @@ END
 
           // *** AUDIT: Capture previous record BEFORE the update overwrites it ***
           let previousRecord = null;
+          let oldDeadlineRaw = null;
           try {
-            const prevRes = await sql.query`SELECT STATUS, RESP_SEPLA, requestDate, IDSIGEP, NRO_ESTUDO FROM Requests WHERE id = ${String(requestId)}`;
+            const prevRes = await sql.query`SELECT STATUS, RESP_SEPLA, requestDate, IDSIGEP, NRO_ESTUDO, meta_data FROM Requests WHERE id = ${String(requestId)}`;
             if (prevRes.recordset.length > 0) {
               previousRecord = prevRes.recordset[0];
+              try {
+                  const prevMeta = JSON.parse(previousRecord.meta_data);
+                  oldDeadlineRaw = prevMeta.estimatedDeliveryDate || prevMeta.deliveryDeadline || null;
+              } catch (e) {}
               console.log(`[Audit] 📋 Previous record captured: Status=${previousRecord.STATUS}, Resp=${previousRecord.RESP_SEPLA}, SIGEP=${previousRecord.IDSIGEP}`);
             }
           } catch (e) {
             console.warn('[Audit] Could not fetch previous record:', e.message);
+          }
+
+          // ** DEADLINE VALIDATION (CONCLUIDO) **
+          const newDeadlineRaw = data.estimatedDeliveryDate || data.deliveryDeadline || null;
+          const getIsoDate = (dStr) => {
+              if (!dStr) return '';
+              const d = parseDateBR(dStr);
+              return d ? d.toISOString().split('T')[0] : '';
+          };
+          const oldDeadlineDate = getIsoDate(oldDeadlineRaw);
+          const newDeadlineDate = getIsoDate(newDeadlineRaw);
+
+          if (previousRecord && String(previousRecord.STATUS) === '210') {
+             if (oldDeadlineDate !== newDeadlineDate && (oldDeadlineDate || newDeadlineDate)) {
+                 return res.status(400).json({ error: 'Não é possível alterar o prazo de estudos já concluídos (Status 210).' });
+             }
           }
 
           sqlReq.input('id', sql.VarChar, requestId);
@@ -2279,10 +2305,12 @@ END
             }
 
             // 3. Deadline Change
-            const oldDate = previousRecord.requestDate ? new Date(previousRecord.requestDate).toISOString().split('T')[0] : '';
-            const newDate = effectiveRequestDate ? new Date(effectiveRequestDate).toISOString().split('T')[0] : '';
-            if (oldDate !== newDate) {
-              changes.push({ field: 'prazo', old: previousRecord.requestDate, new: effectiveRequestDate, type: 'UPDATE' });
+            if (oldDeadlineDate !== newDeadlineDate && (oldDeadlineDate || newDeadlineDate)) {
+              let newAuditValue = newDeadlineDate;
+              if (data.deadlineJustification) {
+                 newAuditValue += ` (Justificativa: ${data.deadlineJustification})`;
+              }
+              changes.push({ field: 'prazo', old: oldDeadlineDate, new: newAuditValue, type: 'UPDATE' });
             }
 
           }
@@ -2709,6 +2737,146 @@ app.post('/api/folders/create', async (req, res) => {
     }
   } catch (err) {
     console.error('[Folders] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// List files by specific folder path
+app.post('/api/files/folder-by-path', async (req, res) => {
+  try {
+    const { folderPath, filter } = req.body;
+
+    if (!folderPath) {
+      return res.status(400).json({ success: false, error: 'folderPath é obrigatório' });
+    }
+
+    if (!fs.existsSync(folderPath)) {
+      return res.json({ success: true, files: [] });
+    }
+
+    const files = fs.readdirSync(folderPath);
+    const filteredFiles = files.filter(file => {
+      const ext = path.extname(file).toLowerCase();
+      if (filter === 'pdf') {
+        return ext === '.pdf';
+      }
+      return true;
+    });
+
+    const fileList = filteredFiles.map(file => ({
+      name: file,
+      path: path.join(folderPath, file),
+      fullPath: path.join(folderPath, file)
+    }));
+
+    res.json({ success: true, files: fileList });
+  } catch (err) {
+    console.error('[Files] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Save form PDF to folder
+app.post('/api/folders/save-form-pdf', async (req, res) => {
+  try {
+    const { studyId, studyNumber, targetPath } = req.body;
+
+    if (!studyId || !targetPath) {
+      return res.status(400).json({ success: false, error: 'studyId e targetPath são obrigatórios' });
+    }
+
+    // Query the study data from database
+    const result = await sql.query(`SELECT * FROM requests WHERE id = '${studyId}'`);
+    
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ success: false, error: 'Estudo não encontrado' });
+    }
+
+    const study = result.recordset[0];
+    
+    // Ensure the directory exists
+    const dir = path.dirname(targetPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Generate PDF using PDFKit
+    const doc = new PDFDocument({ margin: 50 });
+    const writeStream = fs.createWriteStream(targetPath);
+    doc.pipe(writeStream);
+
+    // Header
+    doc.fontSize(18).font('Helvetica-Bold').text('FORMULÁRIO DE SOLICITAÇÃO DE ESTUDO', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica').text(`Estudo: ${studyNumber}`, { align: 'center' });
+    doc.moveDown(2);
+
+    // Information section
+    doc.fontSize(12).font('Helvetica-Bold').text('DADOS DO SOLICITANTE');
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(10);
+    
+    const fields = [
+      ['Cliente:', study.clientName || '-'],
+      ['Endereço:', study.address || '-'],
+      ['Cidade:', study.city || '-'],
+      ['Bairro:', study.neighborhood || '-'],
+      ['CEP:', study.cep || '-'],
+    ];
+
+    fields.forEach(([label, value]) => {
+      doc.font('Helvetica-Bold').text(label, { continued: true }).font('Helvetica').text(` ${value}`).moveDown(0.3);
+    });
+
+    doc.moveDown(1);
+    doc.fontSize(12).font('Helvetica-Bold').text('DADOS DO ESTUDO');
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(10);
+
+    const studyFields = [
+      ['Tipo de Estudo:', study.studyType || '-'],
+      ['Subtipo:', study.studySubType || '-'],
+      ['Grupo Rede:', study.networkGroup || '-'],
+      ['Status:', study.status || '-'],
+      ['Data Solicitação:', study.requestDate ? new Date(study.requestDate).toLocaleDateString('pt-BR') : '-'],
+    ];
+
+    studyFields.forEach(([label, value]) => {
+      doc.font('Helvetica-Bold').text(label, { continued: true }).font('Helvetica').text(` ${value}`).moveDown(0.3);
+    });
+
+    doc.moveDown(1);
+    doc.fontSize(12).font('Helvetica-Bold').text('DADOS TÉCNICOS');
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(10);
+
+    const techFields = [
+      ['Pressão Base:', study.requestPressureBase || '-'],
+      ['Vazão Solicitada:', study.vazaoSol ? `${study.vazaoSol} m³/h` : '-'],
+      ['Número Clientes:', study.numClientsRes || '-'],
+    ];
+
+    techFields.forEach(([label, value]) => {
+      doc.font('Helvetica-Bold').text(label, { continued: true }).font('Helvetica').text(` ${value}`).moveDown(0.3);
+    });
+
+    // Footer
+    doc.moveDown(2);
+    doc.fontSize(8).fillColor('gray').text(`Documento gerado em: ${new Date().toLocaleString('pt-BR')}`, { align: 'center' });
+    doc.text(`Sistema APR - Naturgy`, { align: 'center' });
+
+    doc.end();
+
+    // Wait for PDF to be written
+    await new Promise((resolve, reject) => {
+      writeStream.on('finish', resolve);
+      writeStream.on('error', reject);
+    });
+    
+    console.log(`[FormPDF] Formulário PDF salvo em: ${targetPath}`);
+    res.json({ success: true, path: targetPath });
+  } catch (err) {
+    console.error('[FormPDF] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

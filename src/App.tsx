@@ -10,7 +10,7 @@ import { UserManagement } from './pages/UserManagement';
 import { AuditLog } from './pages/AuditLog';
 import { TechnicalExecutionPanel } from './pages/TechnicalExecutionPanel';
 import { PasswordChange } from './pages/PasswordChange';
-import { SystemSettings } from './pages/SystemSettings';
+
 // EmailPreviewModal removed <!-- id: 11 -->
 import { FormType, User, UserRole, FormData, StudyStatus } from './types/types';
 import { NaturgyLogo, HeaderTitle, REVERSE_AREA_MAPPING } from './constants/constants';
@@ -694,7 +694,7 @@ const App: React.FC = () => {
       let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | null; request?: FormData; reason?: string } = { type: null };
       let requestToCreate: FormData | null = null;
 
-      const updatedList = currentRequests.map(req => {
+const updatedList = currentRequests.map(req => {
         if (req.id === id) {
           let studyNumber = req.studyNumber || '';
           let needsRename = false;
@@ -788,6 +788,48 @@ const App: React.FC = () => {
       });
 
       setAllRequests(updatedList);
+
+      // Criar pastas do estudo quando validado (330 -> 200)
+      const targetReq = currentRequests.find(r => r.id === id);
+      if (targetReq && (status === StudyStatus.AGUARDANDO_EXECUCAO || status === StudyStatus.VALIDADO) && targetReq.studyNumber?.startsWith('PROV-')) {
+        const cleanStudyNumber = targetReq.studyNumber.replace('PROV-', '');
+        const userFolderPath = user?.folderPath;
+        if (userFolderPath && cleanStudyNumber.length >= 10) {
+          const ano = cleanStudyNumber.substring(0, 4);
+          const sequencial = cleanStudyNumber.substring(4, 8);
+          const rev = cleanStudyNumber.substring(8, 10);
+          const pastas = ['solicitacao', 'resposta', 'calculos', 'outros'];
+          
+          await Promise.all(pastas.map(async (pasta) => {
+            const folderPath = `${userFolderPath}\\${ano}\\${sequencial}\\${rev}\\${pasta}`;
+            try {
+              await fetch('/api/folders/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folderPath }),
+              });
+            } catch (err) {
+              console.error('[updateRequestStatus] Erro ao criar pasta:', err);
+            }
+          }));
+          
+          // Gerar e salvar PDF do formulário na pasta solicitacao
+          const formPdfPath = `${userFolderPath}\\${ano}\\${sequencial}\\${rev}\\solicitacao\\Formulario_${cleanStudyNumber}.pdf`;
+          try {
+            await fetch('/api/folders/save-form-pdf', { 
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                studyId: targetReq.id,
+                studyNumber: cleanStudyNumber,
+                targetPath: formPdfPath
+              }),
+            });
+          } catch (err) {
+            console.error('[updateRequestStatus] Erro ao salvar PDF do formulário:', err);
+          }
+        }
+      }
 
       // Track this update as "pending" to prevent sync reversion, but only if status or analyst changed.
       // This prevents background updates (like alert acknowledgments) from locking the UI status.
@@ -953,11 +995,23 @@ const App: React.FC = () => {
               updateRequestStatus(updatedRequestForEmail.request.id, StudyStatus.CONTROLE_QUALIDADE);
             } else if ((updatedRequestForEmail.type === 'qc_approval' || updatedRequestForEmail.type === 'qc_rejection') && updatedRequestForEmail.request) {
               const analystId = updatedRequestForEmail.request.assignedTo;
-              const analyst = allUsers.find(u => u.id === analystId);
+              console.log('[QC Email] Searching for analyst, assignedTo:', analystId);
+              let analyst = allUsers.find(u => 
+                u.id === analystId || 
+                u.email.toLowerCase() === analystId?.toLowerCase() ||
+                u.name.toLowerCase() === analystId?.toLowerCase() ||
+                u.gb?.toLowerCase() === analystId?.toLowerCase()
+              );
+              // Fallback: usar usuário atual se não encontrar
+              if (!analyst && user) {
+                console.log('[QC Email] Analyst not found, using current user:', user.name);
+                analyst = user;
+              }
               // Get supervisor name from qcData if available
               const supervisorName = updatedRequestForEmail.request.qcData?.qcSupervisor || user?.name || 'Gestor APR';
               const supervisorUser = allUsers.find(u => u.name === supervisorName);
-              if (analyst) {
+              if (analyst && analyst.email) {
+                console.log('[QC Email] Analyst found:', analyst.name, analyst.email);
                 if (updatedRequestForEmail.type === 'qc_approval') {
                   const emailData = EmailService.generateQCApprovalAnalystEmail(
                     updatedRequestForEmail.request,
@@ -1680,14 +1734,13 @@ const App: React.FC = () => {
               {user?.role === UserRole.SOLICITANTE && (
                 <button onClick={() => setView('my-requests')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'my-requests' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Minhas Solicitações</button>
               )}
-              {(user?.role === UserRole.ADM || user?.role === UserRole.ANALISTA) && (
+{(user?.role === UserRole.ADM || user?.role === UserRole.ANALISTA) && (
                 <>
                   <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'dashboard' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Estudos</button>
                   {user?.role === UserRole.ADM && (
                     <>
                       <button onClick={() => setView('users')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'users' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Usuários</button>
                       <button onClick={() => setView('audit')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'audit' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Auditoria</button>
-                      <button onClick={() => setView('settings')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'settings' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Config</button>
                     </>
                   )}
                 </>
@@ -1799,9 +1852,6 @@ const App: React.FC = () => {
           )}
           {view === 'audit' && user?.role === UserRole.ADM && (
             <AuditLog currentUser={user} />
-          )}
-          {view === 'settings' && user?.role === UserRole.ADM && (
-            <SystemSettings user={user} />
           )}
         </div>
       </main>

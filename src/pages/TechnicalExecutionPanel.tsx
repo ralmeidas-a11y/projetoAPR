@@ -744,11 +744,27 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Estudo sem NRO_ESTUDO', 'error');
       return;
     }
+    
+    const userFolderPath = currentUser?.folderPath;
+    if (!userFolderPath) {
+      showToast('Caminho do usuário não definido. Configure o caminho de arquivos nas configurações do usuário.', 'error');
+      return;
+    }
+    
+    const ano = nroEstudo.substring(0, 4);
+    const sequencial = nroEstudo.substring(4, 8);
+    const rev = nroEstudo.substring(8, 10);
+    const respostaPath = `${userFolderPath}\\${ano}\\${sequencial}\\${rev}\\resposta`;
+    
     try {
-      const res = await fetch(`/api/files/folder/${nroEstudo}`);
+      const res = await fetch('/api/files/folder-by-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath: respostaPath, filter: 'pdf' }),
+      });
       const result = await res.json();
       if (!result.files || result.files.length === 0) {
-        showToast('Nenhum PDF encontrado na pasta do estudo', 'error');
+        showToast('Nenhum PDF encontrado na pasta resposta do estudo', 'error');
         return;
       }
       setPdfFiles(result.files);
@@ -2390,43 +2406,16 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         <h4 className="text-[11px] font-black text-[#004080] uppercase tracking-widest flex items-center gap-3 border-b border-slate-100 pb-4">
           Passos Resposta
         </h4>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="p-5 border border-slate-200 rounded-2xl relative">
-            <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos Geogas</span>
-            <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
-              <li
-                onClick={() => !readOnly && handleCreateFolderOnServer()}
-                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
-              >
-                <i className="fa-solid fa-file-export text-[#004080]"></i> Criar Pasta no Servidor
-              </li>
-              <li
-                onClick={() => !readOnly && handleGenerateGeogasLegend()}
-                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
-              >
-                <i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda Geogas
-              </li>
-              <li
-                onClick={() => !readOnly && handleImportPDF()}
-                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
-              ><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
-              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa Geogas</li>
-            </ul>
-          </div>
-          <div className="p-5 border border-slate-200 rounded-2xl relative">
-            <span className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Arquivos QGis</span>
-            <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-600">
-              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-map-location-dot text-[#004080]"></i> Criar Legenda QGis</li>
-              <li
-                onClick={() => !readOnly && handleImportPDF()}
-                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
-              ><i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF</li>
-              <li className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}><i className="fa-solid fa-globe text-green-500"></i> Arquivar Mapa QGis</li>
-            </ul>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
           <div className="p-5 border border-slate-200 rounded-2xl relative bg-indigo-50/50">
             <span className="absolute -top-3 left-4 bg-indigo-50/50 px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Envio</span>
             <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-700">
+              <li
+                onClick={() => !readOnly && handleImportPDF()}
+                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
+              >
+                <i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF
+              </li>
               <li
                 onClick={() => !readOnly && setShowCartaPreview(true)}
                 className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'}`}
