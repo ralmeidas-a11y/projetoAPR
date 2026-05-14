@@ -244,7 +244,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       if (isLockedForMe) {
         return (
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 text-slate-300 flex items-center justify-center text-lg border-2 border-slate-200 cursor-not-allowed shadow-inner" title="Estudo bloqueado: Atribuído a outro analista">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 text-slate-300 flex items-center justify-center text-lg border-2 border-slate-200 cursor-not-allowed shadow-inner" title="Estudo bloqueado.">
             <i className="fa-solid fa-lock"></i>
           </div>
         );

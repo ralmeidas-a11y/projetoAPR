@@ -226,6 +226,7 @@ export interface FormData {
   penetration?: number | '';
   diversification?: number | '';
   totalFlow?: number | '';
+  diversifiedFlow?: number | ''; // Vazão diversificada calculada automaticamente
   technicalMetadata?: {
     calculatedPressure?: string;
     [key: string]: any;
@@ -235,6 +236,7 @@ export interface FormData {
   deadlineDays?: number;
   estimatedDeliveryDate?: string;
   dtEntregaPrevista?: string; // T_ESTPLA - Prazo do estudo planejado
+  deadlineJustification?: string; // Justificativa para mudança de prazo
   comments?: string;
 
   selectedFiles?: any[]; // Arquivos enviados pelo solicitante

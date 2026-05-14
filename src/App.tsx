@@ -170,21 +170,45 @@ const App: React.FC = () => {
    * Função para exibir preview de email ao validar solicitação
    */
   const generateEmailForApproval = (request: FormData): EmailNotificationData => {
-    return EmailService.generateApprovalEmail(request, user?.name);
+    return EmailService.generateApprovalEmail(request, user?.name, user?.email);
   };
 
   /**
    * Função para exibir preview de email ao rejeitar solicitação
    */
   const generateEmailForRejection = (request: FormData, reason: string): EmailNotificationData => {
-    return EmailService.generateRejectionEmail(request, reason, user?.name);
+    return EmailService.generateRejectionEmail(request, reason, user?.name, user?.email);
   };
 
   /**
    * Função para exibir preview de email ao concluir solicitação
    */
   const generateEmailForCompletion = (request: FormData): EmailNotificationData => {
-    return EmailService.generateCompletionEmail(request, user?.name);
+    return EmailService.generateCompletionEmail(request, user?.name, user?.email);
+  };
+
+  /**
+   * Função para exibir preview de email quando estudo entra em execução
+   */
+  const generateEmailForExecution = (request: FormData): EmailNotificationData => {
+    const analyst = allUsers.find(u => u.id === request.assignedTo) || user;
+    return EmailService.generateExecutionEmail(request, analyst?.email || user?.email, analyst?.name || user?.name);
+  };
+
+  /**
+   * Função para exibir preview de email quando estudo aguarda informações
+   */
+  const generateEmailForAwaitingInfo = (request: FormData, holdReason?: string): EmailNotificationData => {
+    const analyst = allUsers.find(u => u.id === request.assignedTo) || user;
+    return EmailService.generateAwaitingInfoEmail(request, analyst?.email || user?.email, analyst?.name || user?.name, holdReason);
+  };
+
+  /**
+   * Função para exibir preview de email quando solicitante envia informações
+   */
+  const generateEmailForInfoReceived = (request: FormData): EmailNotificationData => {
+    const analyst = allUsers.find(u => u.id === request.assignedTo) || user;
+    return EmailService.generateInfoReceivedEmail(request, analyst?.email || user?.email, analyst?.name || user?.name, request.holdResponse);
   };
 
   const handleLogin = async (loggedUser: User) => {
@@ -691,7 +715,7 @@ const App: React.FC = () => {
     const originalRequest = allRequests.find(r => r.id === id);
     try {
       const currentRequests = allRequests || [];
-      let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | null; request?: FormData; reason?: string } = { type: null };
+      let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | 'execution' | 'awaiting_info' | 'info_received' | null; request?: FormData; reason?: string } = { type: null };
       let requestToCreate: FormData | null = null;
 
 const updatedList = currentRequests.map(req => {
@@ -776,6 +800,22 @@ const updatedList = currentRequests.map(req => {
               updatedRequestForEmail.request = updated;
               updatedRequestForEmail.reason = reason || req.rejectionReason || 'Vistoria técnica não aprovada';
             }
+          } else if (status === StudyStatus.EM_EXECUCAO && req.status !== StudyStatus.EM_EXECUCAO) {
+            // Quando entra em execução
+            if (req.status === StudyStatus.AGUARDANDO_INFORMACAO) {
+              // Se estava aguardando informações, o solicitante enviou resposta
+              updatedRequestForEmail.type = 'info_received';
+              updatedRequestForEmail.request = updated;
+            } else {
+              // Se entrou em execução normalmente (não estava aguardando info)
+              updatedRequestForEmail.type = 'execution';
+              updatedRequestForEmail.request = updated;
+            }
+          } else if (status === StudyStatus.AGUARDANDO_INFORMACAO && req.status !== StudyStatus.AGUARDANDO_INFORMACAO) {
+            // Quando solicita informações ao solicitante
+            updatedRequestForEmail.type = 'awaiting_info';
+            updatedRequestForEmail.request = updated;
+            updatedRequestForEmail.reason = reason || req.holdReason;
           }
 
           if (status === StudyStatus.AGUARDANDO_EXECUCAO && req.status !== StudyStatus.AGUARDANDO_EXECUCAO) {
@@ -903,7 +943,7 @@ const updatedList = currentRequests.map(req => {
             } else if (updatedRequestForEmail.type === 'rejection' && updatedRequestForEmail.reason) {
               handleSendEmail(generateEmailForRejection(updatedRequestForEmail.request, updatedRequestForEmail.reason));
             } else if (updatedRequestForEmail.type === 'completion') {
-              handleSendEmail(EmailService.generateCompletionEmail(updatedRequestForEmail.request));
+              handleSendEmail(generateEmailForCompletion(updatedRequestForEmail.request));
             } else if (updatedRequestForEmail.type === 'qc_request') {
               // Analyst -> QC Users: study finished execution
               const analystId = updatedRequestForEmail.request.assignedTo;
@@ -1018,11 +1058,9 @@ const updatedList = currentRequests.map(req => {
                     analyst.email,
                     analyst.name,
                     supervisorName,
-                    updatedRequestForEmail.reason
+                    updatedRequestForEmail.reason,
+                    supervisorUser?.email || user?.email
                   );
-                  // Set sender to supervisor
-                  emailData.senderEmail = supervisorUser?.email || user?.email;
-                  emailData.senderName = supervisorName;
                   handleSendEmail(emailData);
                 } else {
                   const emailData = EmailService.generateQCRejectionAnalystEmail(
@@ -1030,14 +1068,21 @@ const updatedList = currentRequests.map(req => {
                     analyst.email,
                     analyst.name,
                     supervisorName,
-                    updatedRequestForEmail.reason || 'Necessita readequação técnica.'
+                    updatedRequestForEmail.reason || 'Necessita readequação técnica.',
+                    supervisorUser?.email || user?.email
                   );
-                  // Set sender to supervisor
-                  emailData.senderEmail = supervisorUser?.email || user?.email;
-                  emailData.senderName = supervisorName;
                   handleSendEmail(emailData);
                 }
               }
+            } else if (updatedRequestForEmail.type === 'execution') {
+              // Email quando estudo entra em execução
+              handleSendEmail(generateEmailForExecution(updatedRequestForEmail.request));
+            } else if (updatedRequestForEmail.type === 'awaiting_info') {
+              // Email quando solicita informações ao solicitante
+              handleSendEmail(generateEmailForAwaitingInfo(updatedRequestForEmail.request, updatedRequestForEmail.reason));
+            } else if (updatedRequestForEmail.type === 'info_received') {
+              // Email quando solicitante envia informações de volta
+              handleSendEmail(generateEmailForInfoReceived(updatedRequestForEmail.request));
             }
           }
         } catch (previewError) {

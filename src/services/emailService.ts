@@ -409,12 +409,13 @@ Naturgy - Portal Técnico APR`,
     };
   },
 
-  /**
+/**
    * Email enviado quando uma solicitação é aprovada (admin → solicitante)
    */
   generateApprovalEmail: (
     request: FormData,
     responsibleName?: string,
+    senderEmail?: string,
   ): EmailNotificationData => {
     const signerName =
       responsibleName || "Equipe de Gestão de Análise de Planificação de Rede";
@@ -422,33 +423,41 @@ Naturgy - Portal Técnico APR`,
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
-      subject: `Solicitação de Estudo Nº ${studyRef || request.id}`,
-      body: `✅ SUA SOLICITAÇÃO FOI APROVADA!
-───────────────────────────────────────────────────────────
-Prezado(a) ${safeName(request.requesterName)},
-Temos o prazer de informar que sua solicitação de Análise de Planificação de Rede foi APROVADA!
-Sua solicitação foi validada com sucesso e será encaminhada para execução técnica.
-Um analista especializado iniciará o processamento do seu estudo em breve.
+      senderEmail: senderEmail,
+      senderName: signerName,
+      ccEmail: SYSTEM_EMAIL,
+      subject: `✅ Solicitação Aprovada - Estudo Nº ${studyRef || request.id}`,
+      body: `✅ SOLICITAÇÃO APROVADA - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📋 DETALHES
-───────────────────────────────────────────────────────────
+Prezado(a) ${safeName(request.requesterName)},
+
+Temos a satisfação de informar que sua solicitação de Análise de 
+Planificação de Rede foi APROVADA e validada tecnicamente.
+
+Seu estudo será encaminhamento para execução técnica. Um analista 
+especializado dará continuidade ao processamento.
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Código: ${request.studyNumber || "Não informado"}
 Título: ${request.studyTitle || request.clientName || "Não informado"}
-Local:  ${request.address || ""}, ${request.city || ""}
-Data:   ${safeFormatDate(request.requestDate)}
+Local: ${request.address || ""}, ${request.city || ""}
+Data de Criação: ${safeFormatDate(request.requestDate)}
 Status: AGUARDANDO EXECUÇÃO
 
-Para acompanhar o progresso, acesse o Portal Técnico APR.
+📌 INFORMAÇÕES
+Para acompanhar o andamento do seu estudo, utilize o Portal Técnico APR.
 
 Atenciosamente,
 ${signerName}
-Naturgy - Portal Técnico APR`,
+Gestor de Análise de Planificação de Rede - NATURGY`,
       htmlBody: buildRefinedHtmlTemplate(
-        "✅ Sua Solicitação foi APROVADA!",
-        `Prezado(a) ${safeName(request.requesterName)},\nTemos o prazer de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #107C10; font-weight: bold;">APROVADA</span>!\n\nSua solicitação foi validada com sucesso e será encaminhada para <strong>execução técnica</strong>.\nUm analista especializado iniciará o processamento do seu estudo em breve.\n\n<strong>Para acompanhar o progresso:</strong> acesse o Portal Técnico APR.`,
+        "✅ Solicitação Aprovada",
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Temos a satisfação de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #10b981; font-weight: bold;">APROVADA</span> e validada tecnicamente.<br/><br/>Seu estudo será encaminhamento para execução técnica. Um analista especializado dará continuidade ao processamento.<br/><br/><strong>Para acompanhar o andamento do seu estudo:</strong> utilize o Portal Técnico APR.`,
         [
           {
-            title: "📋 DETALHES",
+            title: "📋 Dados do Estudo",
             items: [
               {
                 label: "Código",
@@ -456,23 +465,29 @@ Naturgy - Portal Técnico APR`,
               },
               {
                 label: "Título",
-                value:
-                  request.studyTitle || request.clientName || "Não informado",
+                value: request.studyTitle || request.clientName || "Não informado",
               },
               {
                 label: "Local",
                 value: `${request.address || ""}, ${request.city || ""}`,
               },
-              { label: "Data", value: safeFormatDate(request.requestDate) },
-              { label: "Status", value: "AGUARDANDO EXECUÇÃO" },
+              {
+                label: "Data de Criação",
+                value: safeFormatDate(request.requestDate),
+              },
+              {
+                label: "Status",
+                value: "AGUARDANDO EXECUÇÃO",
+              },
             ],
           },
         ],
         [
+          "📌 Para acompanhar o andamento do seu estudo, utilize o Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + signerName + "</strong>",
-          "<strong>Naturgy - Portal Técnico APR</strong>",
-        ],
+          "<strong>Gestor de Análise de Planificação de Rede - NATURGY</strong>",
+],
         [],
         StudyStatus.AGUARDANDO_EXECUCAO,
       ),
@@ -486,6 +501,7 @@ Naturgy - Portal Técnico APR`,
     request: FormData,
     rejectionReason: string,
     responsibleName?: string,
+    senderEmail?: string,
   ): EmailNotificationData => {
     const signerName =
       responsibleName || "Equipe de Gestão de Análise de Planificação de Rede";
@@ -493,42 +509,47 @@ Naturgy - Portal Técnico APR`,
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
-      subject: `Solicitação de Estudo Nº ${studyRef || request.id}`,
-      body: `⚠️ SOLICITAÇÃO DE REVISÃO
-───────────────────────────────────────────────────────────
-Prezado(a) ${safeName(request.requesterName)},
-Sua solicitação passou pela análise inicial. Porém, foi identificada a necessidade de ajustes antes de procedermos.
+      senderEmail: senderEmail,
+      senderName: signerName,
+      ccEmail: SYSTEM_EMAIL,
+      subject: `📢 Solicitação Requer Revisão - Estudo Nº ${studyRef || request.id}`,
+      body: `📢 SOLICITAÇÃO REQUER REVISÃO - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📋 DADOS DA SOLICITAÇÃO
-───────────────────────────────────────────────────────────
+Prezado(a) ${safeName(request.requesterName)},
+
+Sua solicitação de Análise de Planificação de Rede foi analisada e 
+requer ajustes antes da aprovação técnica.
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Código: ${request.studyNumber || "Não informado"}
 Título: ${request.studyTitle || request.clientName || "Não informado"}
-Local:  ${request.address || ""}, ${request.city || ""}
+Local: ${request.address || ""}, ${request.city || ""}
 Status: REVISÃO NECESSÁRIA
 
-📝 MOTIVO DA REVISÃO SOLICITADA
-───────────────────────────────────────────────────────────
+📝 MOTIVO DA REVISÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${rejectionReason}
 
-▶️ PRÓXIMOS PASSOS
-───────────────────────────────────────────────────────────
-1️⃣ Revise as informações e documentação conforme indicado
-2️⃣ Acesse o Portal Técnico APR
-3️⃣ Solicite REVISÃO do estudo
-4️⃣ Reenvie com os ajustes necessários
-5️⃣ Nossa equipe analisará novamente
+▶️ INSTRUÇÕES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Acesse o Portal Técnico APR
+2. Revise as informações conforme orientação
+3. Solicite revisão do estudo
+4. Reenvie com os ajustes necessários
 
-Para dúvidas ou assistência, entre em contato conosco através do portal.
+Para dúvidas ou assistência, entre em contato através do Portal.
 
 Atenciosamente,
 ${signerName}
-Naturgy - Portal Técnico APR`,
+Gestor de Análise de Planificação de Rede - NATURGY`,
       htmlBody: buildRefinedHtmlTemplate(
-        "⚠️ SOLICITAÇÃO DE REVISÃO",
-        `Prezado(a) ${safeName(request.requesterName)},\n<strong>Esta é uma SOLICITAÇÃO DE REVISÃO.</strong>\nSua solicitação de <strong>Análise de Planificação de Rede</strong> passou pela análise inicial. Porém, foi identificada a necessidade de ajustes.`,
+        "📢 Solicitação Requer Revisão",
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Sua solicitação de <strong>Análise de Planificação de Rede</strong> foi analisada e <span style="color: #f97316; font-weight: bold;">requer ajustes</span> antes da aprovação técnica.`,
         [
           {
-            title: "📋 DADOS",
+            title: "📋 Dados do Estudo",
             items: [
               {
                 label: "Código",
@@ -536,35 +557,45 @@ Naturgy - Portal Técnico APR`,
               },
               {
                 label: "Título",
-                value:
-                  request.studyTitle || request.clientName || "Não informado",
+                value: request.studyTitle || request.clientName || "Não informado",
               },
               {
                 label: "Local",
                 value: `${request.address || ""}, ${request.city || ""}`,
               },
-              { label: "Motivo da Revisão", value: rejectionReason },
+              {
+                label: "Motivo da Revisão",
+                value: rejectionReason,
+              },
             ],
           },
           {
-            title: "📝 PRÓXIMOS PASSOS",
+            title: "▶️ Instruções",
             items: [
               {
-                label: "1️⃣",
-                value: "Revise as informações e documentação conforme indicado",
+                label: "1",
+                value: "Acesse o Portal Técnico APR",
               },
-              { label: "2️⃣", value: "Acesse o Portal Técnico APR" },
-              { label: "3️⃣", value: "Solicite REVISÃO do estudo" },
-              { label: "4️⃣", value: "Reenvie com os ajustes necessários" },
-              { label: "5️⃣", value: "Nossa equipe analisará novamente" },
+              {
+                label: "2",
+                value: "Revise as informações conforme orientação",
+              },
+              {
+                label: "3",
+                value: "Solicite revisão do estudo",
+              },
+              {
+                label: "4",
+                value: "Reenvie com os ajustes necessários",
+              },
             ],
           },
         ],
         [
-          "Para dúvidas, entre em contato através do Portal Técnico APR.",
+          "Para dúvidas ou assistência, entre em contato através do Portal.",
           "Atenciosamente,",
           "<strong>" + signerName + "</strong>",
-          "<strong>Naturgy - Portal Técnico APR</strong>",
+          "<strong>Gestor de Análise de Planificação de Rede - NATURGY</strong>",
         ],
         [],
         StudyStatus.REJEITADO,
@@ -573,54 +604,291 @@ Naturgy - Portal Técnico APR`,
   },
 
   /**
+   * Email enviado quando a solicitação entra em EXECUÇÃO (analista → solicitante)
+   */
+  generateExecutionEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    return {
+      recipientEmail: request.email,
+      recipientName: safeName(request.requesterName),
+      senderEmail: analystEmail,
+      senderName: analystName,
+      ccEmail: SYSTEM_EMAIL,
+      subject: `⚙️ Estudo em Execução - Estudo Nº ${studyRef || request.id}`,
+      body: `⚙️ ESTUDO EM EXECUÇÃO - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prezado(a) ${safeName(request.requesterName)},
+
+Informamos que seu estudo encontra-se em fase de execução técnica.
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Código: ${request.studyNumber || "Não informado"}
+Título: ${request.studyTitle || request.clientName || "Não informado"}
+Local: ${request.address || ""}, ${request.city || ""}
+Responsável Técnico: ${analystName}
+
+📌 ORIENTAÇÕES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Nossa equipe técnica está trabalhando no desenvolvimento do estudo.
+Você receberá uma notificação quando o processo for concluído.
+
+Em caso de dúvidas, utilize o Portal Técnico APR.
+
+Atenciosamente,
+${analystName}
+Analista de Análise de Planificação de Rede - NATURGY`,
+      htmlBody: buildRefinedHtmlTemplate(
+        "⚙️ Estudo em Execução",
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que seu estudo encontra-se em <strong>fase de execução técnica</strong>.<br/><br/>Nossa equipe técnica está trabalhando no desenvolvimento do estudo.<br/>Você receberá uma notificação quando o processo for concluído.`,
+        [
+          {
+            title: "📋 Dados do Estudo",
+            items: [
+              { label: "Código", value: request.studyNumber || "Não informado" },
+              { label: "Título", value: request.studyTitle || request.clientName || "Não informado" },
+              { label: "Local", value: `${request.address || ""}, ${request.city || ""}` },
+              { label: "Responsável Técnico", value: analystName },
+            ],
+          },
+        ],
+        [
+          "📌 Em caso de dúvidas, utilize o Portal Técnico APR.",
+          "Atenciosamente,",
+          "<strong>" + analystName + "</strong>",
+          "<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>",
+        ],
+        [],
+        StudyStatus.EM_EXECUCAO,
+      ),
+    };
+  },
+
+  /**
+   * Email enviado quando a solicitação está AGUARDANDO INFORMAÇÕES (analista → solicitante)
+   */
+  generateAwaitingInfoEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+    holdReason?: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    return {
+      recipientEmail: request.email,
+      recipientName: safeName(request.requesterName),
+      senderEmail: analystEmail,
+      senderName: analystName,
+      ccEmail: SYSTEM_EMAIL,
+      subject: `📩 Solicitação de Informações - Estudo Nº ${studyRef || request.id}`,
+      body: `📩 SOLICITAÇÃO DE INFORMAÇÕES - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prezado(a) ${safeName(request.requesterName)},
+
+Para dar continuidade ao processamento do seu estudo, solicitamos 
+informações adicionais conforme descrito abaixo.
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Código: ${request.studyNumber || "Não informado"}
+Título: ${request.studyTitle || request.clientName || "Não informado"}
+
+📝 INFORMAÇÕES SOLICITADAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${holdReason || request.holdReason || "Informações adicionais necessárias para prosseguimento do estudo."}
+
+▶️ INSTRUÇÕES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Acesse o Portal Técnico APR
+2. Localize seu estudo em "Aguardando Informações"
+3. Forneça as informações solicitadas
+4. Clique em "Responder" para enviar
+
+⚠️ IMPORTANTE: O processo permanece paralisado até o recebimento 
+das informações solicitadas.
+
+Atenciosamente,
+${analystName}
+Analista de Análise de Planificação de Rede - NATURGY`,
+      htmlBody: buildRefinedHtmlTemplate(
+        "📩 Solicitação de Informações",
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Para dar continuidade ao processamento do seu estudo, solicitamos <strong>informações adicionais</strong> conforme descrito abaixo.`,
+        [
+          {
+            title: "📋 Dados do Estudo",
+            items: [
+              { label: "Código", value: request.studyNumber || "Não informado" },
+              { label: "Título", value: request.studyTitle || request.clientName || "Não informado" },
+            ],
+          },
+          {
+            title: "📝 Informações Solicitadas",
+            items: [
+              { label: "Motivo", value: holdReason || request.holdReason || "Informações adicionais necessárias" },
+            ],
+          },
+          {
+            title: "▶️ Instruções",
+            items: [
+              { label: "1", value: "Acesse o Portal Técnico APR" },
+              { label: "2", value: "Localize seu estudo em 'Aguardando Informações'" },
+              { label: "3", value: "Forneça as informações solicitadas" },
+              { label: "4", value: "Clique em 'Responder' para enviar" },
+            ],
+          },
+        ],
+        [
+          "⚠️ IMPORTANTE: O processo permanece paralisado até o recebimento das informações solicitadas.",
+          "Em caso de dúvidas, utilize o Portal Técnico APR.",
+          "Atenciosamente,",
+          "<strong>" + analystName + "</strong>",
+          "<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>",
+        ],
+        [],
+        StudyStatus.AGUARDANDO_INFORMACAO,
+      ),
+    };
+  },
+
+  /**
+   * Email enviado quando o solicitante ENVIA as informações (solicitante → analista)
+   */
+  generateInfoReceivedEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+    holdResponse?: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    return {
+      recipientEmail: analystEmail,
+      recipientName: analystName,
+      senderEmail: request.email,
+      senderName: safeName(request.requesterName),
+      ccEmail: SYSTEM_EMAIL,
+      subject: `📨 Informações Recebidas - Estudo Nº ${studyRef || request.id}`,
+      body: `📨 INFORMAÇÕES RECEBIDAS - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prezado(a) ${analystName},
+
+O solicitante ${safeName(request.requesterName)} enviou as informações 
+solicitadas para o estudo abaixo:
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Código: ${request.studyNumber || "Não informado"}
+Título: ${request.studyTitle || request.clientName || "Não informado"}
+Solicitante: ${safeName(request.requesterName)}
+
+📝 INFORMAÇÕES ENVIADAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${holdResponse || request.holdResponse || "O solicitante enviou resposta."}
+
+▶️ AÇÃO NECESSÁRIA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Retomar a execução do estudo no Portal Técnico APR.
+
+Atenciosamente,
+Portal Técnico APR - NATURGY`,
+      htmlBody: buildRefinedHtmlTemplate(
+        "📨 Informações Recebidas",
+        `Prezado(a) ${analystName},<br/><br/>O solicitante <strong>${safeName(request.requesterName)}</strong> enviou as informações solicitadas para o estudo abaixo.`,
+        [
+          {
+            title: "📋 Dados do Estudo",
+            items: [
+              { label: "Código", value: request.studyNumber || "Não informado" },
+              { label: "Título", value: request.studyTitle || request.clientName || "Não informado" },
+              { label: "Solicitante", value: safeName(request.requesterName) },
+            ],
+          },
+          {
+            title: "📝 Informações Enviadas",
+            items: [
+              { label: "Resposta", value: holdResponse || request.holdResponse || "O solicitante enviou resposta." },
+            ],
+          },
+        ],
+        [
+          "▶️ AÇÃO NECESSÁRIA: Retomar a execução do estudo no Portal Técnico APR.",
+          "Atenciosamente,",
+          "<strong>Portal Técnico APR - NATURGY</strong>",
+        ],
+        [],
+        StudyStatus.EM_EXECUCAO,
+      ),
+    };
+  },
+
+/**
    * Email enviado quando uma solicitação é concluída (admin → solicitante)
    */
   generateCompletionEmail: (
     request: FormData,
     responsibleName?: string,
+    senderEmail?: string,
   ): EmailNotificationData => {
     const signerName =
       responsibleName || "Equipe de Gestão de Análise de Planificação de Rede";
     const studyRef = request.studyNumber?.trim();
+    const completionDate = request.completedAt 
+      ? safeFormatDate(request.completedAt)
+      : new Date().toLocaleDateString('pt-BR');
+    
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
-      subject: `Solicitação de Estudo Nº ${studyRef || request.id}`,
-      body: `✅ SEU ESTUDO FOI CONCLUÍDO!
-───────────────────────────────────────────────────────────
-Prezado(a) ${safeName(request.requesterName)},
-Temos o prazer de informar que sua solicitação de Análise de Planificação de Rede foi CONCLUÍDA!
+      senderEmail: senderEmail,
+      senderName: signerName,
+      ccEmail: `${SYSTEM_EMAIL}; solon@naturgy.com; jmario@naturgy.com`,
+      subject: `🎉 Estudo Concluído - Estudo Nº ${studyRef || request.id}`,
+      body: `🎉 ESTUDO CONCLUÍDO - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📋 DETALHES
-───────────────────────────────────────────────────────────
+Prezado(a) ${safeName(request.requesterName)},
+
+Temos a satisfação de informar que sua solicitação de Análise de 
+Planificação de Rede foi CONCLUÍDA com sucesso!
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Código: ${request.studyNumber || "Não informado"}
 Título: ${request.studyTitle || request.clientName || "Não informado"}
-Local:  ${request.address || ""}, ${request.city || ""}
-Data:   ${safeFormatDate(request.requestDate)}
+Local: ${request.address || ""}, ${request.city || ""}
+Data de Conclusão: ${completionDate}
 
 📂 ACESSO AOS RESULTADOS
-───────────────────────────────────────────────────────────
-Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Os arquivos com os resultados técnicos estão disponíveis na pasta 
+de resposta do seu estudo no Portal Técnico APR.
 
-📝 PRÓXIMOS PASSOS
-───────────────────────────────────────────────────────────
-1️⃣ Acesse o Portal Técnico APR
-2️⃣ Navegue até "Meus Pedidos"
-3️⃣ Abra seu estudo (${request.studyNumber})
-4️⃣ Clique em "Abrir Pasta" para acessar os resultados
-5️⃣ Verifique os arquivos de resposta gerados
+▶️ INSTRUÇÕES PARA ACESSO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Acesse o Portal Técnico APR
+2. Navegue até "Meus Pedidos"
+3. Selecione seu estudo (${request.studyNumber})
+4. Clique em "Abrir Pasta" para acessar os resultados
+5. Verifique os arquivos de resposta gerados
 
-Precisa de ajuda? Entre em contato com nossa equipe técnica através do portal.
+Em caso de dúvidas ou necessidade de suporte, entre em contato 
+através do Portal Técnico APR.
 
 Atenciosamente,
 ${signerName}
-Naturgy - Portal Técnico APR`,
+Controle de Qualidade - NATURGY`,
       htmlBody: buildRefinedHtmlTemplate(
-        "✅ Seu Estudo foi CONCLUÍDO!",
-        `Prezado(a) ${safeName(request.requesterName)},\nTemos o prazer de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #107C10; font-weight: bold;">CONCLUÍDA</span>!\n\n<strong>📂 Acesso aos Resultados</strong>\nOs arquivos com os resultados técnicos da Análise de Planificação de Rede estão disponíveis na pasta de resposta do seu estudo. Você pode acessá-los através do Portal Técnico APR.`,
+        "🎉 Estudo Concluído",
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Temos a satisfação de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #10b981; font-weight: bold;">CONCLUÍDA</span> com sucesso!<br/><br/><strong>📂 Acesso aos Resultados</strong><br/>Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo no Portal Técnico APR.`,
         [
           {
-            title: "📋 DETALHES",
+            title: "📋 Dados do Estudo",
             items: [
               {
                 label: "Código",
@@ -628,41 +896,49 @@ Naturgy - Portal Técnico APR`,
               },
               {
                 label: "Título",
-                value:
-                  request.studyTitle || request.clientName || "Não informado",
+                value: request.studyTitle || request.clientName || "Não informado",
               },
               {
                 label: "Local",
                 value: `${request.address || ""}, ${request.city || ""}`,
               },
-              { label: "Data", value: safeFormatDate(request.requestDate) },
+              {
+                label: "Data de Conclusão",
+                value: completionDate,
+              },
             ],
           },
           {
-            title: "📝 PRÓXIMOS PASSOS",
+            title: "▶️ Instruções para Acesso",
             items: [
-              { label: "1️⃣", value: "Acesse o Portal Técnico APR" },
-              { label: "2️⃣", value: 'Navegue até "Meus Pedidos"' },
               {
-                label: "3️⃣",
-                value: `Abra seu estudo (${request.studyNumber})`,
+                label: "1",
+                value: "Acesse o Portal Técnico APR",
               },
               {
-                label: "4️⃣",
-                value: 'Clique em "Abrir Pasta" para acessar os resultados',
+                label: "2",
+                value: "Navegue até 'Meus Pedidos'",
               },
               {
-                label: "5️⃣",
+                label: "3",
+                value: `Selecione seu estudo (${request.studyNumber})`,
+              },
+              {
+                label: "4",
+                value: "Clique em 'Abrir Pasta' para acessar os resultados",
+              },
+              {
+                label: "5",
                 value: "Verifique os arquivos de resposta gerados",
               },
             ],
           },
         ],
         [
-          "Precisa de ajuda? Entre em contato com nossa equipe técnica através do Portal Técnico APR.",
+          "Em caso de dúvidas ou necessidade de suporte, entre em contato através do Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + signerName + "</strong>",
-          "<strong>Naturgy - Portal Técnico APR</strong>",
+          "<strong>Controle de Qualidade - NATURGY</strong>",
         ],
         [],
         StudyStatus.CONCLUIDO,
@@ -672,7 +948,7 @@ Naturgy - Portal Técnico APR`,
 
 /**
    * Email enviado quando o analista conclude a execução e envia para Controle de Qualidade
-   * (analista → prgc sistema)
+   * (analista → responsável CQ)
    */
   generateQCRequestEmail: (
     request: FormData,
@@ -681,56 +957,66 @@ Naturgy - Portal Técnico APR`,
     recipientEmail?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
+    const completionDate = request.completedAt 
+      ? safeFormatDate(request.completedAt)
+      : new Date().toLocaleDateString('pt-BR');
     return {
       recipientEmail: recipientEmail || SYSTEM_EMAIL,
-      recipientName: 'Controle de Qualidade APR',
+      recipientName: 'Responsável pelo Controle de Qualidade',
       senderEmail: analystEmail,
       senderName: analystName,
-      subject: `📋 Solicitação de Controle de Qualidade: Estudo Nº ${studyRef || request.id}`,
-      body: `📋 SOLICITAÇÃO DE CONTROLE DE QUALIDADE
-───────────────────────────────────────────────────────────
-Prezada Equipe de Controle de Qualidade,
+      ccEmail: SYSTEM_EMAIL,
+      subject: `🔍 Solicitação de Controle de Qualidade - Estudo Nº ${studyRef || request.id}`,
+      body: `🔍 SOLICITAÇÃO DE CONTROLE DE QUALIDADE - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Informo que o estudo ${request.studyNumber} foi concluído e está sendo encaminhado para revisão no Controle de Qualidade.
+Prezado(a) Responsável pelo Controle de Qualidade,
+
+O estudo abaixo foi concluído e está sendo encaminhamento para 
+revisão e validação técnica.
 
 📋 DADOS DO ESTUDO
-───────────────────────────────────────────────────────────
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Código: ${request.studyNumber || 'N/A'}
 Título: ${request.studyTitle || request.clientName || 'N/A'}
+Local: ${request.address || ''}, ${request.city || ''}
 Analista Responsável: ${analystName}
-Data: ${safeFormatDate(request.requestDate)}
+Data de Conclusão: ${completionDate}
 
-Solicito a análise e validação conforme os critérios do Controle de Qualidade.
+📝 SOLICITAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Solicito análise e validação conforme os critérios de Controle de 
+Qualidade estabelecidos.
 
 Atenciosamente,
 ${analystName}
-Naturgy - Portal Técnico APR`,
+Analista de Análise de Planificação de Rede - NATURGY`,
       htmlBody: buildRefinedHtmlTemplate(
-        '📋 Solicitação de Controle de Qualidade',
-        `Prezada Equipe de Controle de Qualidade,<br/><br/>Informo que o estudo <strong>${request.studyNumber}</strong> foi concluído e está sendo encaminhado para revisão no <strong>Controle de Qualidade</strong>.`,
+        '🔍 Solicitação de Controle de Qualidade',
+        `Prezado(a) Responsável pelo Controle de Qualidade,<br/><br/>O estudo abaixo foi concluído e está sendo encaminhamento para <strong>revisão e validação técnica</strong>.`,
         [
           {
-            title: '📋 DADOS DO ESTUDO',
+            title: '📋 Dados do Estudo',
             items: [
               { label: 'Código', value: request.studyNumber || 'N/A' },
               { label: 'Título', value: request.studyTitle || request.clientName || 'N/A' },
               { label: 'Local', value: `${request.address || ''}, ${request.city || ''}` },
               { label: 'Analista Responsável', value: analystName },
-              { label: 'Data de Envio', value: new Date().toLocaleDateString('pt-BR') },
+              { label: 'Data de Conclusão', value: completionDate },
             ]
           },
           {
-            title: '📝 AÇÃO NECESSÁRIA',
+            title: '📝 Solicitação',
             items: [
+              { label: 'Ação', value: 'Realizar análise e validação conforme critérios de CQ' },
               { label: 'Status', value: 'CONTROLE DE QUALIDADE' },
-              { label: 'Ação', value: 'Realizar análise e validação conforme critérios CQ.' },
             ]
           }
         ],
         [
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>Naturgy - Portal Técnico APR</strong>'
+          '<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>'
         ],
         [],
         StudyStatus.CONTROLE_QUALIDADE
@@ -738,7 +1024,7 @@ Naturgy - Portal Técnico APR`,
     };
   },
 
-  /**
+/**
    * Email enviado pelo analista ao solicitante quando o estudo é enviado ANTES do CQ
    * (analista → solicitante) — resposta antecipada por prazo
    */
@@ -753,35 +1039,37 @@ Naturgy - Portal Técnico APR`,
       recipientName: safeName(request.requesterName),
       senderEmail: analystEmail,
       senderName: analystName,
-      subject: `Resposta Antecipada do Estudo Nº ${studyRef || request.id}`,
-      body: `📋 RESPOSTA ANTECIPADA DO ESTUDO
-───────────────────────────────────────────────────────────
+      ccEmail: SYSTEM_EMAIL,
+      subject: `📋 Resposta Antecipada do Estudo Nº ${studyRef || request.id}`,
+      body: `📋 RESPOSTA ANTECIPADA DO ESTUDO - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 Prezado(a) ${safeName(request.requesterName)},
 
-Informamos que o estudo ${request.studyNumber} está sendo encaminhado em caráter antecipado, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.
+Informamos que o estudo ${request.studyNumber} está sendo encaminhdo em caráter antecipado, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.
 
-O estudo passará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, uma versão revisada será emitida e encaminhada.
+O estudo pasará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, uma versão revisada será emitida e encaminhda.
 
 📋 DADOS DO ESTUDO
-───────────────────────────────────────────────────────────
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Código: ${request.studyNumber || 'N/A'}
 Título: ${request.studyTitle || request.clientName || 'N/A'}
-Local:  ${request.address || ''}, ${request.city || ''}
-Data:   ${safeFormatDate(request.requestDate)}
+Local: ${request.address || ''}, ${request.city || ''}
+Data: ${safeFormatDate(request.requestDate)}
 
 📂 ACESSO AOS RESULTADOS
-───────────────────────────────────────────────────────────
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo.
 
 Atenciosamente,
 ${analystName}
-Naturgy - Portal Técnico APR`,
+Analista de Análise de Planificação de Rede - NATURGY`,
       htmlBody: buildRefinedHtmlTemplate(
         '📋 Resposta Antecipada do Estudo',
-        `Prezado(a) <strong>${safeName(request.requesterName)}</strong>,<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> está sendo encaminhado em caráter <strong>antecipado</strong>, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.<br/><br/>O estudo passará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, <strong>uma versão revisada será emitida e encaminhada</strong>.`,
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> está sendo encaminhdo em caráter <strong>antecipado</strong>, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.<br/><br/>O estudo pasará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, <strong>uma versão revisada será emitida e encaminhda</strong>.`,
         [
           {
-            title: '📋 DADOS DO ESTUDO',
+            title: '📋 Dados do Estudo',
             items: [
               { label: 'Código', value: request.studyNumber || 'N/A' },
               { label: 'Título', value: request.studyTitle || request.clientName || 'N/A' },
@@ -791,18 +1079,19 @@ Naturgy - Portal Técnico APR`,
             ]
           },
           {
-            title: '⚠️ OBSERVAÇÃO IMPORTANTE',
+            title: '⚠️ Observação Importante',
             items: [
               { label: 'Situação', value: 'Enviado antes do Controle de Qualidade' },
               { label: 'Motivo', value: 'Prazo de entrega' },
-              { label: 'Ação Pendente', value: 'O estudo ainda passará pelo CQ. Se necessário, nova versão será emitida.' },
+              { label: 'Ação Pendente', value: 'O estudo ainda pasará pelo CQ. Se necessário, nova versão será emitida.' },
             ]
           }
         ],
         [
+          '📂 Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo.',
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>Naturgy - Portal Técnico APR</strong>'
+          '<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>'
         ],
         [],
         StudyStatus.ENVIADO_SEM_CQ
@@ -810,7 +1099,7 @@ Naturgy - Portal Técnico APR`,
     };
   },
 
-  /**
+/**
    * Email enviado pelo analista ao sistema (prgc) informando envio antes do CQ
    * (analista → prgc)
    */
@@ -825,34 +1114,38 @@ Naturgy - Portal Técnico APR`,
       recipientName: 'Controle de Qualidade APR',
       senderEmail: analystEmail,
       senderName: analystName,
-      subject: `⚠️ Envio Antecipado Antes do CQ: Estudo Nº ${studyRef || request.id}`,
-      body: `⚠️ ENVIO ANTECIPADO ANTES DO CONTROLE DE QUALIDADE
-───────────────────────────────────────────────────────────
+      subject: `⚠️ Envio Antecipado Antes do CQ - Estudo Nº ${studyRef || request.id}`,
+      body: `⚠️ ENVIO ANTECIPADO ANTES DO CONTROLE DE QUALIDADE - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 Prezada Equipe de Controle de Qualidade,
 
 Informo que o estudo ${request.studyNumber} foi enviado ao solicitante ANTES da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.
 
-O estudo está sendo encaminhado para análise no CQ normalmente. Caso sejam identificadas correções necessárias, será emitida nova versão ao solicitante com as devidas ressalvas corrigidas.
+O estudo está sendo inúmerado para análise no CQ normalmente. Caso sejam identificadas correções necessárias, será emitida nova versão ao solicitante com as devidas ressalvas corrigidas.
 
 📋 DADOS DO ESTUDO
-───────────────────────────────────────────────────────────
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Código: ${request.studyNumber || 'N/A'}
 Título: ${request.studyTitle || request.clientName || 'N/A'}
+Local: ${request.address || ''}, ${request.city || ''}
 Analista Responsável: ${analystName}
 Data: ${safeFormatDate(request.requestDate)}
 Motivo: Prazo de entrega
 
+📝 SOLICITAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Solicito a análise e validação conforme os critérios do Controle de Qualidade.
 
 Atenciosamente,
 ${analystName}
-Naturgy - Portal Técnico APR`,
+Analista de Análise de Planificação de Rede - NATURGY`,
       htmlBody: buildRefinedHtmlTemplate(
         '⚠️ Envio Antecipado Antes do CQ',
-        `Prezada Equipe de Controle de Qualidade,<br/><br/>Informo que o estudo <strong>${request.studyNumber}</strong> foi enviado ao solicitante <strong>ANTES</strong> da conclusão do processo de Controle de Qualidade, em função do <strong>prazo de entrega</strong>.<br/><br/>O estudo está sendo encaminhado para análise no CQ normalmente. Caso sejam identificadas correções necessárias, será emitida <strong>nova versão ao solicitante</strong> com as devidas ressalvas corrigidas.`,
+        `Prezada Equipe de Controle de Qualidade,<br/><br/>Informo que o estudo <strong>${request.studyNumber}</strong> foi enviado ao solicitante <strong>ANTES</strong> da conclusão do processo de Controle de Qualidade, em função do <strong>prazo de entrega</strong>.<br/><br/>O estudo está sendocolour untuk análise no CQ normalmente. Caso sejam identificadas correções necessárias, será emitida <strong>nova versão ao solicitante</strong> com as devidas ressalvas corrigidas.`,
         [
           {
-            title: '📋 DADOS DO ESTUDO',
+            title: '📋 Dados do Estudo',
             items: [
               { label: 'Código', value: request.studyNumber || 'N/A' },
               { label: 'Título', value: request.studyTitle || request.clientName || 'N/A' },
@@ -863,17 +1156,17 @@ Naturgy - Portal Técnico APR`,
             ]
           },
           {
-            title: '📝 AÇÃO NECESSÁRIA',
+            title: '📝 Solicitação',
             items: [
               { label: 'Status', value: 'ENVIADO SEM CQ → CONTROLE DE QUALIDADE' },
-              { label: 'Ação', value: 'Realizar análise e validação. Se reprovado, analista deve gerar nova documentação corrigida.' },
+              { label: 'Ação', value: 'Realizar análise e validação conforme critérios CQ' },
             ]
           }
         ],
         [
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>Naturgy - Portal Técnico APR</strong>'
+          '<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>'
         ],
         [],
         StudyStatus.CONTROLE_QUALIDADE
@@ -890,56 +1183,78 @@ Naturgy - Portal Técnico APR`,
     analystName: string,
     qcName: string,
     observations?: string,
+    qcEmail?: string,
   ): EmailNotificationData => {
     return {
       recipientEmail: analystEmail,
       recipientName: analystName,
-      subject: `✅ Estudo APROVADO no CQ: ${request.studyNumber}`,
-      body: `Prezado(a) ${analystName},
+      senderEmail: qcEmail,
+      senderName: qcName,
+      ccEmail: SYSTEM_EMAIL,
+      subject: `✅ Estudo Aprovado no CQ - Estudo Nº ${request.studyNumber}`,
+      body: `✅ ESTUDO APROVADO NO CONTROLE DE QUALIDADE - Estudo Nº ${request.studyNumber}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Informamos que o estudo ${request.studyNumber} foi APROVADO no Controle de Qualidade por ${qcName}.
+Prezado(a) ${analystName},
 
-O estudo retornou para sua fila com o status "Aprovado pelo CQ".
-Por favor, realize o envio formal do e-mail de conclusão para o solicitante através do painel técnico para encerrar o processo.
+É com satisfação que informamos que o estudo abaixo foi APROVADO 
+no Controle de Qualidade.
 
-Observações do QC:
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Código: ${request.studyNumber || 'N/A'}
+Título: ${request.studyTitle || request.clientName || 'N/A'}
+Aprovado por: ${qcName}
+
+📝 OBSERVAÇÕES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${observations || "Nenhuma observação adicional."}
 
+▶️ PRÓXIMA AÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Por favor, finalize o processo enviando o e-mail de conclusão 
+para o solicitante através do Portal Técnico APR.
+
+⚠️ O estudo retornou para sua fila com status "Aprovado pelo CQ".
+
 Atenciosamente,
-Controle de Qualidade APR
-Naturgy`,
+${qcName}
+Controle de Qualidade - NATURGY`,
       htmlBody: buildRefinedHtmlTemplate(
-        "✅ Estudo APROVADO no Controle de Qualidade",
-        `Prezado(a) <strong>${analystName}</strong>,<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> foi <span style="color: #10b981; font-weight: bold;">APROVADO</span> no Controle de Qualidade por <strong>${qcName}</strong>.<br/><br/>O estudo retornou para sua fila com o status <strong>"Aprovado pelo CQ"</strong>.`,
+        "✅ Estudo Aprovado no Controle de Qualidade",
+        `Prezado(a) ${analystName},<br/><br/>É com satisfação que informamos que o estudo abaixo foi <span style="color: #10b981; font-weight: bold;">APROVADO</span> no Controle de Qualidade.<br/><br/>O estudo retornou para sua fila com status <strong>"Aprovado pelo CQ"</strong>.`,
         [
           {
-            title: "📋 DADOS DO ESTUDO",
+            title: "📋 Dados do Estudo",
             items: [
               { label: "Código", value: request.studyNumber || "N/A" },
-              { label: "Cliente", value: request.studyTitle || request.clientName || "N/A" },
+              { label: "Título", value: request.studyTitle || request.clientName || "N/A" },
               { label: "Aprovado por", value: qcName },
             ]
           },
           {
-            title: "📝 PRÓXIMAS AÇÕES",
+            title: "📝 Observações",
             items: [
-              { label: "Status Atual", value: "APROVADO PELO CQ" },
-              { label: "Ação Necessária", value: "Enviar e-mail final ao solicitante e concluir estudo." },
-              { label: "Observações", value: observations || "Nenhuma observação." },
+              { label: "Observações", value: observations || "Nenhuma observação adicional." },
+            ]
+          },
+          {
+            title: "▶️ Próxima Ação",
+            items: [
+              { label: "Ação", value: "Enviar e-mail final ao solicitante e concluir estudo via Portal" },
+              { label: "Status", value: "APROVADO PELO CQ" },
             ]
           }
         ],
         [
-          "Por favor, finalize o processo no portal o quanto antes.",
+          "⚠️ Por favor, finalize o processo o quanto antes.",
           "Atenciosamente,",
-          "<strong>Controle de Qualidade APR</strong>",
-          "<strong>Naturgy</strong>"
+          "<strong>" + qcName + "</strong>",
+          "<strong>Controle de Qualidade - NATURGY</strong>"
         ],
         [],
         StudyStatus.APROVADO_CQ
       ),
-      senderEmail: undefined, // Will be filled by the caller with supervisor email
-      senderName: qcName,
     };
   },
 
@@ -952,54 +1267,80 @@ Naturgy`,
     analystName: string,
     qcName: string,
     reason: string,
+    qcEmail?: string,
   ): EmailNotificationData => {
     return {
       recipientEmail: analystEmail,
       recipientName: analystName,
-      subject: `❌ Estudo REPROVADO no CQ: ${request.studyNumber}`,
-      body: `Prezado(a) ${analystName},
+      senderEmail: qcEmail,
+      senderName: qcName,
+      ccEmail: SYSTEM_EMAIL,
+      subject: `❌ Estudo Não Aprovado no CQ - Estudo Nº ${request.studyNumber}`,
+      body: `❌ ESTUDO NÃO APROVADO NO CONTROLE DE QUALIDADE - Estudo Nº ${request.studyNumber}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Informamos que o estudo ${request.studyNumber} foi REPROVADO no Controle de Qualidade por ${qcName}.
+Prezado(a) ${analystName},
 
-O estudo retornou para sua fila com o status "Reprovado pelo CQ".
-Você deve realizar as correções indicadas abaixo e reenviar para o Controle de Qualidade.
+O estudo abaixo foi analisado pelo Controle de Qualidade e 
+requer ajustes antes da aprovação final.
 
-Motivo da Reprovação:
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Código: ${request.studyNumber || 'N/A'}
+Título: ${request.studyTitle || request.clientName || 'N/A'}
+Analisado por: ${qcName}
+
+📝 MOTIVO DA NÃO APROVAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${reason}
 
+▶️ AÇÃO NECESSÁRIA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Realize as correções indicadas
+2. Reenvie o estudo para nova análise do CQ
+
+⚠️ O estudo retornou para sua fila com status "Reprovado pelo CQ".
+
 Atenciosamente,
-Controle de Qualidade APR
-Naturgy`,
+${qcName}
+Controle de Qualidade - NATURGY`,
       htmlBody: buildRefinedHtmlTemplate(
-        "❌ Estudo REPROVADO no Controle de Qualidade",
-        `Prezado(a) <strong>${analystName}</strong>,<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> foi <span style="color: #ef4444; font-weight: bold;">REPROVADO</span> no Controle de Qualidade por <strong>${qcName}</strong>.<br/><br/>O estudo retornou para sua fila com o status <strong>"Reprovado pelo CQ"</strong> para correções.`,
+        "❌ Estudo Não Aprovado no CQ",
+        `Prezado(a) ${analystName},<br/><br/>O estudo abaixo foi analisado pelo Controle de Qualidade e <span style="color: #ef4444; font-weight: bold;">requer ajustes</span> antes da aprovação final.`,
         [
           {
-            title: "📋 DADOS DO ESTUDO",
+            title: "📋 Dados do Estudo",
             items: [
               { label: "Código", value: request.studyNumber || "N/A" },
-              { label: "Cliente", value: request.studyTitle || request.clientName || "N/A" },
-              { label: "Reprovado por", value: qcName },
+              { label: "Título", value: request.studyTitle || request.clientName || "N/A" },
+              { label: "Analisado por", value: qcName },
             ]
           },
           {
-            title: "📝 MOTIVO DA REPROVAÇÃO",
+            title: "📝 Motivo da Não Aprovação",
             items: [
-              { label: "Motivo/Ajustes", value: reason },
+              { label: "Correções", value: reason },
+            ]
+          },
+          {
+            title: "▶️ Ação Necessária",
+            items: [
+              { label: "1", value: "Realize as correções indicadas" },
+              { label: "2", value: "Reenvie o estudo para nova análise do CQ" },
+              { label: "Status", value: "REPROVADO PELO CQ" },
             ]
           }
         ],
         [
+          "⚠️ O estudo retornou para sua fila para correções.",
           "Após as correções, reenvie o estudo para nova análise do CQ.",
           "Atenciosamente,",
-          "<strong>Controle de Qualidade APR</strong>",
-          "<strong>Naturgy</strong>"
+          "<strong>" + qcName + "</strong>",
+          "<strong>Controle de Qualidade - NATURGY</strong>"
         ],
         [],
         StudyStatus.REPROVADO_CQ
       ),
-      senderEmail: undefined, // Will be filled by the caller with supervisor email
-      senderName: qcName,
     };
   },
 

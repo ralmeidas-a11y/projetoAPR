@@ -56,7 +56,6 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   const [criticalCounts, setCriticalCounts] = useState<Record<string, number>>(initialCriticalFailures);
   const [secondaryCounts, setSecondaryCounts] = useState<Record<string, number>>(initialSecondaryFailures);
   const [comments, setComments] = useState(isRevision ? '' : (existing.qcComments || ''));
-  const [showConfirmApprove, setShowConfirmApprove] = useState(false);
   const [selectedRevision, setSelectedRevision] = useState<any>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -212,9 +211,18 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   const handleApprove = () => {
     if (!onApprove) return;
     const hasFailures = totalCritical > 0 || totalSecondary > 0;
+    
+    // SE tem falhas → NÃO pode aprovar, redireciona para reprovação
     if (hasFailures) {
-      setShowConfirmApprove(true);
+      alert('Este estudo possui falhas registradas e não pode ser aprovado. Por favor, utilize a opção Reprovar CQ.');
+      return;
+    }
+    
+    // SE sem falhas + com comentários → Aprovado com Ressalvas
+    if (comments && comments.trim().length > 0) {
+      doApprove(true);
     } else {
+      // SE sem falhas + sem comentários → Aprovado normalmente
       doApprove(false);
     }
   };
@@ -226,6 +234,21 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
 
   const handleReject = () => {
     if (!onReject) return;
+    
+    const hasFailures = totalCritical > 0 || totalSecondary > 0;
+    
+    // SE não tem falhas e não tem comentário → não pode reprovar
+    if (!hasFailures && (!comments || comments.trim().length === 0)) {
+      alert('Para reprovar um estudo, é obrigatório preencher o campo de comentários com o motivo da reprovação.');
+      return;
+    }
+    
+    // SE tem falhas → comentário é obrigatório
+    if (hasFailures && (!comments || comments.trim().length === 0)) {
+      alert('Para reprovar um estudo com falhas registradas, é obrigatório preencher o campo de comentários com o motivo da reprovação.');
+      return;
+    }
+    
     setQcStatus('Reprovado');
     const qc = buildQCData();
     qc.qcStatusCQ = 'Reprovado';
@@ -738,7 +761,12 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
               </button>
               <button
                 onClick={handleApprove}
-                className="px-8 py-3.5 bg-green-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-green-100 hover:bg-green-700 transition-all active:scale-95 flex items-center gap-2"
+                disabled={totalCritical > 0 || totalSecondary > 0}
+                className={`px-8 py-3.5 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
+                  totalCritical > 0 || totalSecondary > 0
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                    : 'bg-green-600 text-white shadow-green-100 hover:bg-green-700'
+                }`}
               >
                 <i className="fa-solid fa-check-double"></i>
                 Aprovar CQ
@@ -747,69 +775,6 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
           )}
         </div>
       </div>
-
-      {/* Confirmation popup for approving with failures */}
-      {
-        showConfirmApprove && (
-          <div className="fixed inset-0 z-[7000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg p-8 mx-4 border border-slate-200">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center shrink-0">
-                  <i className="fa-solid fa-triangle-exclamation text-amber-600 text-2xl"></i>
-                </div>
-                <div>
-                  <h4 className="font-black text-lg text-slate-800 uppercase tracking-tight">Decisão de Aprovação</h4>
-                  <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Identificamos falhas no estudo</p>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-8">
-                <p className="text-xs text-slate-600 font-bold leading-relaxed">
-                  Foram registradas <strong className="text-red-600">{totalCritical} falhas críticas</strong> e <strong className="text-amber-600">{totalSecondary} secundárias</strong>.
-                  Como você deseja prosseguir com a aprovação deste estudo?
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 mb-2">
-                <button
-                  onClick={() => { setShowConfirmApprove(false); doApprove(true); }}
-                  className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all text-center group"
-                >
-                  <div className="w-10 h-10 rounded-full bg-amber-200 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <i className="fa-solid fa-file-signature text-amber-700"></i>
-                  </div>
-                  <div>
-                    <span className="block font-black text-[11px] text-amber-800 uppercase">Aprovar com Ressalvas</span>
-                    <span className="block text-[9px] text-amber-600 font-bold mt-0.5">O analista será notificado</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => { setShowConfirmApprove(false); doApprove(false); }}
-                  className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-300 transition-all text-center group"
-                >
-                  <div className="w-10 h-10 rounded-full bg-green-200 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <i className="fa-solid fa-check-double text-green-700"></i>
-                  </div>
-                  <div>
-                    <span className="block font-black text-[11px] text-green-800 uppercase">Aprovar Sem Ressalvas</span>
-                    <span className="block text-[9px] text-green-600 font-bold mt-0.5">Aprovação imediata</span>
-                  </div>
-                </button>
-              </div>
-
-              <div className="flex justify-center mt-6">
-                <button
-                  onClick={() => setShowConfirmApprove(false)}
-                  className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-all py-2"
-                >
-                  Voltar para o Controle
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      }
     </div >
   );
 };
