@@ -375,12 +375,15 @@ export const FormContainer: React.FC<FormContainerProps> = ({
             element.style.overflow = 'visible';
 
             const canvas = await html2canvas(element, {
-              scale: 2, // Aumenta resolução
+              scale: 3,
               useCORS: true,
               backgroundColor: '#ffffff',
-              windowWidth: 1010,
-              width: 1000,
               logging: false,
+              imageTimeout: 15000,
+              allowTaint: true,
+              windowWidth: 1200,
+              scrollX: 0,
+              scrollY: 0,
               onclone: (clonedDoc) => {
                 const clonedRoot = clonedDoc.body.querySelector('.bg-white.p-4.rounded-xl');
                 if (clonedRoot instanceof HTMLElement) {
@@ -405,38 +408,10 @@ export const FormContainer: React.FC<FormContainerProps> = ({
               }
             });
 
-            // Gerar PDF em formato A4 real
-            const pdf = new jsPDF({
-              orientation: 'portrait',
-              unit: 'mm',
-              format: 'a4'
-            });
-
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-
-            // Calculamos as dimensões para caber em UMA ÚNICA PÁGINA A4 (Compressão total)
-            const contentWidth = canvas.width;
-            const contentHeight = canvas.height;
-            const ratio = contentWidth / contentHeight;
-
-            let finalWidth = pdfWidth;
-            let finalHeight = pdfWidth / ratio;
-
-            // Se a altura calculada ainda for maior que a página A4, escalonamos pela altura
-            if (finalHeight > pdfHeight) {
-              finalHeight = pdfHeight;
-              finalWidth = finalHeight * ratio;
-            }
-
-            // Centraliza se for menor que a largura total
-            const xOffset = (pdfWidth - finalWidth) / 2;
-            const yOffset = 0; // Topo
-
-            const imgData = canvas.toDataURL('image/jpeg', 0.95);
-
-            // Adiciona em uma única página
-            pdf.addImage(imgData, 'JPEG', xOffset, yOffset, finalWidth, finalHeight, undefined, 'FAST');
+            // Gerar PDF em formato A4 real (fixed full-page sizing like letter export)
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const imgData = canvas.toDataURL('image/png', 1.0);
+            pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
 
             const pdfBlob = pdf.output('blob');
             const fileName = `Formulario_Oficial_${formData.studyNumber || formData.id}.pdf`;
@@ -562,6 +537,10 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       delete cleanClone.updatedAt;
       delete cleanClone.approvedAt;
       delete cleanClone.history;
+      delete cleanClone.estimatedDeliveryDate;
+      delete cleanClone.validationDate;
+      delete cleanClone.validationDateReal;
+      delete cleanClone.deadlineJustification;
 
       // Only prefill requester data if current user is SOLICITANTE.
       // Otherwise, leave empty for manual entry (or admin/analyst to fill).

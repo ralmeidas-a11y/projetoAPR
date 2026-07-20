@@ -109,6 +109,7 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
               <span className="font-black uppercase text-[9px] text-slate-400 mb-1 block">Localização:</span>
               <span className="text-[11px] leading-tight whitespace-normal break-words block">{data.address || '-'}</span>
             </div>
+            {(data.numClientsRes || data.totalFlowRes || data.numClientsCom || data.totalFlowCom) ? (
             <div className="col-span-12 mt-3 border border-black">
               <table className="w-full text-center divide-y divide-black divide-x border-collapse text-[10px] font-black table-auto">
                 <thead className="bg-[#f0f0f0]">
@@ -147,6 +148,7 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
                 </tbody>
               </table>
             </div>
+            ) : null}
           </div>
         </div>
         <div className="flex gap-2 items-stretch">
@@ -234,6 +236,7 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
             </div>
           )}
         </div>
+        {(data.responseMaxPo || data.responseMin || data.responseGarantia) ? (
         <div className="border border-black flex h-8 items-center text-[10px] font-black">
           <div className="bg-slate-200 h-full flex items-center px-4 border-r border-black shrink-0">
             <span className="uppercase text-slate-800">Pressões Normativas:</span>
@@ -244,6 +247,7 @@ export const RescomLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, 
             <span>Garantia: {data.responseGarantia ?? ' - '} {(data.responseUnit === 'mbar' || (data.responseCalculatedPressure || '').toString().toUpperCase().includes('BP-N') || (data.responsePressureBase || '').toString().toUpperCase().includes('BP-N')) ? 'mbar' : 'bar'}</span>
           </div>
         </div>
+        ) : null}
         <div className="border border-black min-h-[140px]">
           <div className="bg-slate-200 h-6 flex items-center px-3 border-b border-black">
             <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Pontos de Interligações:</span>

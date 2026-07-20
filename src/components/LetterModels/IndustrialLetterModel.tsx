@@ -109,6 +109,7 @@ export const IndustrialLetterModel: React.FC<LetterModelProps> = ({ data, allUse
               <span className="font-black uppercase text-[9px] text-slate-400 mb-1 block">Localização:</span>
               <span className="text-[11px] leading-tight whitespace-normal break-words block">{data.address || '-'}</span>
             </div>
+            {((data as any).peakFlow || (data as any).totalPredictedFlow || (data as any).informedFlow || data.minPressure || data.technicalMetadata?.minPressure) ? (
             <div className="col-span-12 mt-3 border border-black">
               <table className="w-full text-center divide-y divide-black divide-x border-collapse text-[10px] font-black table-auto">
                 <thead className="bg-[#f0f0f0]">
@@ -125,6 +126,7 @@ export const IndustrialLetterModel: React.FC<LetterModelProps> = ({ data, allUse
                 </tbody>
               </table>
             </div>
+            ) : null}
           </div>
         </div>
         <div className="flex gap-2 items-stretch">
@@ -171,7 +173,8 @@ export const IndustrialLetterModel: React.FC<LetterModelProps> = ({ data, allUse
               </table>
             </div>
           </div>
-          {/* ERM Distrital */}
+          {/* ERM Distrital - only show if there's data */}
+          {(data.regSizingInPress || data.regSizingOutPress || data.regSizingFlow || data.regSizingFutureFlow) ? (
           <div className="border border-black w-[30%] flex flex-col">
             <table className="w-full h-full text-center border-collapse text-[10px] font-black table-fixed">
               <tbody>
@@ -216,7 +219,20 @@ export const IndustrialLetterModel: React.FC<LetterModelProps> = ({ data, allUse
               </tbody>
             </table>
           </div>
+          ) : null}
         </div>
+        {(data.responseMaxPo || data.responseMin || data.responseGarantia) ? (
+        <div className="border border-black flex h-8 items-center text-[10px] font-black">
+          <div className="bg-slate-200 h-full flex items-center px-4 border-r border-black shrink-0">
+            <span className="uppercase text-slate-800">Pressões Normativas:</span>
+          </div>
+          <div className="flex-grow flex justify-around px-8">
+            <span>Máx.: {data.responseMaxPo ?? ' - '} {(data.responseUnit === 'mbar' || (data.responseCalculatedPressure || '').toString().toUpperCase().includes('BP-N') || (data.responsePressureBase || '').toString().toUpperCase().includes('BP-N')) ? 'mbar' : 'bar'}</span>
+            <span>Min.: {data.responseMin ?? ' - '} {(data.responseUnit === 'mbar' || (data.responseCalculatedPressure || '').toString().toUpperCase().includes('BP-N') || (data.responsePressureBase || '').toString().toUpperCase().includes('BP-N')) ? 'mbar' : 'bar'}</span>
+            <span>Garantia: {data.responseGarantia ?? ' - '} {(data.responseUnit === 'mbar' || (data.responseCalculatedPressure || '').toString().toUpperCase().includes('BP-N') || (data.responsePressureBase || '').toString().toUpperCase().includes('BP-N')) ? 'mbar' : 'bar'}</span>
+          </div>
+        </div>
+        ) : null}
         <div className="border border-black min-h-[140px] mt-2">
           <div className="bg-slate-200 h-6 flex items-center px-3 border-b border-black">
             <span className="text-[10px] font-black uppercase text-slate-800 tracking-wider">Pontos de Interligações:</span>

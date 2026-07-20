@@ -58,6 +58,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   const [comments, setComments] = useState(isRevision ? '' : (existing.qcComments || ''));
   const [selectedRevision, setSelectedRevision] = useState<any>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [inlineAlert, setInlineAlert] = useState<{ type: 'error' | 'warning'; message: string } | null>(null);
 
   const toggleGroup = (studyNum: string) => {
     setExpandedGroups(prev => ({ ...prev, [studyNum]: !prev[studyNum] }));
@@ -88,6 +89,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
 
   // Fetch QC history from database
   const [dbIterations, setDbIterations] = useState<QCIteration[]>([]);
+  const [cqRequestDateFromDB, setCqRequestDateFromDB] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   useEffect(() => {
@@ -100,8 +102,9 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
       setIsLoadingHistory(true);
       console.log('[QCModal] Fetching QC history for:', data.studyNumber);
       try {
-        // Always fetch history regardless of status
-        const url = `/api/qc-history/${encodeURIComponent(data.studyNumber)}`;
+        // Compute base8 for cross-revision history
+        const base8 = data.studyNumber.replace(/^PROV-/, '').substring(0, 8);
+        const url = `/api/qc-history/${encodeURIComponent(data.studyNumber)}?base8=${encodeURIComponent(base8)}`;
         console.log('[QCModal] Fetching from URL:', url);
         const res = await fetch(url);
         console.log('[QCModal] Response status:', res.status, 'Content-Type:', res.headers.get('content-type'));
@@ -128,6 +131,20 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
         // Store full history data including failures for detailed view
         setDbIterations(history);
         console.log('[QCModal] Stored full iterations with details:', history);
+
+        // Fetch CQ request date from S_STAHIS
+        try {
+          const cqRes = await fetch(`/api/cq-request-date/${encodeURIComponent(data.studyNumber)}`);
+          if (cqRes.ok) {
+            const cqData = await cqRes.json();
+            if (cqData.success && cqData.requestDate) {
+              setCqRequestDateFromDB(cqData.requestDate);
+              console.log('[QCModal] CQ request date from S_STAHIS:', cqData.requestDate);
+            }
+          }
+        } catch (cqErr) {
+          console.warn('[QCModal] Could not fetch CQ request date:', cqErr);
+        }
       } catch (err) {
         console.error('[QCModal] Error fetching QC history:', err);
       } finally {
@@ -144,21 +161,28 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   const shouldLoadFailures = !isRevision && iterations.length === 0;
 
   const allIterations = useMemo(() => {
-    // Combinar banco + local remove duplicados exatos
-    const combined = [...dbIterations, ...iterations];
+    // Prefer DB iterations as they are the source of truth
+    // Only fall back to local iterations if DB has no data
+    if (dbIterations.length > 0) {
+      // Deduplicate by studyNumber + validationDate + status
+      const seen = new Set<string>();
+      const unique: any[] = [];
+      dbIterations.forEach(it => {
+        const key = `${it.studyNumber || ''}_${it.validationDate || ''}_${it.status || ''}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(it);
+        }
+      });
+      return unique.sort((a, b) => {
+        const dateA = new Date(a.date || a.validationDate || 0).getTime();
+        const dateB = new Date(b.date || b.validationDate || 0).getTime();
+        return dateA - dateB;
+      });
+    }
 
-    // Remove duplicados exatos usando JSON.stringify
-    const seen = new Set<string>();
-    const unique: any[] = [];
-    combined.forEach(it => {
-      const key = JSON.stringify(it);
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(it);
-      }
-    });
-
-    return unique.sort((a, b) => {
+    // Fallback to local iterations only if no DB data
+    return [...iterations].sort((a, b) => {
       const dateA = new Date(a.date || 0).getTime();
       const dateB = new Date(b.date || 0).getTime();
       return dateA - dateB;
@@ -214,10 +238,11 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
     
     // SE tem falhas → NÃO pode aprovar, redireciona para reprovação
     if (hasFailures) {
-      alert('Este estudo possui falhas registradas e não pode ser aprovado. Por favor, utilize a opção Reprovar CQ.');
+      setInlineAlert({ type: 'warning', message: 'Este estudo possui falhas registradas e não pode ser aprovado. Por favor, utilize a opção Reprovar CQ.' });
       return;
     }
     
+    setInlineAlert(null);
     // SE sem falhas + com comentários → Aprovado com Ressalvas
     if (comments && comments.trim().length > 0) {
       doApprove(true);
@@ -237,18 +262,19 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
     
     const hasFailures = totalCritical > 0 || totalSecondary > 0;
     
-    // SE não tem falhas e não tem comentário → não pode reprovar
-    if (!hasFailures && (!comments || comments.trim().length === 0)) {
-      alert('Para reprovar um estudo, é obrigatório preencher o campo de comentários com o motivo da reprovação.');
+    // OBRIGATÓRIO: ao menos um item crítico ou secundário assinalado
+    if (!hasFailures) {
+      setInlineAlert({ type: 'error', message: 'Para reprovar um estudo, é obrigatório assinalar pelo menos um item crítico ou secundário de falha.' });
       return;
     }
     
-    // SE tem falhas → comentário é obrigatório
-    if (hasFailures && (!comments || comments.trim().length === 0)) {
-      alert('Para reprovar um estudo com falhas registradas, é obrigatório preencher o campo de comentários com o motivo da reprovação.');
+    // OBRIGATÓRIO: campo de comentários preenchido
+    if (!comments || comments.trim().length === 0) {
+      setInlineAlert({ type: 'error', message: 'Preencha o campo de comentários com o motivo da reprovação.' });
       return;
     }
     
+    setInlineAlert(null);
     setQcStatus('Reprovado');
     const qc = buildQCData();
     qc.qcStatusCQ = 'Reprovado';
@@ -274,6 +300,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
 
   const updateCritical = (idx: number, delta: number) => {
     if (readOnly) return;
+    setInlineAlert(null);
     const key = String(idx + 1); // Use 1-based indexing for backend mapping
     const current = criticalCounts[key] || 0;
     const next = Math.max(0, current + delta);
@@ -282,6 +309,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
 
   const updateSecondary = (idx: number, delta: number) => {
     if (readOnly) return;
+    setInlineAlert(null);
     const key = String(idx + 13); // Use 13-15 for secondary
     const current = secondaryCounts[key] || 0;
     const next = Math.max(0, current + delta);
@@ -325,6 +353,38 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
           </div>
         </div>
 
+        {/* Inline Alert */}
+        {inlineAlert && (
+          <div className={`mx-6 mt-4 px-4 py-3 rounded-xl flex items-start gap-3 ${
+            inlineAlert.type === 'error' 
+              ? 'bg-red-50 border border-red-200' 
+              : 'bg-amber-50 border border-amber-200'
+          }`}>
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+              inlineAlert.type === 'error' ? 'bg-red-100' : 'bg-amber-100'
+            }`}>
+              <i className={`text-xs ${
+                inlineAlert.type === 'error' 
+                  ? 'fa-solid fa-circle-xmark text-red-500' 
+                  : 'fa-solid fa-triangle-exclamation text-amber-500'
+              }`}></i>
+            </div>
+            <div className="flex-1">
+              <p className={`text-[11px] font-bold ${
+                inlineAlert.type === 'error' ? 'text-red-700' : 'text-amber-700'
+              }`}>{inlineAlert.message}</p>
+            </div>
+            <button
+              onClick={() => setInlineAlert(null)}
+              className={`text-[10px] ${
+                inlineAlert.type === 'error' ? 'text-red-400 hover:text-red-600' : 'text-amber-400 hover:text-amber-600'
+              }`}
+            >
+              <i className="fa-solid fa-times"></i>
+            </button>
+          </div>
+        )}
+
         {/* Body */}
         <div className="flex-grow overflow-y-auto custom-scrollbar">
           {/* Info Row */}
@@ -332,7 +392,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
             <div className="col-span-4 flex flex-col gap-1">
               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Data Solicitação Controle</span>
               <span className="text-xs font-bold text-slate-700">
-                {existing.qcRequestDate ? formatDateTimeBR(existing.qcRequestDate) : (data.qcRequestDate ? formatDateTimeBR(data.qcRequestDate) : (data.completedAt ? formatDateTimeBR(data.completedAt) : '-'))}
+                {cqRequestDateFromDB ? formatDateTimeBR(cqRequestDateFromDB) : (existing.qcRequestDate ? formatDateTimeBR(existing.qcRequestDate) : (data.qcRequestDate ? formatDateTimeBR(data.qcRequestDate) : (data.completedAt ? formatDateTimeBR(data.completedAt) : '-')))}
               </span>
             </div>
             <div className="col-span-4 flex flex-col gap-1">
@@ -507,7 +567,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                   ) : (
                     <textarea
                       value={comments}
-                      onChange={(e) => setComments(e.target.value)}
+                      onChange={(e) => { setComments(e.target.value); setInlineAlert(null); }}
                       rows={4}
                       className="w-full border border-slate-200 rounded-lg p-3 text-xs font-bold text-slate-700 outline-none focus:border-[#004080] resize-none"
                       placeholder="Observações do revisor..."
@@ -578,7 +638,14 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                                     }`}
                                 >
                                   <div className="flex items-center justify-between">
-                                    <span className="uppercase tracking-wider font-black">{it.status}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="uppercase tracking-wider font-black">{it.status}</span>
+                                      {it.studyNumber && (
+                                        <span className="text-[8px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-black">
+                                          R{String(it.studyNumber || '').slice(-2)}
+                                        </span>
+                                      )}
+                                    </div>
                                     <span className="text-[9px] opacity-70">{it.validationDate ? formatDateTimeBR(it.validationDate) : '-'}</span>
                                   </div>
                                   {it.reviewer && (
@@ -754,7 +821,12 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
             <div className="flex items-center gap-3">
               <button
                 onClick={handleReject}
-                className="px-8 py-3.5 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95 flex items-center gap-2"
+                disabled={totalCritical === 0 && totalSecondary === 0}
+                className={`px-8 py-3.5 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
+                  totalCritical === 0 && totalSecondary === 0
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                    : 'bg-red-600 text-white shadow-red-100 hover:bg-red-700'
+                }`}
               >
                 <i className="fa-solid fa-times-circle"></i>
                 Reprovar CQ

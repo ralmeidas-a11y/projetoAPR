@@ -423,7 +423,13 @@ IF COL_LENGTH('Users_Solicitantes', 'sap') IS NULL
       ['TPGASS', 'NVARCHAR(50)'], ['PRESGASS', 'NVARCHAR(50)'],
       ['CROQUI', 'NVARCHAR(20)'], ['ESTUDO_RELEV', 'NVARCHAR(20)'],
       ['DATA_SOLIC_OPER', 'DATETIME'],
-      ['VAZ_MEDIA', 'FLOAT'], ['VAZ_PICO', 'FLOAT']
+      ['VAZ_MEDIA', 'FLOAT'], ['VAZ_PICO', 'FLOAT'],
+      ['NOME_UTE', 'NVARCHAR(255)'], ['PRESS_MAX_UTE', 'FLOAT'], ['PRESS_MIN_UTE', 'FLOAT'],
+      ['PRESS_MAX_UPGN', 'FLOAT'], ['PRESS_MIN_UPGN', 'FLOAT'],
+      ['RESP_MAX_PO', 'FLOAT'], ['RESP_MIN', 'FLOAT'], ['RESP_GARANTIA', 'FLOAT'],
+      ['ANALISTA_EMPRESA', 'NVARCHAR(100)'], ['ANALISTA_CARGO', 'NVARCHAR(100)'],
+      ['ANALISTA_GB', 'NVARCHAR(100)'],
+      ['CATEGORIA_MERCADO', 'NVARCHAR(100)'], ['RESP_UNID', 'NVARCHAR(100)']
     ];
 
     for (const [col, type] of newColumns) {
@@ -853,6 +859,38 @@ END
 
     // 5. Helper to map database rows to Frontend FormData common structure
     const mapStudyRow = (row, sapToNameMap, statusCodeToText, areaCodeToText, unitCodeToText) => {
+      // Math models (GRUPO_EST = 190): read ONLY from T_ESTPLA columns, ignore meta_data
+      if (String(row.GRUPO_EST || '').trim() === '190') {
+        const trimmedStatus = String(row.status || '').trim();
+        const displayStatus = statusCodeToText[trimmedStatus] || trimmedStatus || 'Em Análise';
+        const sapCode = String(row.respSepla || '').trim();
+        let analystName = sapToNameMap[sapCode] || sapToNameMap[sapCode.replace(/^0+/, '')] || sapCode || '-';
+        if (sapCode.toUpperCase() === 'ADRSIS' || !sapCode) analystName = '-';
+
+        return {
+          id: String(row.id),
+          idsigep: row.IDSIGEP,
+          status: displayStatus,
+          statusCode: trimmedStatus,
+          titulo: row.TITULO || '',
+          localiz: row.LOCALIZ || '',
+          respSepla: analystName || sapCode || '-',
+          respSeplaSap: sapCode,
+          assignedTo: sapCode || '',
+          analystName: analystName,
+          assignedToName: analystName,
+          studyTitle: row.TITULO || '',
+          address: row.LOCALIZ || '',
+          studyNumber: row.studyNumber,
+          formType: row.formType,
+          user_id: row.user_id,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          requestDate: row.requestDate,
+          isMathModel: true
+        };
+      }
+
       let meta = {};
       try {
         meta = row.meta_data ? JSON.parse(row.meta_data) : {};
@@ -1035,7 +1073,8 @@ END
             NULL as RESP_MAX_PO, NULL as RESP_MIN, NULL as RESP_GARANTIA, NULL as ANALISTA_EMPRESA, NULL as ANALISTA_CARGO, NULL as ANALISTA_GB, NULL as MEMO_RESPOSTA,
             T.VazaoInsta, T.QDC, T.HoraFunciona, NULL as CATEGORIA_MERCADO, NULL as RESP_UNID,
             T.NRO_EST_AN as previousStudy,
-            T.NRO_EST_AN as nroEstAn
+            T.NRO_EST_AN as nroEstAn,
+            T.GRUPO_EST
           FROM T_ESTPLA T
           ${wherePart2}
           ORDER BY T.IDSIGEP DESC
@@ -1056,10 +1095,11 @@ END
           }
         });
 
-        const combined = Array.from(combinedMap.values()).map(row =>
-          mapStudyRow(row, sapToNameMap, statusCodeToText, areaCodeToText, unitCodeToText)
-        );
-
+        const combined = Array.from(combinedMap.values())
+          .filter(row => String(row.GRUPO_EST || '').trim() !== '190')
+          .map(row =>
+            mapStudyRow(row, sapToNameMap, statusCodeToText, areaCodeToText, unitCodeToText)
+          );
 
         // Sort by studyNumber descending (highest to lowest)
         combined.sort((a, b) => {
@@ -1072,6 +1112,323 @@ END
       } catch (err) {
         console.error('[Server] Fatal Error fetching requests:', err.message);
         res.status(500).json({ error: 'Failed to fetch requests', details: err.message });
+      }
+    });
+
+    // 7a. GET Math Models (GRUPO_EST = 190) - Latest revision only
+    // Check if IDSIGEP already exists
+    app.get('/api/math-models/check-idsigep/:idsigep', async (req, res) => {
+      try {
+        const { idsigep } = req.params;
+        const pool = await sql.connect();
+        const request = new sql.Request(pool);
+        request.input('idsigep', sql.BigInt, parseInt(idsigep));
+        const result = await request.query('SELECT 1 FROM T_ESTPLA WHERE IDSIGEP = @idsigep');
+        res.json({ exists: result.recordset.length > 0 });
+      } catch (err) {
+        console.error('[Server] Error checking IDSIGEP:', err.message);
+        res.json({ exists: false });
+      }
+    });
+
+    app.get('/api/math-models', async (req, res) => {
+      try {
+        const sapToNameMap = await getSapToNameMap();
+
+        const result = await sql.query`
+          SELECT 
+            CAST(T.id AS varchar(100)) AS id,
+            T.IDSIGEP,
+            CAST(T.STATUS AS varchar(50)) AS status,
+            T.TITULO,
+            T.LOCALIZ,
+            LTRIM(RTRIM(CAST(T.RESP_SEPLA AS varchar(50)))) AS respSepla
+          FROM T_ESTPLA T
+          INNER JOIN (
+            SELECT 
+              CASE 
+                WHEN NRO_ESTUDO IS NOT NULL THEN CAST(NRO_ESTUDO / 100 AS int)
+                ELSE CAST(IDSIGEP / 100 AS int)
+              END AS baseCode,
+              MAX(IDSIGEP) AS maxIdsigep
+            FROM T_ESTPLA
+            WHERE GRUPO_EST = '190'
+            GROUP BY 
+              CASE 
+                WHEN NRO_ESTUDO IS NOT NULL THEN CAST(NRO_ESTUDO / 100 AS int)
+                ELSE CAST(IDSIGEP / 100 AS int)
+              END
+          ) Latest ON T.IDSIGEP = Latest.maxIdsigep
+          ORDER BY T.IDSIGEP DESC
+        `;
+
+        const mathModelStatusMap = {
+          '200': 'Disponível para uso',
+          '300': 'Em uso',
+        };
+
+        const mapped = result.recordset.map(row => {
+          const trimmedStatus = String(row.status || '').trim();
+          const displayStatus = mathModelStatusMap[trimmedStatus] || statusCodeToText[trimmedStatus] || trimmedStatus || 'Em Análise';
+
+          const sapCode = row.respSepla || '';
+          let analystName = sapToNameMap[sapCode] || sapToNameMap[sapCode.replace(/^0+/, '')] || sapCode || '';
+          if (sapCode.toUpperCase() === 'ADRSIS' || !sapCode) analystName = '';
+
+          return {
+            id: row.id,
+            idsigep: row.IDSIGEP,
+            status: displayStatus,
+            statusCode: trimmedStatus,
+            titulo: row.TITULO || '',
+            localiz: row.LOCALIZ || '',
+            respSepla: analystName || sapCode || '-',
+            respSeplaSap: sapCode
+          };
+        });
+
+        res.json(mapped);
+      } catch (err) {
+        console.error('[Server] Error fetching math models:', err.message);
+        res.status(500).json({ error: 'Failed to fetch math models', details: err.message });
+      }
+    });
+
+    // Search math models (GRUPO_EST=190) by query
+    app.get('/api/math-models/search', async (req, res) => {
+      try {
+        const { q } = req.query;
+        if (!q || String(q).trim().length < 2) {
+          return res.json([]);
+        }
+        const searchTerm = String(q).trim();
+        const sqlReq = new sql.Request();
+        sqlReq.input('search', sql.VarChar, `%${searchTerm}%`);
+
+        const result = await sqlReq.query`
+          SELECT 
+            CAST(T.id AS varchar(100)) AS id,
+            T.IDSIGEP,
+            CAST(T.STATUS AS varchar(50)) AS status,
+            T.TITULO,
+            T.LOCALIZ,
+            LTRIM(RTRIM(CAST(T.RESP_SEPLA AS varchar(50)))) AS respSepla
+          FROM T_ESTPLA T
+          WHERE T.GRUPO_EST = '190'
+            AND (T.IDSIGEP LIKE @search OR T.TITULO LIKE @search OR T.LOCALIZ LIKE @search)
+          ORDER BY T.IDSIGEP DESC
+        `;
+
+        const mapped = result.recordset.map(row => ({
+          id: row.id,
+          idsigep: row.IDSIGEP,
+          titulo: row.TITULO || '',
+          localiz: row.LOCALIZ || '',
+          status: String(row.status || '').trim(),
+        }));
+
+        res.json(mapped);
+      } catch (err) {
+        console.error('[MathModels] Search error:', err.message);
+        res.status(500).json({ error: 'Failed to search math models', details: err.message });
+      }
+    });
+
+    // Lock a math model (status -> 300 "Em Uso")
+    app.put('/api/math-models/:id/lock', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { sap } = req.body;
+        if (!id || !sap) return res.status(400).json({ error: 'id and sap are required' });
+
+        const pool = await sql.connect();
+
+        const checkReq = new sql.Request(pool);
+        checkReq.input('id', sql.VarChar, id);
+        const check = await checkReq.query('SELECT STATUS FROM T_ESTPLA WHERE id = @id');
+        if (!check.recordset.length) return res.status(404).json({ error: 'Model not found' });
+
+        const currentStatus = String(check.recordset[0].STATUS || '').trim();
+        if (currentStatus === '300') {
+          return res.status(409).json({ error: 'Model is already in use' });
+        }
+
+        const updateReq = new sql.Request(pool);
+        updateReq.input('id', sql.VarChar, id);
+        updateReq.input('sap', sql.VarChar, sap);
+        updateReq.input('status', sql.VarChar, '300');
+        await updateReq.query('UPDATE T_ESTPLA SET STATUS = @status, RESP_SEPLA = @sap WHERE id = @id');
+        res.json({ success: true });
+      } catch (err) {
+        console.error('[Server] Error locking math model:', err.message);
+        res.status(500).json({ error: 'Failed to lock model' });
+      }
+    });
+
+    // Unlock a math model (status -> 200 "Aguardando Execução")
+    app.put('/api/math-models/:id/unlock', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { sap } = req.body;
+        if (!id || !sap) return res.status(400).json({ error: 'id and sap are required' });
+
+        const pool = await sql.connect();
+
+        const checkReq = new sql.Request(pool);
+        checkReq.input('id', sql.VarChar, id);
+        const check = await checkReq.query('SELECT STATUS, RESP_SEPLA FROM T_ESTPLA WHERE id = @id');
+        if (!check.recordset.length) return res.status(404).json({ error: 'Model not found' });
+
+        const row = check.recordset[0];
+        const currentStatus = String(row.STATUS || '').trim();
+        const currentResp = String(row.RESP_SEPLA || '').trim();
+
+        if (currentStatus !== '300') {
+          return res.status(409).json({ error: 'Model is not locked' });
+        }
+        if (currentResp !== sap && currentResp.replace(/^0+/, '') !== sap.replace(/^0+/, '')) {
+          return res.status(403).json({ error: 'Only the user who locked can unlock this model' });
+        }
+
+        const updateReq = new sql.Request(pool);
+        updateReq.input('id', sql.VarChar, id);
+        updateReq.input('status', sql.VarChar, '200');
+        await updateReq.query('UPDATE T_ESTPLA SET STATUS = @status WHERE id = @id');
+        res.json({ success: true });
+      } catch (err) {
+        console.error('[Server] Error unlocking math model:', err.message);
+        res.status(500).json({ error: 'Failed to unlock model' });
+      }
+    });
+
+    // Create new math model
+    app.post('/api/math-models', async (req, res) => {
+      try {
+        const { sap, titulo, localiz, empresa, solicitante, grupoRede, gasType, pressaoResposta, observacoes, assignedTo, idsigep: manualIdsigep } = req.body;
+        if (!sap) return res.status(400).json({ error: 'SAP is required' });
+
+        const pool = await sql.connect();
+        const request = new sql.Request(pool);
+        
+        let newIdsigep;
+        if (manualIdsigep) {
+          // Use the user-provided IDSIGEP
+          newIdsigep = BigInt(manualIdsigep);
+          // Validate it doesn't already exist
+          request.input('checkIdsigep', sql.BigInt, newIdsigep);
+          const exists = await request.query('SELECT 1 FROM T_ESTPLA WHERE IDSIGEP = @checkIdsigep');
+          if (exists.recordset.length > 0) {
+            return res.status(400).json({ error: 'Este ID.MODELO já está cadastrado no banco de dados' });
+          }
+        } else {
+          // Auto-generate IDSIGEP
+          const maxResult = await request.query('SELECT MAX(IDSIGEP) as maxIdsigep FROM T_ESTPLA WHERE GRUPO_EST = \'190\'');
+          const maxIdsigep = maxResult.recordset[0]?.maxIdsigep || 0;
+          newIdsigep = BigInt(maxIdsigep) + 1n;
+        }
+
+        // Build meta_data JSON with extra fields
+        const metaData = JSON.stringify({
+          empresa: empresa || '',
+          solicitante: solicitante || '',
+          grupoRede: grupoRede || '',
+          gasType: gasType || '',
+          pressaoResposta: pressaoResposta || '',
+          observacoes: observacoes || '',
+          assignedTo: assignedTo || ''
+        });
+
+        // Insert new model with status 200 (Disponível para uso)
+        const insertReq = new sql.Request(pool);
+        insertReq.input('idsigep', sql.BigInt, newIdsigep);
+        insertReq.input('sap', sql.VarChar, sap);
+        insertReq.input('titulo', sql.VarChar, titulo || '');
+        insertReq.input('localiz', sql.VarChar, localiz || '');
+        insertReq.input('empresa', sql.VarChar, empresa || '');
+        insertReq.input('status', sql.VarChar, '200');
+        insertReq.input('grupoEst', sql.VarChar, '190');
+        insertReq.input('metaData', sql.NVarChar, metaData);
+        insertReq.input('dataCria', sql.Float, dateToOADate(new Date()));
+
+        await insertReq.query(`
+          INSERT INTO T_ESTPLA (IDSIGEP, RESP_SEPLA, TITULO, LOCALIZ, EMPRESA, STATUS, GRUPO_EST, meta_data, DataCriaReg)
+          VALUES (@idsigep, @sap, @titulo, @localiz, @empresa, @status, @grupoEst, @metaData, @dataCria)
+        `);
+
+        res.json({ success: true, id: String(newIdsigep) });
+      } catch (err) {
+        console.error('[Server] Error creating math model:', err.message);
+        res.status(500).json({ error: 'Failed to create math model' });
+      }
+    });
+
+    // Create revision of math model
+    app.post('/api/math-models/:id/revision', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { sap, previousStudy, assignedTo, empresa, solicitante, grupoRede, gasType, pressaoResposta, observacoes } = req.body;
+        if (!id || !sap) return res.status(400).json({ error: 'id and sap are required' });
+
+        const pool = await sql.connect();
+        
+        // Get original model data
+        const checkReq = new sql.Request(pool);
+        checkReq.input('id', sql.VarChar, id);
+        const original = await checkReq.query('SELECT * FROM T_ESTPLA WHERE id = @id');
+        
+        if (!original.recordset.length) {
+          return res.status(404).json({ error: 'Original model not found' });
+        }
+
+        const orig = original.recordset[0];
+        
+        // Check if model status is 300 (Em uso) - cannot create revision
+        const currentStatus = String(orig.STATUS || '').trim();
+        if (currentStatus === '300') {
+          return res.status(400).json({ error: 'Não é possível criar revisão de modelo com status "Em uso". Aguarde o modelo ser liberado (status 200).' });
+        }
+        
+        // Generate new IDSIGEP (increment last 2 digits)
+        const currentIdsigep = String(orig.IDSIGEP);
+        const base8 = currentIdsigep.substring(0, 8);
+        const currentRev = parseInt(currentIdsigep.substring(8, 10)) || 0;
+        const newRev = String(currentRev + 1).padStart(2, '0');
+        const newIdsigep = BigInt(base8 + newRev);
+
+        // Build meta_data JSON with extra fields
+        const metaData = JSON.stringify({
+          empresa: empresa || '',
+          solicitante: solicitante || '',
+          grupoRede: grupoRede || '',
+          gasType: gasType || '',
+          pressaoResposta: pressaoResposta || '',
+          observacoes: observacoes || '',
+          assignedTo: assignedTo || '',
+          previousStudy: previousStudy || ''
+        });
+
+        // Insert revision with status 300 (Em uso pelo criador)
+        const insertReq = new sql.Request(pool);
+        insertReq.input('idsigep', sql.BigInt, newIdsigep);
+        insertReq.input('sap', sql.VarChar, sap);
+        insertReq.input('titulo', sql.VarChar, orig.TITULO || '');
+        insertReq.input('localiz', sql.VarChar, orig.LOCALIZ || '');
+        insertReq.input('empresa', sql.VarChar, empresa || orig.EMPRESA || '');
+        insertReq.input('status', sql.VarChar, '300');
+        insertReq.input('grupoEst', sql.VarChar, '190');
+        insertReq.input('nroEstAn', sql.VarChar, currentIdsigep);
+        insertReq.input('metaData', sql.NVarChar, metaData);
+        insertReq.input('dataCria', sql.Float, dateToOADate(new Date()));
+
+        await insertReq.query(`
+          INSERT INTO T_ESTPLA (IDSIGEP, RESP_SEPLA, TITULO, LOCALIZ, EMPRESA, STATUS, GRUPO_EST, NRO_EST_AN, meta_data, DataCriaReg)
+          VALUES (@idsigep, @sap, @titulo, @localiz, @empresa, @status, @grupoEst, @nroEstAn, @metaData, @dataCria)
+        `);
+
+        res.json({ success: true, id: String(newIdsigep) });
+      } catch (err) {
+        console.error('[Server] Error creating math model revision:', err.message);
+        res.status(500).json({ error: 'Failed to create revision' });
       }
     });
 
@@ -1132,31 +1489,56 @@ END
       }
     });
 
-    // 8b. GET QC History for a Study
+    // 8b. GET QC History for a Study (supports cross-revision via base8 query param)
     app.get('/api/qc-history/:studyNumber', async (req, res) => {
-      console.log('[QCHistory] Received request for studyNumber:', req.params.studyNumber);
+      console.log('[QCHistory] Received request for studyNumber:', req.params.studyNumber, 'base8:', req.query.base8);
       try {
         const { studyNumber } = req.params;
-        console.log('[QCHistory] Querying for studyNumber:', studyNumber);
+        const { base8 } = req.query;
         const sqlReq = new sql.Request();
-        sqlReq.input('studyNumber', sql.VarChar, studyNumber);
 
-        const result = await sqlReq.query`
-          SELECT 
-            IDCHKLST,
-            FK_T_ESTPLA,
-            STATUSCHK,
-            OPERADOR_VALIDACAO,
-            COMENTARIOS,
-            DATA_SOLICITACAO,
-            DATA_VALIDACAO,
-            QT_DEFCTO1, QT_DEFCTO2, QT_DEFCTO3, QT_DEFCTO4, QT_DEFCTO5, QT_DEFCTO6,
-            QT_DEFCTO7, QT_DEFCTO8, QT_DEFCTO9, QT_DEFCTO10, QT_DEFCTO11, QT_DEFCTO12,
-            QT_DEFCTO13, QT_DEFCTO14, QT_DEFCTO15
-          FROM T_CHKLST 
-          WHERE FK_T_ESTPLA = @studyNumber
-          ORDER BY DATA_VALIDACAO DESC
-        `;
+        let result;
+        if (base8 && base8.length === 8) {
+          // Cross-revision: get all QC history for studies starting with base8
+          sqlReq.input('base8Pattern', sql.VarChar, base8 + '%');
+          console.log('[QCHistory] Cross-revision query with pattern:', base8 + '%');
+          result = await sqlReq.query`
+            SELECT 
+              IDCHKLST,
+              FK_T_ESTPLA,
+              STATUSCHK,
+              OPERADOR_VALIDACAO,
+              COMENTARIOS,
+              DATA_SOLICITACAO,
+              DATA_VALIDACAO,
+              QT_DEFCTO1, QT_DEFCTO2, QT_DEFCTO3, QT_DEFCTO4, QT_DEFCTO5, QT_DEFCTO6,
+              QT_DEFCTO7, QT_DEFCTO8, QT_DEFCTO9, QT_DEFCTO10, QT_DEFCTO11, QT_DEFCTO12,
+              QT_DEFCTO13, QT_DEFCTO14, QT_DEFCTO15
+            FROM T_CHKLST 
+            WHERE FK_T_ESTPLA LIKE @base8Pattern
+            ORDER BY DATA_VALIDACAO DESC
+          `;
+        } else {
+          // Exact match for single study
+          sqlReq.input('studyNumber', sql.VarChar, studyNumber);
+          console.log('[QCHistory] Exact match query for:', studyNumber);
+          result = await sqlReq.query`
+            SELECT 
+              IDCHKLST,
+              FK_T_ESTPLA,
+              STATUSCHK,
+              OPERADOR_VALIDACAO,
+              COMENTARIOS,
+              DATA_SOLICITACAO,
+              DATA_VALIDACAO,
+              QT_DEFCTO1, QT_DEFCTO2, QT_DEFCTO3, QT_DEFCTO4, QT_DEFCTO5, QT_DEFCTO6,
+              QT_DEFCTO7, QT_DEFCTO8, QT_DEFCTO9, QT_DEFCTO10, QT_DEFCTO11, QT_DEFCTO12,
+              QT_DEFCTO13, QT_DEFCTO14, QT_DEFCTO15
+            FROM T_CHKLST 
+            WHERE FK_T_ESTPLA = @studyNumber
+            ORDER BY DATA_VALIDACAO DESC
+          `;
+        }
 
         console.log('[QCHistory] Query returned rows:', result.recordset.length);
 
@@ -1187,6 +1569,33 @@ END
       } catch (err) {
         console.error('[QCHistory] Error fetching QC history:', err.message, err.stack);
         res.status(500).json({ error: 'Failed to fetch QC history', details: err.message });
+      }
+    });
+
+    // 8c. GET - CQ Request Date from S_STAHIS (status=280)
+    app.get('/api/cq-request-date/:studyNumber', async (req, res) => {
+      try {
+        const { studyNumber } = req.params;
+        const sqlReq = new sql.Request();
+        sqlReq.input('studyNumber', sql.VarChar, studyNumber);
+
+        const result = await sqlReq.query`
+          SELECT TOP 1 DATA
+          FROM S_STAHIS
+          WHERE NRO_ESTUDO = @studyNumber AND STATUS = '280'
+          ORDER BY DATA DESC
+        `;
+
+        if (result.recordset.length > 0) {
+          const oaDate = result.recordset[0].DATA;
+          const jsDate = new Date((oaDate - 25569) * 86400 * 1000);
+          res.json({ success: true, requestDate: jsDate.toISOString() });
+        } else {
+          res.json({ success: true, requestDate: null });
+        }
+      } catch (err) {
+        console.error('[CQRequestDate] Error:', err.message);
+        res.status(500).json({ error: 'Failed to fetch CQ request date', details: err.message });
       }
     });
 
@@ -1240,30 +1649,6 @@ END
       } catch (err) {
         console.error('[I_ESTPLA] Error:', err.message);
         res.status(500).json({ error: 'Erro ao buscar interconexões', details: err.message });
-      }
-    });
-
-    // 9d. GET - Fetch QC History (T_CHKLST)
-    app.get('/api/qc-history/:studyNumber', async (req, res) => {
-      try {
-        const { studyNumber } = req.params;
-        console.log('[T_CHKLST] Fetching QC history for study:', studyNumber);
-
-        const sqlReq = new sql.Request();
-        sqlReq.input('studyNumber', sql.VarChar, studyNumber || '');
-
-        const result = await sqlReq.query`
-          SELECT IDCHKLST, FK_T_ESTPLA, STATUSCHK, OPERADOR_VALIDACAO, COMENTARIOS, DataValidacao
-          FROM T_CHKLST 
-          WHERE FK_T_ESTPLA = @studyNumber
-          ORDER BY DataValidacao DESC
-        `;
-
-        console.log('[T_CHKLST] Found:', result.recordset.length, 'records');
-        res.json({ success: true, data: result.recordset });
-      } catch (err) {
-        console.error('[T_CHKLST] Error:', err.message);
-        res.status(500).json({ error: 'Erro ao buscar histórico de QC', details: err.message });
       }
     });
 
@@ -1367,6 +1752,8 @@ END
       'Concluído': 210,               // Concluído
       'Rejeitado': 220,               // Cancelado
       'Cancelado': 220,               // Cancelado
+      'Substituído': 260,             // Substituído por revisão superior
+      'Vencido': 320,                 // Estudo vencido (mais de 1 ano)
     };
 
     const requestLocks = new Set();
@@ -1757,9 +2144,9 @@ END
             const studySubTypeStr = String(data.studySubType || '');
             const gniNameStr = String(data.gniName || '');
 
-            sqlReq.input('grupoEst', sql.VarChar, studyGroupToCode[studyTypeStr] || studyGroupToCode[data.studyGroup] || data.studyGroup || '0');
-            sqlReq.input('tipoEst', sql.VarChar, studySubTypeToCode[studySubTypeStr] || data.tipoEst || studySubTypeStr || '0');
-            sqlReq.input('tipEs', sql.Int, gniTypeToCode[gniNameStr] || gniTypeToCode[studySubTypeStr] || safeInt(data.gniType || '0'));
+            sqlReq.input('grupoEst', sql.VarChar, studyGroupMapping[studyTypeStr] || studyGroupMapping[data.studyGroup] || data.studyGroup || '0');
+            sqlReq.input('tipoEst', sql.VarChar, studySubTypeMapping[studySubTypeStr] || data.tipoEst || studySubTypeStr || '0');
+            sqlReq.input('tipEs', sql.Int, gniTypeMapping[gniNameStr] || gniTypeMapping[studySubTypeStr] || safeInt(data.gniType || '0'));
             sqlReq.input('grauDif', sql.Int, difficultyMapping[data.difficulty] || safeInt(data.difficultyLevel || '0'));
             sqlReq.input('tpgass', sql.VarChar, gasTypeMapping[data.gasType] || data.gasType || '');
             sqlReq.input('presSolOrig', sql.VarChar, normalizedPressure);
@@ -1845,21 +2232,21 @@ END
             sqlReq.input('prescalc', sql.NVarChar, null);
             sqlReq.input('grupored', sql.Int, safeInt(data.networkGroup || '0'));
             sqlReq.input('prazEstConst', sql.VarChar, String(data.prazEstConst || ''));
-            sqlReq.input('consumoEstimado', sql.Int, safeInt(data.consumoEstimado || 0));
-            sqlReq.input('pressaoInicial', sql.Float, safeFloat(data.pressaoInicial || 0));
-            sqlReq.input('pressaoFinal', sql.Int, safeInt(data.pressaoFinal || 0));
-            sqlReq.input('pressaoAbsoluta', sql.Float, safeFloat(data.pressaoAbsoluta || 0));
-            sqlReq.input('pressaoAtm', sql.Int, safeInt(data.pressaoAtm || 0));
+            sqlReq.input('consumoEstimado', sql.Int, data.consumoEstimado != null && data.consumoEstimado !== '' ? safeInt(data.consumoEstimado) : null);
+            sqlReq.input('pressaoInicial', sql.Float, data.pressaoInicial != null && data.pressaoInicial !== '' ? safeFloat(data.pressaoInicial) : null);
+            sqlReq.input('pressaoFinal', sql.Int, data.pressaoFinal != null && data.pressaoFinal !== '' ? safeInt(data.pressaoFinal) : null);
+            sqlReq.input('pressaoAbsoluta', sql.Float, data.pressaoAbsoluta != null && data.pressaoAbsoluta !== '' ? safeFloat(data.pressaoAbsoluta) : null);
+            sqlReq.input('pressaoAtm', sql.Int, data.pressaoAtm != null && data.pressaoAtm !== '' ? safeInt(data.pressaoAtm) : null);
             sqlReq.input('codigoPasta', sql.VarChar, String(data.codigoPasta || ''));
 
-            sqlReq.input('simulacao', sql.Float, safeFloat(data.simulacao || 0));
-            sqlReq.input('supervision', sql.Float, safeFloat(data.supervision || 0));
-            sqlReq.input('tempo', sql.Float, safeFloat(data.tempo || 0));
-            sqlReq.input('tempoEstimado', sql.Float, safeFloat(data.tempoEstimado || 0));
-            sqlReq.input('preparacion', sql.Float, safeFloat(data.preparacion || 0));
+            sqlReq.input('simulacao', sql.Float, data.simulacao != null && data.simulacao !== '' ? safeFloat(data.simulacao) : null);
+            sqlReq.input('supervision', sql.Float, data.supervision != null && data.supervision !== '' ? safeFloat(data.supervision) : null);
+            sqlReq.input('tempo', sql.Float, data.tempo != null && data.tempo !== '' ? safeFloat(data.tempo) : null);
+            sqlReq.input('tempoEstimado', sql.Float, data.tempoEstimado != null && data.tempoEstimado !== '' ? safeFloat(data.tempoEstimado) : null);
+            sqlReq.input('preparacion', sql.Float, data.preparacion != null && data.preparacion !== '' ? safeFloat(data.preparacion) : null);
 
             // Network extensions
-            sqlReq.input('redeExtTotal', sql.Int, safeInt(data.totalNetworkExtension || 0));
+            sqlReq.input('redeExtTotal', sql.Int, data.totalNetworkExtension != null && data.totalNetworkExtension !== '' ? safeInt(data.totalNetworkExtension) : null);
 
             // UPSERT Query with correct ID handling (Direct string comparison)
             console.log(`[T_ESTPLA] 🔧 Executing UPSERT for ID=${requestId}, STATUS=${statusVal}`);
@@ -1872,33 +2259,63 @@ END
                 RESP_SEPLA = @respSepla, OPERADOR_M = @respSepla, FK_MODELO = @formType,
                 STATUS = @status, meta_data = @meta, TITULO = @tit, NOME_CLIENTE = @tit,
                 ObsEstudSol = @obs, Bairro = @bairro, OBSERVS = @obs,
-                Municipio = @muni, NumEconomias = @numE, VazaoSol = @vazS,
-                VazaoInsta = @vazI, ConsMens = @cons, PresSolMax = @pMax,
-                PresSolMin = @pMin, HorOpeIni = @hIn, HorOpeFin = @hFin,
-                DiaOpeMes = @dMes, EmailContato = @mail, NumEconomiasComIndEtc = @numE2,
-                VazaoSolComIndEtc = @vazS2, LOCALIZ = @localiz, TEL_SOL = @tel,
-                EntradaReal = @entradaReal, IDSIGEP = @idsigep, NRO_EST_AN = @nroAn,
-                NRO_ESTUDO = @nro, GRUPO_EST = @grupoEst, TIPO_EST = @tipoEst, TIP_ES = @tipEs,
+                Municipio = @muni,
+                NumEconomias = CASE WHEN @numE IS NOT NULL THEN @numE ELSE NumEconomias END,
+                VazaoSol = CASE WHEN @vazS IS NOT NULL THEN @vazS ELSE VazaoSol END,
+                VazaoInsta = CASE WHEN @vazI IS NOT NULL THEN @vazI ELSE VazaoInsta END,
+                ConsMens = CASE WHEN @cons IS NOT NULL THEN @cons ELSE ConsMens END,
+                PresSolMax = CASE WHEN @pMax IS NOT NULL THEN @pMax ELSE PresSolMax END,
+                PresSolMin = CASE WHEN @pMin IS NOT NULL THEN @pMin ELSE PresSolMin END,
+                HorOpeIni = CASE WHEN @hIn IS NOT NULL AND @hIn != '' THEN @hIn ELSE HorOpeIni END,
+                HorOpeFin = CASE WHEN @hFin IS NOT NULL AND @hFin != '' THEN @hFin ELSE HorOpeFin END,
+                DiaOpeMes = CASE WHEN @dMes IS NOT NULL THEN @dMes ELSE DiaOpeMes END,
+                EmailContato = CASE WHEN @mail IS NOT NULL AND @mail != '' THEN @mail ELSE EmailContato END,
+                NumEconomiasComIndEtc = CASE WHEN @numE2 IS NOT NULL THEN @numE2 ELSE NumEconomiasComIndEtc END,
+                VazaoSolComIndEtc = CASE WHEN @vazS2 IS NOT NULL THEN @vazS2 ELSE VazaoSolComIndEtc END,
+                LOCALIZ = @localiz, TEL_SOL = @tel,
+                EntradaReal = CASE WHEN @entradaReal IS NOT NULL THEN @entradaReal ELSE EntradaReal END,
+                IDSIGEP = @idsigep, NRO_EST_AN = @nroAn,
+                NRO_ESTUDO = @nro, GRUPO_EST = CASE WHEN @grupoEst IN ('0', '') THEN GRUPO_EST ELSE @grupoEst END, TIPO_EST = CASE WHEN @tipoEst IN ('0', '') THEN TIPO_EST ELSE @tipoEst END, TIP_ES = @tipEs,
                 GrauDificult = @grauDif, TPGASS = @tpgass, 
                 CROQUI = @croqui, ESTUDO_RELEV = @estudoRelev, EstudoRelevante = @estudoRelev, DATA_SOLIC_OPER = @dataOper,
-                VAZ_MEDIA = @vazMedia, VAZ_PICO = @vazPico, PRESGAS = @presGas,
-                PresClieMax = @presClieMax, PresClieMin = @presClieMin,
-                PresClieGarant = @presClieGarant, ObservaResp = @observaResp,
-                vu = @vu, fp = @fp, fd = @fd, Diversificar = @diversificar,
+                VAZ_MEDIA = CASE WHEN @vazMedia IS NOT NULL THEN @vazMedia ELSE VAZ_MEDIA END,
+                VAZ_PICO = CASE WHEN @vazPico IS NOT NULL THEN @vazPico ELSE VAZ_PICO END,
+                PRESGAS = @presGas,
+                PresClieMax = CASE WHEN @presClieMax IS NOT NULL THEN @presClieMax ELSE PresClieMax END,
+                PresClieMin = CASE WHEN @presClieMin IS NOT NULL THEN @presClieMin ELSE PresClieMin END,
+                PresClieGarant = CASE WHEN @presClieGarant IS NOT NULL THEN @presClieGarant ELSE PresClieGarant END,
+                ObservaResp = @observaResp,
+                vu = CASE WHEN @vu IS NOT NULL THEN @vu ELSE vu END,
+                fp = CASE WHEN @fp IS NOT NULL THEN @fp ELSE fp END,
+                fd = CASE WHEN @fd IS NOT NULL THEN @fd ELSE fd END,
+                Diversificar = CASE WHEN @diversificar IS NOT NULL THEN @diversificar ELSE Diversificar END,
                 StatusEntrega = @statusEntrega, RegulardoSN = @regulardoSN,
-                ReguladroVazao = @reguladroVazao, HoraFunciona = @horaFunciona,
-                PressaoResposta = @pressaoResposta, CustoRegulador = @custoRegulador,
+                ReguladroVazao = CASE WHEN @reguladroVazao IS NOT NULL THEN @reguladroVazao ELSE ReguladroVazao END,
+                HoraFunciona = CASE WHEN @horaFunciona IS NOT NULL THEN @horaFunciona ELSE HoraFunciona END,
+                PressaoResposta = @pressaoResposta,
+                CustoRegulador = CASE WHEN @custoRegulador IS NOT NULL THEN @custoRegulador ELSE CustoRegulador END,
                 PressaoEntrada = @pressaoEntrada, unidPresEnt = @unidPresEnt,
-                PressaoSaida = @pressaoSaida, unidPresSai = @unidPresSai,
-                VazaoFutura = @vazaoFutura, PRESSAO = @presSol, UnidSol = @unidSol,
-                QDC = @qdc, EMAIL_ENVIADO = @emailEnviado, MEMO_RESPOSTA = @memoResposta,
+                PressaoSaida = CASE WHEN @pressaoSaida IS NOT NULL THEN @pressaoSaida ELSE PressaoSaida END,
+                unidPresSai = @unidPresSai,
+                VazaoFutura = CASE WHEN @vazaoFutura IS NOT NULL THEN @vazaoFutura ELSE VazaoFutura END,
+                PRESSAO = @presSol, UnidSol = @unidSol,
+                QDC = CASE WHEN @qdc IS NOT NULL THEN @qdc ELSE QDC END,
+                EMAIL_ENVIADO = @emailEnviado, MEMO_RESPOSTA = @memoResposta,
                 PRESCALC = @prescalc, GRUPORED = @grupored, PRAZ_EST_CONST = @prazEstConst,
-                CONSUMO_ESTIMADO = @consumoEstimado, PRESSAO_INICIAL = @pressaoInicial,
-                PRESSAO_FINAL = @pressaoFinal, PRESSAO_ABSOLUTA = @pressaoAbsoluta,
-                PRESSAO_ATM = @pressaoAtm, CODIGO_PASTA = @codigoPasta, Simulacao = @simulacao,
-                Supervision = @supervision, Tempo = @tempo, TempoEstimado = @tempoEstimado,
-                Preparacion = @preparacion, RedeExtTotal = @redeExtTotal,
-                dtEntregaPrevista = @dtEntregaPrevista, MOTIVO_PAUSA = @motivoPausa
+                CONSUMO_ESTIMADO = CASE WHEN @consumoEstimado IS NOT NULL THEN @consumoEstimado ELSE CONSUMO_ESTIMADO END,
+                PRESSAO_INICIAL = CASE WHEN @pressaoInicial IS NOT NULL THEN @pressaoInicial ELSE PRESSAO_INICIAL END,
+                PRESSAO_FINAL = CASE WHEN @pressaoFinal IS NOT NULL THEN @pressaoFinal ELSE PRESSAO_FINAL END,
+                PRESSAO_ABSOLUTA = CASE WHEN @pressaoAbsoluta IS NOT NULL THEN @pressaoAbsoluta ELSE PRESSAO_ABSOLUTA END,
+                PRESSAO_ATM = CASE WHEN @pressaoAtm IS NOT NULL THEN @pressaoAtm ELSE PRESSAO_ATM END,
+                CODIGO_PASTA = @codigoPasta,
+                Simulacao = CASE WHEN @simulacao IS NOT NULL THEN @simulacao ELSE Simulacao END,
+                Supervision = CASE WHEN @supervision IS NOT NULL THEN @supervision ELSE Supervision END,
+                Tempo = CASE WHEN @tempo IS NOT NULL THEN @tempo ELSE Tempo END,
+                TempoEstimado = CASE WHEN @tempoEstimado IS NOT NULL THEN @tempoEstimado ELSE TempoEstimado END,
+                Preparacion = CASE WHEN @preparacion IS NOT NULL THEN @preparacion ELSE Preparacion END,
+                RedeExtTotal = CASE WHEN @redeExtTotal IS NOT NULL THEN @redeExtTotal ELSE RedeExtTotal END,
+                dtEntregaPrevista = CASE WHEN @dtEntregaPrevista IS NOT NULL THEN @dtEntregaPrevista ELSE dtEntregaPrevista END,
+                MOTIVO_PAUSA = @motivoPausa
               WHERE id = @id
             END
             ELSE
@@ -1935,6 +2352,38 @@ END
             END
           `);
               console.log(`[T_ESTPLA] ✅ UPSERT completed for ID=${requestId}, STATUS=${statusVal}`);
+
+              // --- Update previous revision status to 260 (Substituído) ---
+              if (isRevision && nroAnValue) {
+                try {
+                  // Extract the base8 from the previous study number
+                  const prevClean = String(nroAnValue).replace(/^PROV-/, '');
+                  if (prevClean.length >= 8) {
+                    const prevBase8 = prevClean.substring(0, 8);
+                    // Find the previous revision in T_ESTPLA (exclude current record)
+                    const prevResult = await sql.query`
+                      SELECT id, STATUS FROM T_ESTPLA 
+                      WHERE CAST(IDSIGEP as varchar) LIKE ${prevBase8 + '%'}
+                      AND GRUPO_EST != '190'
+                      AND IDSIGEP != ${numericIDSIGEP}
+                      ORDER BY IDSIGEP DESC
+                    `;
+                    if (prevResult.recordset.length > 0) {
+                      const prevId = prevResult.recordset[0].id;
+                      const prevStatus = String(prevResult.recordset[0].STATUS || '').trim();
+                      // Only update if not already substituted or concluded with higher status
+                      if (prevStatus !== '260' && prevStatus !== '320') {
+                        await sql.query`
+                          UPDATE T_ESTPLA SET STATUS = '260' WHERE id = ${prevId}
+                        `;
+                        console.log(`[T_ESTPLA] ✅ Previous revision ${prevId} marked as Substituído (260)`);
+                      }
+                    }
+                  }
+                } catch (err) {
+                  console.warn('[T_ESTPLA] Warning: Could not update previous revision status:', err.message);
+                }
+              }
 
               // --- QC Persistence (T_CHKLST) ---
               // SÓ criar registro em T_CHKLST quando o QCControlModal é preenchido no frontend
@@ -2562,6 +3011,33 @@ END
       }
     });
 
+    // Check and update expired studies (status 320)
+    app.put('/api/requests/check-expiration', async (req, res) => {
+      try {
+        const pool = await sql.connect();
+        
+        // Find studies with status 210 (Concluído) or 215 (Aprovado pelo CQ)
+        // where DAT_SA_SEP + 365 days < current date
+        // Exclude math models (GRUPO_EST = 190)
+        const result = await pool.request().query(`
+          UPDATE T_ESTPLA 
+          SET STATUS = '320'
+          WHERE STATUS IN ('210', '215')
+          AND GRUPO_EST != '190'
+          AND DAT_SA_SEP IS NOT NULL
+          AND DATEADD(day, 365, DATEADD(day, DATEDIFF(day, 0, DAT_SA_SEP), 0)) < GETDATE()
+        `);
+        
+        const updatedCount = result.rowsAffected[0] || 0;
+        console.log(`[Expiration] ✅ Updated ${updatedCount} studies to Vencido (320)`);
+        
+        res.json({ success: true, updatedCount });
+      } catch (err) {
+        console.error('[Expiration] Error checking expiration:', err.message);
+        res.status(500).json({ error: 'Failed to check expiration' });
+      }
+    });
+
 
     // 8. DELETE Request
     app.delete('/api/requests/:id', async (req, res) => {
@@ -2776,7 +3252,73 @@ app.post('/api/files/folder-by-path', async (req, res) => {
   }
 });
 
-// Save form PDF to folder
+// List files from user's physical study folder (Solicitacao/Resposta/Outros/Winflow)
+app.post('/api/files/study-folder', async (req, res) => {
+  try {
+    const { userFolderPath, studyNumber, category } = req.body;
+    if (!userFolderPath || !studyNumber || !category) {
+      return res.status(400).json({ success: false, error: 'userFolderPath, studyNumber e category são obrigatórios' });
+    }
+
+    const cleanStudyNumber = String(studyNumber).replace(/^PROV-/, '');
+    if (cleanStudyNumber.length < 10) {
+      return res.json({ success: true, files: [] });
+    }
+
+    const ano = cleanStudyNumber.substring(0, 4);
+    const seq = cleanStudyNumber.substring(4, 8);
+    const rev = cleanStudyNumber.substring(8, 10);
+    const folderPath = path.join(userFolderPath, ano, seq, `R${rev}`, category);
+
+    if (!fs.existsSync(folderPath)) {
+      return res.json({ success: true, files: [] });
+    }
+
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    const files = entries
+      .filter(e => e.isFile() && e.name !== '.keep' && e.name !== 'Thumbs.db')
+      .map(e => {
+        const fullPath = path.join(folderPath, e.name);
+        const stats = fs.statSync(fullPath);
+        return {
+          name: e.name,
+          path: fullPath,
+          fullPath,
+          size: stats.size,
+          createdAt: stats.birthtime || stats.ctime,
+          source: 'filesystem',
+        };
+      });
+
+    res.json({ success: true, files });
+  } catch (err) {
+    console.error('[StudyFolder] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Read a file from disk as base64 (for viewing in browser)
+app.post('/api/files/read', async (req, res) => {
+  try {
+    const { filePath } = req.body;
+    if (!filePath) {
+      return res.status(400).json({ success: false, error: 'filePath é obrigatório' });
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'Arquivo não encontrado' });
+    }
+    const buffer = fs.readFileSync(filePath);
+    const base64 = buffer.toString('base64');
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeMap = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
+    res.json({ success: true, base64, mime: mimeMap[ext] || 'application/octet-stream', name: path.basename(filePath) });
+  } catch (err) {
+    console.error('[FileRead] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Save form PDF to folder — uses frontend-generated PDF (html2canvas) when available
 app.post('/api/folders/save-form-pdf', async (req, res) => {
   try {
     const { studyId, studyNumber, targetPath } = req.body;
@@ -2785,85 +3327,284 @@ app.post('/api/folders/save-form-pdf', async (req, res) => {
       return res.status(400).json({ success: false, error: 'studyId e targetPath são obrigatórios' });
     }
 
-    // Query the study data from database
-    const result = await sql.query(`SELECT * FROM requests WHERE id = '${studyId}'`);
-    
-    if (result.recordset.length === 0) {
-      return res.status(404).json({ success: false, error: 'Estudo não encontrado' });
-    }
-
-    const study = result.recordset[0];
-    
     // Ensure the directory exists
     const dir = path.dirname(targetPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // Generate PDF using PDFKit
-    const doc = new PDFDocument({ margin: 50 });
+    // Try to find the frontend-generated PDF in RequestAttachments first
+    let usedFrontendPDF = false;
+    try {
+      const attResult = await sql.query`
+        SELECT TOP 1 fileContent FROM RequestAttachments 
+        WHERE studyId = ${String(studyId)} 
+        AND fileName LIKE 'Formul%'
+        ORDER BY id DESC
+      `;
+      if (attResult.recordset.length > 0 && attResult.recordset[0].fileContent) {
+        const pdfBuffer = Buffer.isBuffer(attResult.recordset[0].fileContent)
+          ? attResult.recordset[0].fileContent
+          : Buffer.from(attResult.recordset[0].fileContent);
+        fs.writeFileSync(targetPath, pdfBuffer);
+        usedFrontendPDF = true;
+        console.log(`[FormPDF] Frontend PDF salvo em: ${targetPath}`);
+      }
+    } catch (attErr) {
+      console.warn('[FormPDF] Could not fetch frontend PDF, falling back to server-side:', attErr.message);
+    }
+
+    if (usedFrontendPDF) {
+      return res.json({ success: true, path: targetPath, source: 'frontend' });
+    }
+
+    // Fallback: query study data and generate PDF server-side
+    let study = null;
+    let meta = {};
+    try {
+      const reqResult = await sql.query`SELECT * FROM Requests WHERE id = ${String(studyId)}`;
+      if (reqResult.recordset.length > 0) {
+        study = reqResult.recordset[0];
+        meta = study.meta_data ? JSON.parse(study.meta_data) : {};
+      }
+    } catch (e) { /* ignore */ }
+    if (!study) {
+      try {
+        const tResult = await sql.query`SELECT * FROM T_ESTPLA WHERE id = ${String(studyId)}`;
+        if (tResult.recordset.length > 0) {
+          study = tResult.recordset[0];
+          meta = study.meta_data ? JSON.parse(study.meta_data) : {};
+        }
+      } catch (e) { /* ignore */ }
+    }
+    if (!study) {
+      return res.status(404).json({ success: false, error: 'Estudo não encontrado' });
+    }
+
+    const d = { ...meta, ...study };
+    const formType = String(d.formType || study.FK_MODELO || '');
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const writeStream = fs.createWriteStream(targetPath);
     doc.pipe(writeStream);
 
-    // Header
-    doc.fontSize(18).font('Helvetica-Bold').text('FORMULÁRIO DE SOLICITAÇÃO DE ESTUDO', { align: 'center' });
+    const W = doc.page.width - 80; // usable width
+    const now = new Date().toLocaleString('pt-BR');
+
+    // ── Header ──────────────────────────────────────────────
+    const formTitle = formType.includes('FO.01') ? 'ESTUDO ADR — VIABILIDADE TÉCNICA RESIDENCIAL / COMERCIAL'
+      : formType.includes('FO.02') ? 'ESTUDO ADR — GASEIFICAÇÃO TOTAL / PARCIAL'
+      : formType.includes('FO.03') ? 'ESTUDO ADR — INDUSTRIAL / GNV / COGERAÇÃO / GERAÇÃO'
+      : formType.includes('FO.04') ? 'ESTUDO ADR — VIABILIDADE TERMOELÉTRICA'
+      : 'FORMULÁRIO DE SOLICITAÇÃO DE ESTUDO';
+
+    doc.fontSize(14).font('Helvetica-Bold').text('PE.00492', 40, 40, { align: 'right', width: W });
+    doc.fontSize(10).font('Helvetica').text(`GPR/GEC/GGAS`, { align: 'right', width: W });
+    doc.moveDown(1.5);
+    doc.fontSize(14).font('Helvetica-Bold').text(formTitle, 40, doc.y, { align: 'center', width: W });
     doc.moveDown(0.5);
-    doc.fontSize(12).font('Helvetica').text(`Estudo: ${studyNumber}`, { align: 'center' });
-    doc.moveDown(2);
+    doc.fontSize(9).font('Helvetica').text(`Nº ${studyNumber || study.NRO_ESTUDO || study.id || '-'}`, { align: 'center', width: W });
+    doc.moveDown(1.5);
 
-    // Information section
-    doc.fontSize(12).font('Helvetica-Bold').text('DADOS DO SOLICITANTE');
-    doc.moveDown(0.5);
-    doc.font('Helvetica').fontSize(10);
-    
-    const fields = [
-      ['Cliente:', study.clientName || '-'],
-      ['Endereço:', study.address || '-'],
-      ['Cidade:', study.city || '-'],
-      ['Bairro:', study.neighborhood || '-'],
-      ['CEP:', study.cep || '-'],
-    ];
+    // Helper: draw a field row
+    const fieldRow = (label, value, opts = {}) => {
+      const indent = opts.indent || 40;
+      const y0 = doc.y;
+      doc.font('Helvetica-Bold').fontSize(9).text(label, indent, y0, { continued: true, width: W });
+      doc.font('Helvetica').text(` ${value || '-'}`, { width: W });
+      doc.moveDown(0.25);
+    };
 
-    fields.forEach(([label, value]) => {
-      doc.font('Helvetica-Bold').text(label, { continued: true }).font('Helvetica').text(` ${value}`).moveDown(0.3);
-    });
+    // Helper: draw a section header
+    const sectionHeader = (text) => {
+      doc.moveDown(0.5);
+      doc.fontSize(10).font('Helvetica-Bold').text(text, 40, doc.y, { width: W, underline: true });
+      doc.moveDown(0.5);
+    };
 
-    doc.moveDown(1);
-    doc.fontSize(12).font('Helvetica-Bold').text('DADOS DO ESTUDO');
-    doc.moveDown(0.5);
-    doc.font('Helvetica').fontSize(10);
+    // ── 1. DADOS DO SOLICITANTE ─────────────────────────────
+    sectionHeader('1. DADOS DO SOLICITANTE');
+    fieldRow('Naturgy:', d.naturgyUnit || d.empresa || '');
+    fieldRow('Tipo de Estudo:', d.studyType || '');
+    if (d.studyType === 'Revisão de Estudo' || d.studyType === 'Revisao de Estudo') {
+      fieldRow('Estudo Anterior:', d.previousStudy || '');
+    }
+    fieldRow('Resp. Solicitação:', d.requesterName || d.SOL_RESPON || '');
+    fieldRow('Data Solicitação:', d.requestDate ? new Date(d.requestDate).toLocaleDateString('pt-BR') : '');
+    fieldRow('Área Solicitante:', d.requesterArea || d.SOL_ORGAO || '');
+    fieldRow('Telefone:', d.phone || '');
+    fieldRow('e-mail:', d.email || '');
 
-    const studyFields = [
-      ['Tipo de Estudo:', study.studyType || '-'],
-      ['Subtipo:', study.studySubType || '-'],
-      ['Grupo Rede:', study.networkGroup || '-'],
-      ['Status:', study.status || '-'],
-      ['Data Solicitação:', study.requestDate ? new Date(study.requestDate).toLocaleDateString('pt-BR') : '-'],
-    ];
+    // ── 2. DADOS BASE DO ESTUDO ─────────────────────────────
+    sectionHeader('2. DADOS BASE DO ESTUDO');
 
-    studyFields.forEach(([label, value]) => {
-      doc.font('Helvetica-Bold').text(label, { continued: true }).font('Helvetica').text(` ${value}`).moveDown(0.3);
-    });
+    if (formType.includes('FO.01')) {
+      // FO01 — Residencial / Comercial
+      fieldRow('Título/Cliente:', d.studyTitle || d.clientName || d.TITULO || '');
+      fieldRow('Mercado:', d.marketCategory || '');
+      fieldRow('Endereço:', d.address || d.LOCALIZ || '');
+      fieldRow('Cidade/Município:', d.city || d.Municipio || '');
+      fieldRow('Bairro:', d.neighborhood || d.Bairro || '');
+      fieldRow('Tipo de Rede:', d.networkType || '');
+      fieldRow('Pressão Rede:', d.pressure || '');
+      fieldRow('Mapa Localização:', d.mapLocation || '');
+      fieldRow('Tipo Arquivo:', d.fileType || '');
 
-    doc.moveDown(1);
-    doc.fontSize(12).font('Helvetica-Bold').text('DADOS TÉCNICOS');
-    doc.moveDown(0.5);
-    doc.font('Helvetica').fontSize(10);
+      // Cargas / Vazão Prevista table
+      sectionHeader('3. CARGAS / VAZÃO PREVISTA');
+      doc.fontSize(8).font('Helvetica-Bold');
+      const tableY = doc.y;
+      const cols = [40, 140, 250, 380];
+      doc.text('Mercado', cols[0], tableY, { width: 100 });
+      doc.text('Nº Clientes', cols[1], tableY, { width: 110, align: 'right' });
+      doc.text('Vazão/Unid (m³/h)', cols[2], tableY, { width: 130, align: 'right' });
+      doc.text('Q Total (m³/h)', cols[3], tableY, { width: 100, align: 'right' });
+      doc.moveDown(0.5);
+      doc.moveTo(40, doc.y).lineTo(480, doc.y).stroke();
+      doc.moveDown(0.3);
 
-    const techFields = [
-      ['Pressão Base:', study.requestPressureBase || '-'],
-      ['Vazão Solicitada:', study.vazaoSol ? `${study.vazaoSol} m³/h` : '-'],
-      ['Número Clientes:', study.numClientsRes || '-'],
-    ];
+      const resClients = parseInt(d.numClientsRes) || 0;
+      const resFlow = parseFloat(d.flowUnitRes || d.unitFlow) || 0;
+      const resTotal = parseFloat(d.totalFlowRes) || (resClients * resFlow);
+      const comClients = parseInt(d.numClientsCom) || 0;
+      const comFlow = parseFloat(d.flowUnitCom) || 0;
+      const comTotal = parseFloat(d.totalFlowCom) || (comClients * comFlow);
 
-    techFields.forEach(([label, value]) => {
-      doc.font('Helvetica-Bold').text(label, { continued: true }).font('Helvetica').text(` ${value}`).moveDown(0.3);
-    });
+      doc.font('Helvetica').fontSize(9);
+      const rowY = doc.y;
+      doc.text('Residencial', cols[0], rowY, { width: 100 });
+      doc.text(String(resClients), cols[1], rowY, { width: 110, align: 'right' });
+      doc.text(resFlow ? String(resFlow) : '-', cols[2], rowY, { width: 130, align: 'right' });
+      doc.text(resTotal ? String(resTotal) : '-', cols[3], rowY, { width: 100, align: 'right' });
+      doc.moveDown(0.5);
+      const rowY2 = doc.y;
+      doc.text('Comercial', cols[0], rowY2, { width: 100 });
+      doc.text(String(comClients), cols[1], rowY2, { width: 110, align: 'right' });
+      doc.text(comFlow ? String(comFlow) : '-', cols[2], rowY2, { width: 130, align: 'right' });
+      doc.text(comTotal ? String(comTotal) : '-', cols[3], rowY2, { width: 100, align: 'right' });
+      doc.moveDown(0.5);
+      doc.moveTo(40, doc.y).lineTo(480, doc.y).stroke();
+      doc.moveDown(0.3);
+      doc.font('Helvetica-Bold');
+      const totY = doc.y;
+      doc.text('Totais', cols[0], totY, { width: 100 });
+      doc.text(String(resClients + comClients), cols[1], totY, { width: 110, align: 'right' });
+      doc.text('-', cols[2], totY, { width: 130, align: 'right' });
+      doc.text(String((resTotal || 0) + (comTotal || 0)), cols[3], totY, { width: 100, align: 'right' });
+      doc.moveDown(1);
 
-    // Footer
-    doc.moveDown(2);
-    doc.fontSize(8).fillColor('gray').text(`Documento gerado em: ${new Date().toLocaleString('pt-BR')}`, { align: 'center' });
-    doc.text(`Sistema APR - Naturgy`, { align: 'center' });
+    } else if (formType.includes('FO.02')) {
+      // FO02 — Gaseificação
+      fieldRow('Título Projeto:', d.studyTitle || d.TITULO || '');
+      fieldRow('Estado:', d.state || '');
+      fieldRow('Cidade/Município:', d.city || d.Municipio || '');
+      fieldRow('Tipo de Gaseificação:', d.gasificationType || '');
+
+      sectionHeader('3. CRESCIMENTO CUMULATIVO m³/(n)/h');
+      const gridData = d.gridDataFO02 || {};
+      const rows = ['residenciais', 'comerciais', 'gnv', 'grandesComercios', 'industrias', 'outros'];
+      const labels = ['Residenciais', 'Comerciais', 'GNV', 'Grandes Comércios', 'Indústrias', 'Outros'];
+      doc.fontSize(7).font('Helvetica-Bold');
+      const gY = doc.y;
+      const gc = [40, 120, 180, 240, 300, 370, 430];
+      ['Clientes', 'Atuais', '2 Anos', '5 Anos', '20 Anos', 'Q Total'].forEach((h, i) => {
+        doc.text(h, gc[i], gY, { width: gc[i + 1] - gc[i] - 5, align: i > 0 ? 'right' : 'left' });
+      });
+      doc.moveDown(0.4);
+      doc.moveTo(40, doc.y).lineTo(480, doc.y).stroke();
+      doc.moveDown(0.2);
+      doc.font('Helvetica').fontSize(8);
+      let totals = [0, 0, 0, 0, 0];
+      rows.forEach((rk, ri) => {
+        const rd = gridData[rk] || {};
+        const vals = [rd.atuais, rd.y2, rd.y5, rd.y20, rd.totalQ].map(v => parseInt(v) || 0);
+        vals.forEach((v, ci) => totals[ci] += v);
+        const ry = doc.y;
+        doc.text(labels[ri], gc[0], ry, { width: 80 });
+        vals.forEach((v, ci) => doc.text(String(v), gc[ci + 1], ry, { width: gc[ci + 2] - gc[ci + 1] - 5, align: 'right' }));
+        doc.moveDown(0.35);
+      });
+      doc.moveTo(40, doc.y).lineTo(480, doc.y).stroke();
+      doc.moveDown(0.2);
+      doc.font('Helvetica-Bold');
+      const tY = doc.y;
+      doc.text('Totais', gc[0], tY, { width: 80 });
+      totals.forEach((v, ci) => doc.text(String(v), gc[ci + 1], tY, { width: gc[ci + 2] - gc[ci + 1] - 5, align: 'right' }));
+      doc.moveDown(1);
+
+    } else if (formType.includes('FO.03')) {
+      // FO03 — Industrial / GNV / Cogeração / Geração
+      fieldRow('Cliente:', d.clientName || d.TITULO || '');
+      fieldRow('Mercado:', d.marketCategory || '');
+      fieldRow('Endereço:', d.address || d.LOCALIZ || '');
+      fieldRow('Cidade/Município:', d.city || d.Municipio || '');
+      fieldRow('Bairro:', d.neighborhood || d.Bairro || '');
+      fieldRow('Tipo Arquivo:', d.fileType || '');
+      fieldRow('Ponto de Entrega:', d.deliveryPoint || '');
+
+      sectionHeader('3. DADOS TÉCNICOS');
+      fieldRow('Consumo Instantâneo:', d.instantConsumption ? `${d.instantConsumption} m³/h` : '');
+      fieldRow('Horas de Trabalho:', d.workHours ? `${d.workHours} h` : '');
+      fieldRow('Dias Trab/Semana:', d.workDaysPerWeek ? `${d.workDaysPerWeek} dia(s)` : '');
+      fieldRow('Consumo Previsto (mês):', d.monthlyConsumption ? `${d.monthlyConsumption} m³` : '');
+      fieldRow('Incremento:', d.consumptionIncrement ? `${d.consumptionIncrement} Nm³/h` : '');
+      fieldRow('Vazão Total Prevista:', d.totalPredictedFlow ? `${d.totalPredictedFlow} Nm³/h` : '');
+      fieldRow('Pressão Mínima:', d.minPressure ? `${d.minPressure} bar` : '');
+      fieldRow('Faixa Pressão Sugerida:', d.suggestedPressureRange || '');
+
+      if (d.hasExpansion) {
+        sectionHeader('4. EXPANSÃO DE CONSUMO');
+        fieldRow('Nome da Indústria:', d.industryName || '');
+        fieldRow('Consumo Atual:', d.currentConsumption ? `${d.currentConsumption} m³/h` : '');
+        fieldRow('Pressão Contratual:', d.contractualPressure ? `${d.contractualPressure} bar` : '');
+        fieldRow('Faixa Pressão Atual:', d.currentPressureRange || '');
+      }
+
+    } else if (formType.includes('FO.04')) {
+      // FO04 — Termoelétrica
+      fieldRow('Título / Cliente:', d.uteName || d.studyTitle || d.clientName || d.TITULO || '');
+      fieldRow('Mercado:', 'Termogeração');
+      fieldRow('Endereço:', d.address || d.LOCALIZ || '');
+      fieldRow('Cidade:', d.city || d.Municipio || '');
+      fieldRow('Bairro:', d.neighborhood || d.Bairro || '');
+      fieldRow('Estado:', d.state || '');
+
+      sectionHeader('3. DADOS TÉCNICOS');
+      fieldRow('Nível Pressão Solicitado:', d.gasPressureLevel ? `${d.gasPressureLevel} bar` : '');
+      fieldRow('Vazão Média (24h):', d.averageFlow ? `${d.averageFlow} Nm³/h` : '');
+      fieldRow('Vazão de Pico:', d.peakFlow ? `${d.peakFlow} Nm³/h` : '');
+      fieldRow('Data Inicial Operação:', d.operationStartDate ? new Date(d.operationStartDate).toLocaleDateString('pt-BR') : '');
+
+    } else {
+      // Generic fallback
+      fieldRow('Título:', d.studyTitle || d.clientName || d.TITULO || '');
+      fieldRow('Endereço:', d.address || d.LOCALIZ || '');
+      fieldRow('Cidade:', d.city || d.Municipio || '');
+      fieldRow('Bairro:', d.neighborhood || d.Bairro || '');
+      fieldRow('Tipo Estudo:', d.studyType || '');
+      fieldRow('Subtipo:', d.studySubType || d.tipoEst || '');
+    }
+
+    // ── CONSIDERAÇÕES ───────────────────────────────────────
+    const considNum = formType.includes('FO.02') ? '5' : formType.includes('FO.03') && d.hasExpansion ? '5' : '4';
+    sectionHeader(`${considNum}. CONSIDERAÇÕES SOBRE A SOLICITAÇÃO`);
+    fieldRow('Prazo:', 'Até 5 dias úteis');
+    fieldRow('Previsão de Entrega:', d.estimatedDeliveryDate || '-');
+
+    // ── COMENTÁRIOS ─────────────────────────────────────────
+    const commNum = parseInt(considNum) + 1;
+    sectionHeader(`${commNum}. COMENTÁRIOS`);
+    const comments = d.comments || d.obs || '';
+    if (comments) {
+      doc.font('Helvetica').fontSize(9).text(comments, 40, doc.y, { width: W });
+    } else {
+      doc.font('Helvetica-Oblique').fontSize(9).text('(Sem comentários)', 40, doc.y, { width: W });
+    }
+
+    // ── FOOTER ──────────────────────────────────────────────
+    doc.moveDown(3);
+    doc.fontSize(8).fillColor('gray')
+      .text(`Documento gerado em: ${now} — Sistema APR - Naturgy`, 40, doc.y, { align: 'center', width: W });
 
     doc.end();
 
@@ -2872,11 +3613,36 @@ app.post('/api/folders/save-form-pdf', async (req, res) => {
       writeStream.on('finish', resolve);
       writeStream.on('error', reject);
     });
-    
+
     console.log(`[FormPDF] Formulário PDF salvo em: ${targetPath}`);
     res.json({ success: true, path: targetPath });
   } catch (err) {
     console.error('[FormPDF] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Save a base64-encoded file to a folder
+app.post('/api/folders/save-file-base64', async (req, res) => {
+  try {
+    const { folderPath, fileName, contentBase64 } = req.body;
+
+    if (!folderPath || !fileName || !contentBase64) {
+      return res.status(400).json({ success: false, error: 'folderPath, fileName e contentBase64 são obrigatórios' });
+    }
+
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+
+    const buffer = Buffer.from(contentBase64, 'base64');
+    const filePath = path.join(folderPath, fileName);
+    fs.writeFileSync(filePath, buffer);
+
+    console.log(`[SaveFileBase64] Arquivo salvo: ${filePath}`);
+    res.json({ success: true, path: filePath });
+  } catch (err) {
+    console.error('[SaveFileBase64] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

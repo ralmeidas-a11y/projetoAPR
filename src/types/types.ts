@@ -47,7 +47,10 @@ export enum StudyStatus {
   CONCLUIDO = 'Concluído',
   REJEITADO = 'Rejeitado',
   CANCELADO = 'Cancelado',
-  ABERTO = 'Aberto'
+  ABERTO = 'Aberto',
+  EM_USO = 'Em Uso',
+  SUBSTITUIDO = 'Substituído',
+  VENCIDO = 'Vencido'
 }
 
 export interface User {
@@ -113,6 +116,8 @@ export interface QCIteration {
   status: string;
   date: string;
   reviewer?: string;
+  studyNumber?: string;
+  validationDate?: string;
 }
 
 export interface QCControlData {

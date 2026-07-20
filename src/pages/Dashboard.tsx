@@ -40,6 +40,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [qcRequest, setQcRequest] = useState<FormData | null>(null);
   const [hasAutoNotified, setHasAutoNotified] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const itemsPerPage = 12;
 
   const [newAnalyst, setNewAnalyst] = useState('');
@@ -70,8 +71,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return found ? found.name : id;
   };
 
+  const toggleGroup = (baseCode: string) => {
+    setExpandedGroups(prev => ({ ...prev, [baseCode]: !prev[baseCode] }));
+  };
+
   const filteredRequests = useMemo(() => {
-    return requests.filter(r => {
+    const filtered = requests.filter(r => {
 
       // Restrição por papel (Role)
       if (user.role === UserRole.ANALISTA && !isValidator) {
@@ -110,9 +115,61 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }).sort((a, b) => {
       const numA = a.studyNumber || '';
       const numB = b.studyNumber || '';
-      // Numeric localesort ensures 2024042001 > 2024041901 > 2020000416
       return numB.localeCompare(numA, undefined, { numeric: true, sensitivity: 'base' });
     });
+
+    // IDSIGEP grouping: group by first 8 digits, show latest revision as primary
+    interface GroupedRequest extends FormData {
+      _allRevisions?: FormData[];
+      _revisionCount?: number;
+      _baseCode?: string;
+    }
+
+    const groups: { [key: string]: FormData[] } = {};
+    const seenIds = new Set<string>();
+
+    filtered.forEach(req => {
+      if (seenIds.has(req.id)) return;
+      seenIds.add(req.id);
+
+      const cleanCode = (req.studyNumber || '').replace('PROV-', '');
+      const numericOnly = cleanCode.replace(/[^0-9]/g, '');
+
+      if (numericOnly.length < 8) {
+        // Studies with less than 8 digits: pass through without grouping
+        if (!groups['_ungrouped_']) groups['_ungrouped_'] = [];
+        groups['_ungrouped_'].push(req);
+        return;
+      }
+
+      const base8 = numericOnly.substring(0, 8);
+      if (!groups[base8]) groups[base8] = [];
+      groups[base8].push(req);
+    });
+
+    const result: GroupedRequest[] = [];
+
+    Object.entries(groups).forEach(([base8, studies]) => {
+      if (base8 === '_ungrouped_') {
+        studies.forEach(s => result.push(s as GroupedRequest));
+        return;
+      }
+
+      // Sort by full IDSIGEP descending (latest first)
+      studies.sort((a, b) => {
+        const numA = parseInt((a.studyNumber || '').replace('PROV-', '').replace(/[^0-9]/g, '')) || 0;
+        const numB = parseInt((b.studyNumber || '').replace('PROV-', '').replace(/[^0-9]/g, '')) || 0;
+        return numB - numA;
+      });
+
+      const main: GroupedRequest = studies[0] as GroupedRequest;
+      main._allRevisions = studies;
+      main._revisionCount = studies.length;
+      main._baseCode = base8;
+      result.push(main);
+    });
+
+    return result;
   }, [requests, filter, searchTerm, user, isValidator, isQC]);
 
   const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
@@ -523,6 +580,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 displayedRequests.map((req) => {
                   const isMe = isAssignedToMe(req.assignedTo, user);
                   const isSystem = isSystemAssigned(req.assignedTo);
+                  const hasMultipleRevisions = (req as any)._revisionCount > 1;
+                  const allRevisions = (req as any)._allRevisions || [];
+                  const baseCode = (req as any)._baseCode || '';
+                  const isExpanded = expandedGroups[baseCode] === true;
+                  const revisionCount = (req as any)._revisionCount || 1;
 
                   const normalizeDate = (ds: any) => {
                     if (!ds) return '';
@@ -546,24 +608,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   const deadlineStr = normalizeDate(req.dtEntregaPrevista || req.estimatedDeliveryDate);
                   const isUrgent = (() => {
                     if (!deadlineStr) return false;
-                    // Ignorar status concluídos/cancelados/rejeitados
                     if ([StudyStatus.CONCLUIDO, StudyStatus.CANCELADO, StudyStatus.REJEITADO].includes(req.status)) return false;
                     const deadline = new Date(deadlineStr + 'T00:00:00');
                     const now = new Date();
                     const diffDays = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-                    // Urgent: menos de 2 dias (prazo próximo) OU prazo ultrapassado (atrasado)
                     return diffDays < 2;
                   })();
 
                   return (
+                    <React.Fragment key={req.id}>
                     <tr
-                      key={req.id}
                       className={`transition-all duration-200 ${highlightRequestId === req.id ? 'bg-blue-100 ring-2 ring-blue-400 ring-inset animate-pulse' : (isUrgent ? 'bg-yellow-50/70 hover:bg-yellow-50' : 'hover:bg-slate-50')}`}
                     >
                       <td className="px-5 py-3.5 text-left">
                         <div className="flex items-center gap-2.5">
                           <span className="bg-[#004080]/90 text-white text-[10px] font-semibold px-2 py-0.5 rounded">{getFO(req.formType)}</span>
                           <p className={`text-xs font-semibold uppercase ${isUrgent ? 'text-orange-700' : 'text-[#004080]'}`}>{req.studyNumber}</p>
+                          {hasMultipleRevisions && (
+                            <button
+                              onClick={() => toggleGroup(baseCode)}
+                              className="text-[8px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-black flex items-center gap-1 hover:bg-indigo-200 transition-colors"
+                              title={`${revisionCount} revisões`}
+                            >
+                              <i className={`fa-solid fa-chevron-${isExpanded ? 'up' : 'down'} text-[7px]`}></i>
+                              {revisionCount} rev
+                            </button>
+                          )}
                         </div>
                         <p className={`text-[11px] mt-1.5 ${isUrgent ? 'text-orange-600' : 'text-slate-400'}`}>{formatDate(req.requestDate)}</p>
                       </td>
@@ -662,6 +732,68 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                       </td>
                     </tr>
+                    {/* Expanded revisions row */}
+                    {hasMultipleRevisions && isExpanded && allRevisions.length > 1 && (
+                      <tr key={`${req.id}-revisions`}>
+                        <td colSpan={7} className="px-5 py-0 bg-indigo-50/30">
+                          <div className="border border-indigo-100 rounded-xl overflow-hidden my-2">
+                            <div className="px-3 py-2 bg-indigo-100/50 border-b border-indigo-100">
+                              <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">
+                                <i className="fa-solid fa-code-branch mr-1"></i>
+                                Todas as Revisões ({revisionCount})
+                              </span>
+                            </div>
+                            <table className="w-full">
+                              <tbody className="divide-y divide-indigo-100">
+                                {allRevisions.map((rev: any, idx: number) => {
+                                  const fullCode = (rev.studyNumber || '').replace('PROV-', '');
+                                  const isLatest = idx === 0;
+                                  const revIsMe = isAssignedToMe(rev.assignedTo, user);
+                                  return (
+                                    <tr
+                                      key={rev.id}
+                                      onClick={() => onViewRequest?.(rev)}
+                                      className="hover:bg-indigo-100/50 cursor-pointer transition-colors"
+                                    >
+                                      <td className="px-3 py-2 text-left w-48">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${isLatest ? 'bg-indigo-600 text-white' : 'bg-indigo-200 text-indigo-700'}`}>
+                                            {fullCode}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold border ${getStatusStyle(rev.status)}`}>
+                                          {rev.status}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-center text-[10px] text-slate-500">
+                                        {rev.requestDate ? formatDate(rev.requestDate) : ''}
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        {rev.assignedTo ? (
+                                          <span className={`text-[8px] font-black ${revIsMe ? 'text-green-600' : 'text-slate-400'}`}>
+                                            {revIsMe ? 'Sua Tarefa' : resolveAnalystName(rev.assignedTo)}
+                                          </span>
+                                        ) : (
+                                          <span className="text-[8px] text-slate-300">Sistema</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 text-center text-[10px] text-slate-500">—</td>
+                                      <td className="px-3 py-2 text-center text-[10px] text-slate-500">—</td>
+                                      <td className="px-3 py-2 text-right">
+                                        <i className="fa-solid fa-arrow-right text-[8px] text-slate-400"></i>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })
               )}

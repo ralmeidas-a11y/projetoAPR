@@ -32,6 +32,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
   const [viewingHoldReason, setViewingHoldReason] = useState<FormData | null>(null);
   const [holdResponseText, setHoldResponseText] = useState('');
   const [viewMode, setViewMode] = useState<'meus' | 'area'>('meus');
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     if (autoOpenRequestId) {
@@ -77,48 +78,53 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
       }
     });
 
-    // Grupo por estudo base (sem revisão)
-    const groups: { [key: string]: FormData } = {};
+    // Grupo por base de 8 dígitos do IDSIGEP — maior últimos 2 dígitos é o principal
+    const groups: { [key: string]: FormData[] } = {};
     const seenIds = new Set<string>();
 
     filteredByTab.forEach(req => {
-      // Skip duplicates de ID
-      if (seenIds.has(req.id)) {
-        console.warn('[MyRequests] Skipping duplicate ID:', req.id, 'studyNumber:', req.studyNumber);
-        return;
-      }
+      if (seenIds.has(req.id)) return;
       seenIds.add(req.id);
 
-      // Pegar código base (antes de -REV ou PROV-)
+      // Extrair os 8 primeiros dígitos do studyNumber (remover PROV- e sufixos)
       const cleanCode = (req.studyNumber || '').replace('PROV-', '');
-      const baseCode = cleanCode.split('-REV')[0];
+      const numericOnly = cleanCode.replace(/[^0-9]/g, '');
 
-      if (!baseCode) return; // Skip se não tem código
+      if (numericOnly.length < 8) return;
 
-      // Se é a primeira do grupo ou é mais recente que a atual
-      if (!groups[baseCode]) {
-        groups[baseCode] = req;
-      } else {
-        // Comparar versões (REV)
-        const currentRevMatch = (req.studyNumber || '').match(/-REV(\d+)$/i);
-        const currentRev = currentRevMatch ? parseInt(currentRevMatch[1]) : 0;
+      const base8 = numericOnly.substring(0, 8);
 
-        const storedRevMatch = (groups[baseCode].studyNumber || '').match(/-REV(\d+)$/i);
-        const storedRev = storedRevMatch ? parseInt(storedRevMatch[1]) : 0;
-
-        // Manter a versão mais recente
-        if (currentRev >= storedRev) {
-          groups[baseCode] = req;
-        }
+      if (!groups[base8]) {
+        groups[base8] = [];
       }
+      groups[base8].push(req);
     });
 
-    let result = Object.values(groups);
+    interface GroupedRequest extends FormData {
+      _allRevisions?: FormData[];
+      _revisionCount?: number;
+    }
+    const result: GroupedRequest[] = [];
+
+    Object.entries(groups).forEach(([base8, studies]) => {
+      // Ordenar pelo IDSIGEP numérico completo (maior = mais recente primeiro)
+      studies.sort((a, b) => {
+        const numA = parseInt((a.studyNumber || '').replace('PROV-', '').replace(/[^0-9]/g, '')) || 0;
+        const numB = parseInt((b.studyNumber || '').replace('PROV-', '').replace(/[^0-9]/g, '')) || 0;
+        return numB - numA;
+      });
+
+      const main: GroupedRequest = studies[0] as GroupedRequest;
+      main._allRevisions = studies;
+      main._revisionCount = studies.length;
+      result.push(main);
+    });
 
     // Aplicar filtro de busca se houver
+    let filtered = result;
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
-      result = result.filter(req => {
+      filtered = filtered.filter(req => {
         const title = (req.studyTitle || req.uteName || req.clientName || '').toLowerCase();
         const code = (req.studyNumber || '').toLowerCase();
         const address = (req.address || '').toLowerCase();
@@ -134,10 +140,10 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
     }
 
     // Aplicar filtro de status
-    result = result.filter(statusFilters[statusFilter] || (() => true));
+    filtered = filtered.filter(statusFilters[statusFilter] || (() => true));
 
     // Ordenar por data (mais recente primeiro)
-    return result.sort((a, b) => {
+    return filtered.sort((a, b) => {
       const dateA = new Date(a.requestDate || a.createdAt || a.updatedAt || 0).getTime();
       const dateB = new Date(b.requestDate || b.createdAt || b.updatedAt || 0).getTime();
       return dateB - dateA;
@@ -242,6 +248,10 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
     }
     // Remover duplicatas de '...'
     return pages.filter((item, pos, self) => self.indexOf(item) === pos);
+  };
+
+  const toggleGroup = (baseCode: string) => {
+    setExpandedGroups(prev => ({ ...prev, [baseCode]: !prev[baseCode] }));
   };
 
   const handleOpenFolder = (req: FormData) => {
@@ -504,6 +514,11 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                   const isCancelled = req.status === StudyStatus.CANCELADO;
                   const isCompleted = req.status === StudyStatus.CONCLUIDO || req.status === StudyStatus.ENVIADO_SEM_CQ;
                   const hasRevision = (req.studyNumber || '').includes('-REV');
+                  const revisionCount = (req as any)._revisionCount || 1;
+                  const allRevisions = (req as any)._allRevisions || [];
+                  const baseCode = (req.studyNumber || '').replace('PROV-', '').replace(/[^0-9]/g, '').substring(0, 8);
+                  const isExpanded = !!expandedGroups[baseCode];
+                  const hasMultipleRevisions = revisionCount > 1;
 
                   return (
                     <div
@@ -555,6 +570,15 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                           <div className="flex items-center gap-2">
                             <span className="text-[9px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-black">{formatStudyID(req)}</span>
                             {hasRevision && <span className="text-[8px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-black">REV</span>}
+                            {hasMultipleRevisions && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleGroup(baseCode); }}
+                                className="text-[8px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-black flex items-center gap-1 hover:bg-indigo-200 transition-colors"
+                              >
+                                <i className={`fa-solid fa-chevron-${isExpanded ? 'up' : 'down'} text-[7px]`}></i>
+                                {revisionCount} revisões
+                              </button>
+                            )}
                           </div>
                           <p className="text-xs text-slate-500 flex items-start gap-2">
                             <i className="fa-solid fa-location-dot text-slate-400 flex-shrink-0 mt-0.5"></i>
@@ -576,6 +600,46 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                           </p>
                         </div>
                       </div>
+
+                      {/* Revisões expandíveis */}
+                      {hasMultipleRevisions && isExpanded && (
+                        <div className="mt-3 mb-3 border border-indigo-100 rounded-xl bg-indigo-50/30 overflow-hidden">
+                          <div className="px-3 py-2 bg-indigo-100/50 border-b border-indigo-100">
+                            <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">
+                              <i className="fa-solid fa-code-branch mr-1"></i>
+                              Todas as Revisões ({revisionCount})
+                            </span>
+                          </div>
+                          <div className="divide-y divide-indigo-100">
+                            {allRevisions.map((rev: FormData, idx: number) => {
+                              const fullCode = (rev.studyNumber || '').replace('PROV-', '');
+                              const isLatest = idx === 0;
+                              return (
+                                <button
+                                  key={rev.id}
+                                  onClick={() => onViewRequest(rev)}
+                                  className="w-full px-3 py-2.5 text-left hover:bg-indigo-100/50 transition-colors flex items-center justify-between gap-2"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-black shrink-0 ${
+                                      isLatest ? 'bg-indigo-600 text-white' : 'bg-indigo-200 text-indigo-700'
+                                    }`}>
+                                      {fullCode}
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold border shrink-0 ${getStatusStyle(rev.status)}`}>
+                                      {getStatusDisplay(rev.status)}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 truncate">
+                                      {rev.requestDate ? formatDate(rev.requestDate) : ''}
+                                    </span>
+                                  </div>
+                                  <i className="fa-solid fa-arrow-right text-[8px] text-slate-400 shrink-0"></i>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="flex flex-col gap-2 pt-3 border-t border-slate-100">
                         <div className="flex gap-2">

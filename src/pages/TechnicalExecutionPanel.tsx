@@ -45,7 +45,7 @@ interface TechnicalExecutionPanelProps {
   data: FormData;
   allRequests?: FormData[];
   onBack: () => void;
-  onStatusUpdate: (id: string, status: StudyStatus, reason?: string, assignedTo?: string, additionalData?: Partial<FormData>) => void;
+  onStatusUpdate: (id: string, status: StudyStatus, reason?: string, assignedTo?: string, additionalData?: Partial<FormData> & { isCopy?: boolean }) => void;
   onUpdateData?: (updatedData: FormData) => void;
   allUsers?: User[];
   currentUser?: User;
@@ -58,6 +58,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [activeFolder, setActiveFolder] = useState('Solicitacao');
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
+  const [selectedQCAnalyst, setSelectedQCAnalyst] = useState('');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [previewStudy, setPreviewStudy] = useState<FormData | null>(null);
   const [browsingRevision, setBrowsingRevision] = useState<FormData | null>(null);
@@ -75,6 +76,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [editingObsIdx, setEditingObsIdx] = useState<number | null>(null);
   const [editingObsValue, setEditingObsValue] = useState('');
   const [showCartaPreview, setShowCartaPreview] = useState(false);
+  const [selectedLetterModel, setSelectedLetterModel] = useState<string>('');
   const [fillingModal, setFillingModal] = useState<{
     queue: string[];
     index: number;
@@ -298,6 +300,18 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       onBack();
     }
   };
+
+  const handleSendCopy = async () => {
+    if (!onStatusUpdate) return;
+    const confirm = await showConfirm(
+      'Enviar Cópia do Estudo?',
+      'Esta ação enviará uma cópia do estudo ao solicitante. O e-mail terá o mesmo conteúdo do envio original, mas com "Cópia" no assunto.'
+    );
+    if (confirm) {
+      onStatusUpdate(data.id, StudyStatus.CONCLUIDO, undefined, undefined, { isCopy: true });
+      showToast('Cópia enviada com sucesso!', 'success');
+    }
+  };
   const handleStartEditing = (idx: number, value: string) => {
     if (readOnly) return;
     setEditingObsIdx(idx);
@@ -317,7 +331,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   };
   const handleExportCartaPDF = async (fromPreview: boolean = false) => {
     setIsExportingCarta(true);
-    // Pequeno delay para garantir que o estado reativo assentou
     await new Promise(resolve => setTimeout(resolve, 500));
     try {
       let activeRequest = data;
@@ -325,49 +338,56 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         const now = new Date().toISOString();
         activeRequest = { ...data, cartaGeneratedAt: now };
         onUpdateData(activeRequest);
-        // Ensure immediate database persistence for metadata
         await StorageService.addRequest(activeRequest);
-        // Tempo para o estado persistir antes da captura
         await new Promise(resolve => setTimeout(resolve, 800));
       }
-      // Usamos o elemento oculto dedicado que está SEMPRE no DOM
       const target = hiddenCartaRef.current;
-      if (!target) {
-        // Fallback para o preview se o oculto falhar por algum motivo
-        const previewTarget = cartaRef.current;
-        if (!previewTarget) throw new Error('Alvo de captura não encontrado (Normal ou Preview)');
-        const canvas = await html2canvas(previewTarget, {
-          scale: 3,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          imageTimeout: 15000,
-          allowTaint: true,
-          windowWidth: 1200,
-          scrollX: 0,
-          scrollY: 0
-        });
-        const imgData = canvas.toDataURL('image/png', 1.0);
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
-        await StorageService.uploadCartaResposta(activeRequest, pdf.output('blob'));
-      } else {
-        const canvas = await html2canvas(target, {
-          scale: 3,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          imageTimeout: 15000,
-          allowTaint: true,
-          windowWidth: 1200,
-          scrollX: 0,
-          scrollY: 0
-        });
-        const imgData = canvas.toDataURL('image/png', 1.0);
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
-        await StorageService.uploadCartaResposta(activeRequest, pdf.output('blob'));
+      const sourceEl = target || cartaRef.current;
+      if (!sourceEl) throw new Error('Alvo de captura não encontrado');
+      const canvas = await html2canvas(sourceEl, {
+        scale: 3, useCORS: true, backgroundColor: '#ffffff',
+        logging: false, imageTimeout: 15000, allowTaint: true,
+        windowWidth: 1200, scrollX: 0, scrollY: 0
+      });
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+      await StorageService.uploadCartaResposta(activeRequest, pdf.output('blob'));
+
+      // Save to physical Resposta folder on disk
+      if (currentUser?.folderPath && data.studyNumber) {
+        try {
+          const cleanNum = data.studyNumber.replace(/^PROV-/, '');
+          if (cleanNum.length >= 10) {
+            const ano = cleanNum.substring(0, 4);
+            const seq = cleanNum.substring(4, 8);
+            const rev = cleanNum.substring(8, 10);
+            const respostaPath = `${currentUser.folderPath}\\${ano}\\${seq}\\R${rev}\\Resposta`;
+            const pdfBlob = pdf.output('blob');
+            const arrayBuffer = await pdfBlob.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = '';
+            const chunkSize = 8192;
+            for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+              const chunk = bytes.subarray(i, i + chunkSize);
+              binary += String.fromCharCode(...chunk);
+            }
+            const base64 = btoa(binary);
+            await fetch('/api/folders/save-file-base64', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                folderPath: respostaPath,
+                fileName: `Carta_${cleanNum}.pdf`,
+                contentBase64: base64,
+              }),
+            });
+          }
+        } catch (fsErr) {
+          console.warn('[ExportCarta] Erro ao salvar na pasta Resposta física:', fsErr);
+        }
       }
+
       showToast('Carta Resposta salva com sucesso!', 'success');
       if (activeFolder === 'Resposta') {
         const files = await StorageService.getRequestFiles(data.id, 'Resposta');
@@ -383,7 +403,9 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     }
   };
   const renderCartaPaper = (reference: React.RefObject<HTMLDivElement>) => {
-    const LetterModelComponent = getLetterModel(data.studySubType || '');
+    const LetterModelComponent = selectedLetterModel
+      ? getLetterModel(selectedLetterModel)
+      : getLetterModel(data.studySubType || '');
     return <LetterModelComponent data={data} allUsers={allUsers} currentUser={currentUser || null} reference={reference} />;
   };
   const renderCartaPreviewModal = () => {
@@ -517,18 +539,45 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       onUpdateData({ ...data, totalExecutionTime: elapsedTime });
     }
   }, [elapsedTime, onUpdateData]);
-  // Fetch study files when folder changes
+  // Fetch study files when folder changes — merges DB files + physical directory files
   useEffect(() => {
     let isMounted = true;
     const fetchFiles = async () => {
-      // Use numeric id for database retrieval instead of human-readable studyNumber
       if (!data.id) return;
       setIsLoadingFiles(true);
       try {
-        const files = await StorageService.getRequestFiles(data.id, activeFolder);
+        // 1. Load DB-stored files
+        const dbFiles = await StorageService.getRequestFiles(data.id, activeFolder);
+        const filtered = dbFiles.filter((f: any) => f.name !== '.keep');
+
+        // 2. Load files from physical directory (if user has folderPath)
+        let fsFiles: any[] = [];
+        if (currentUser?.folderPath && data.studyNumber) {
+          try {
+            const fsRes = await fetch('/api/files/study-folder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userFolderPath: currentUser.folderPath,
+                studyNumber: data.studyNumber,
+                category: activeFolder,
+              }),
+            });
+            const fsData = await fsRes.json();
+            if (fsData.success && fsData.files) {
+              fsFiles = fsData.files;
+            }
+          } catch (fsErr) {
+            console.warn('[fetchFiles] Erro ao ler pasta física:', fsErr);
+          }
+        }
+
+        // 3. Merge: DB files first, then physical files not already in DB (by normalized name)
         if (isMounted) {
-          const filtered = files.filter((f: any) => f.name !== '.keep');
-          setStudyFiles(filtered);
+          const normalize = (name: string) => (name || '').toLowerCase().replace(/[\s_\-\.]+/g, '');
+          const dbNames = new Set(filtered.map((f: any) => normalize(f.name)));
+          const uniqueFs = fsFiles.filter((f: any) => !dbNames.has(normalize(f.name)));
+          setStudyFiles([...filtered, ...uniqueFs]);
         }
       } catch (err) {
         console.error('Error fetching study files:', err);
@@ -538,7 +587,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     };
     fetchFiles();
     return () => { isMounted = false; };
-  }, [activeFolder, data.id]);
+  }, [activeFolder, data.id, data.studyNumber, currentUser?.folderPath]);
   // Consolidate estimatedDeliveryDate Logic and Repair Execution Dates
   useEffect(() => {
     let changed = false;
@@ -702,17 +751,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     const ano = nroEstudo.substring(0, 4);
     const estudo = nroEstudo.substring(4, 8);
     const rev = nroEstudo.substring(8, 10);
-    let basePath = 'C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\Teste de Criação de Pasta';
-    try {
-      const configRes = await fetch('/api/config');
-      const config = await configRes.json();
-      if (config.folderBasePath) {
-        basePath = config.folderBasePath;
-      }
-    } catch (err) {
-      console.warn('[handleCreateFolderOnServer] Using default path:', err);
-    }
-    const folderPath = `${basePath}\\${ano}\\${estudo}\\${rev}`;
+    const basePath = currentUser?.folderPath || 'C:\\Users\\ralme\\OneDrive\\Área de Trabalho\\Teste de Criação de Pasta';
+    const folderPath = `${basePath}\\${ano}\\${estudo}\\R${rev}`;
     try {
       const response = await fetch('/api/folders/create', {
         method: 'POST',
@@ -744,18 +784,18 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       showToast('Estudo sem NRO_ESTUDO', 'error');
       return;
     }
-    
+
     const userFolderPath = currentUser?.folderPath;
     if (!userFolderPath) {
       showToast('Caminho do usuário não definido. Configure o caminho de arquivos nas configurações do usuário.', 'error');
       return;
     }
-    
+
     const ano = nroEstudo.substring(0, 4);
     const sequencial = nroEstudo.substring(4, 8);
     const rev = nroEstudo.substring(8, 10);
-    const respostaPath = `${userFolderPath}\\${ano}\\${sequencial}\\${rev}\\resposta`;
-    
+    const respostaPath = `${userFolderPath}\\${ano}\\${sequencial}\\R${rev}\\Resposta`;
+
     try {
       const res = await fetch('/api/files/folder-by-path', {
         method: 'POST',
@@ -942,6 +982,42 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         // Upload each file to the server immediately
         for (const file of rawFiles) {
           await StorageService.uploadFile(requestId, activeFolder, file);
+
+          // Also save to physical directory on disk
+          if (currentUser?.folderPath && data.studyNumber) {
+            try {
+              const cleanNum = data.studyNumber.replace(/^PROV-/, '');
+              if (cleanNum.length >= 10) {
+                const ano = cleanNum.substring(0, 4);
+                const seq = cleanNum.substring(4, 8);
+                const rev = cleanNum.substring(8, 10);
+                const physicalPath = `${currentUser.folderPath}\\${ano}\\${seq}\\R${rev}\\${activeFolder}`;
+
+                // Convert file to base64
+                const arrayBuffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                const chunkSize = 8192;
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+                  const chunk = bytes.subarray(i, i + chunkSize);
+                  binary += String.fromCharCode(...chunk);
+                }
+                const base64 = btoa(binary);
+
+                await fetch('/api/folders/save-file-base64', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    folderPath: physicalPath,
+                    fileName: file.name,
+                    contentBase64: base64,
+                  }),
+                });
+              }
+            } catch (fsErr) {
+              console.warn('[Upload] Erro ao salvar na pasta física:', fsErr);
+            }
+          }
         }
         showToast(`${rawFiles.length} arquivo(s) anexado(s) com sucesso!`, 'success');
         // Refresh the file list from the server
@@ -1043,8 +1119,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       }
       // Clear responseMemo when sending to CQ
       finalAdditional.responseMemo = '';
-      // Auto-populate analyst info if assigned
-      if (data.assignedTo) {
+      // Auto-populate analyst info if assigned (only if not delegating to another analyst)
+      if (data.assignedTo && !finalAdditional.assignedTo) {
         const analyst = allUsers.find(u =>
           u.id === data.assignedTo ||
           u.email.toLowerCase() === data.assignedTo.toLowerCase()
@@ -1054,14 +1130,27 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           finalAdditional.analystRole = analyst.roleDescription;
           finalAdditional.analystGB = analyst.gb;
         }
+      } else if (finalAdditional.assignedTo) {
+        // Delegating to another CQ analyst — populate their info
+        const delegatedAnalyst = allUsers.find(u => u.id === finalAdditional.assignedTo);
+        if (delegatedAnalyst) {
+          finalAdditional.analystCompany = delegatedAnalyst.company;
+          finalAdditional.analystRole = delegatedAnalyst.roleDescription;
+          finalAdditional.analystGB = delegatedAnalyst.gb;
+        }
       }
     }
     onStatusUpdate(data.id || '', status, undefined, undefined, finalAdditional);
   };
   const handleFinishStudy = () => {
-    // We pass totalExecutionTime via additionalData to avoid race conditions with onUpdateData
-    handleUpdateStatus(StudyStatus.CONTROLE_QUALIDADE, { totalExecutionTime: elapsedTime });
+    // Pass selected CQ analyst as assignedTo for QC delegation
+    const finalAdditional: any = { totalExecutionTime: elapsedTime };
+    if (selectedQCAnalyst) {
+      finalAdditional.assignedTo = selectedQCAnalyst;
+    }
+    handleUpdateStatus(StudyStatus.CONTROLE_QUALIDADE, finalAdditional);
     setShowFinishModal(false);
+    setSelectedQCAnalyst('');
     onBack();
   };
   const handleFinalizeApproved = async () => {
@@ -2409,24 +2498,57 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
           <div className="p-5 border border-slate-200 rounded-2xl relative bg-indigo-50/50">
             <span className="absolute -top-3 left-4 bg-indigo-50/50 px-2 text-[10px] font-black text-[#004080] uppercase">Preparação Envio</span>
+
+            {/* Letter Model Selector */}
+            <div className="mb-4 pb-4 border-b border-slate-200">
+              <label className="block text-[9px] font-bold text-slate-500 uppercase mb-2">
+                <i className="fa-solid fa-file-lines mr-1"></i>Modelo da Carta
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedLetterModel}
+                  onChange={(e) => setSelectedLetterModel(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                >
+                  <option value="">Padrão do Estudo ({data.studySubType || 'Não definido'})</option>
+                  <option value="Comercial">Residencial/Comercial</option>
+                  <option value="Industrial">Industrial</option>
+                  <option value="Gaseificação Total">Gaseificação Total</option>
+                  <option value="Gaseificação Parcial">Gaseificação Parcial</option>
+                  <option value="Renovação">Renovação</option>
+                  <option value="Termogeração">Termo Elétrico</option>
+                  <option value="Genérico">Genérico</option>
+                </select>
+                {selectedLetterModel && (
+                  <button
+                    onClick={() => setSelectedLetterModel('')}
+                    className="px-2 py-2 rounded-lg text-[9px] font-bold text-slate-500 hover:bg-slate-200 transition-all"
+                    title="Restaurar modelo padrão"
+                  >
+                    <i className="fa-solid fa-rotate-left"></i>
+                  </button>
+                )}
+              </div>
+            </div>
+
             <ul className="space-y-3 mt-2 text-[10px] font-bold text-slate-700">
               <li
-                onClick={() => !readOnly && handleImportPDF()}
-                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-indigo-600'}`}
-              >
-                <i className="fa-solid fa-file-pdf text-red-500"></i> Caminho de Exportação PDF
-              </li>
-              <li
-                onClick={() => !readOnly && setShowCartaPreview(true)}
-                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'}`}
+                onClick={() => setShowCartaPreview(true)}
+                className="flex items-center gap-2 cursor-pointer hover:text-[#004080]"
               >
                 <i className="fa-solid fa-magnifying-glass"></i> Visualizar
               </li>
               <li
-                onClick={() => !readOnly && handleExportCartaPDF()}
-                className={`flex items-center gap-2 ${readOnly ? '' : 'cursor-pointer hover:text-[#004080]'} ${isExportingCarta ? 'animate-pulse opacity-50' : ''}`}
+                onClick={() => handleExportCartaPDF()}
+                className={`flex items-center gap-2 cursor-pointer hover:text-[#004080] ${isExportingCarta ? 'animate-pulse opacity-50' : ''}`}
               >
                 <i className="fa-solid fa-envelope-open-text"></i> {isExportingCarta ? 'Exportando...' : 'Exportar Carta Resposta'}
+              </li>
+              <li
+                onClick={() => handleSendCopy()}
+                className="flex items-center gap-2 cursor-pointer hover:text-[#004080]"
+              >
+                <i className="fa-solid fa-copy"></i> Enviar Cópia
               </li>
               <li
                 onClick={handleJustifyPreQC}
@@ -2864,10 +2986,37 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             </div>
             <h3 className="text-xl font-black text-[#004080] text-center uppercase tracking-tight mb-3">Conclusão de Estudo</h3>
             <p className="text-slate-500 text-center text-sm mb-4 leading-relaxed font-medium">Tempo de realização monitorado: <span className="font-black text-[#004080] underline">{formatTime(elapsedTime)}</span>.</p>
-            <p className="text-[10px] text-slate-400 text-center mb-10 uppercase font-black tracking-widest">Enviar para o Controle de Qualidade agora?</p>
+            <p className="text-[10px] text-slate-400 text-center mb-4 uppercase font-black tracking-widest">Enviar para o Controle de Qualidade agora?</p>
+
+            {/* Seletor de Analista CQ */}
+            <div className="mb-6">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">
+                <i className="fa-solid fa-user-check mr-1"></i>Delegar Controle de Qualidade para:
+              </label>
+              <select
+                value={selectedQCAnalyst}
+                onChange={(e) => setSelectedQCAnalyst(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              >
+                <option value="">Defina o analista</option>
+                {allUsers
+                  .filter(u => u.role === UserRole.ADM || u.permissions?.includes('controle_qualidade'))
+                  .map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.sap || u.email})</option>
+                  ))
+                }
+              </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <button onClick={() => setShowFinishModal(false)} className="py-2.5 px-4 bg-slate-100 text-slate-500 rounded-lg font-black uppercase text-xs hover:bg-slate-200 transition-all active:scale-95">Revisar</button>
-              <button onClick={handleFinishStudy} className="py-2.5 px-4 bg-[#004080] text-white rounded-lg font-black uppercase text-xs shadow-xl shadow-blue-100 hover:bg-indigo-600 transition-all active:scale-95">Sim, Concluir</button>
+              <button
+                onClick={handleFinishStudy}
+                disabled={!selectedQCAnalyst}
+                className="py-2.5 px-4 bg-[#004080] text-white rounded-lg font-black uppercase text-xs shadow-xl shadow-blue-100 hover:bg-indigo-600 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Sim, Concluir
+              </button>
             </div>
           </div>
         </div>
@@ -2940,7 +3089,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               <i className="fa-solid fa-folder-open text-[8px]"></i> Pastas
             </h5>
             <div className="space-y-1 overflow-y-auto pr-1 custom-scrollbar">
-              {['Solicitacao', 'Resposta', 'Calculos', 'Outros'].map(t => (
+              {['Solicitacao', 'Resposta', 'Outros', 'Winflow'].map(t => (
                 <div
                   key={t}
                   className={`group w-full p-1 rounded-xl flex items-center gap-1 transition-all ${activeFolder === t ? 'bg-orange-50/50' : 'hover:bg-slate-50'}`}

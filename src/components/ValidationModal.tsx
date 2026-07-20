@@ -280,7 +280,8 @@ export const ValidationModal: React.FC<ValidationModalProps> = ({
                     exec.name !== 'ADRSis - SISTEMA' &&
                     exec.name !== 'ADRSis - Sistema' &&
                     exec.name !== 'ADRSIS - SISTEMA' &&
-                    exec.role !== 'Solicitante'
+                    exec.role !== 'Solicitante' &&
+                    exec.isActive !== false
                   )
                   .map(exec => (
                     <option key={exec.id} value={exec.sap || exec.id}>{exec.name}</option>

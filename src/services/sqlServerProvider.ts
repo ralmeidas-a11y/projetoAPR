@@ -71,12 +71,33 @@ export class SQLServerProvider implements StorageProvider {
 
   // --- Request Operations ---
 
+  private sanitizeRequest(request: FormData): Record<string, unknown> {
+    // Fields that cannot be JSON-serialized or should not be sent to the API
+    const EXCLUDED_KEYS = new Set([
+      '_allRevisions',   // Circular reference (used for UI grouping only)
+      '_revisionCount',  // Runtime UI-only field
+      'selectedFiles',   // Contains File objects (uploaded separately)
+    ]);
+
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(request as unknown as Record<string, unknown>)) {
+      if (EXCLUDED_KEYS.has(key)) continue;
+      // Strip File/Blob instances (not JSON-serializable)
+      if (value instanceof File || value instanceof Blob) continue;
+      // Strip arrays that contain File/Blob instances
+      if (Array.isArray(value) && value.some(item => item instanceof File || item instanceof Blob)) continue;
+      sanitized[key] = value;
+    }
+    return sanitized;
+  }
+
   async addRequest(request: FormData): Promise<FormData> {
     try {
+      const payload = this.sanitizeRequest(request);
       const res = await fetch(`${this.apiUrl}/api/requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request)
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));

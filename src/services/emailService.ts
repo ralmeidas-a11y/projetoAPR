@@ -416,9 +416,11 @@ Naturgy - Portal Técnico APR`,
     request: FormData,
     responsibleName?: string,
     senderEmail?: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
     const signerName =
       responsibleName || "Equipe de Gestão de Análise de Planificação de Rede";
+    const signerRole = roleDescription || "Gestor de Análise de Planificação de Rede - NATURGY";
     const studyRef = request.studyNumber?.trim();
     return {
       recipientEmail: request.email,
@@ -451,7 +453,7 @@ Para acompanhar o andamento do seu estudo, utilize o Portal Técnico APR.
 
 Atenciosamente,
 ${signerName}
-Gestor de Análise de Planificação de Rede - NATURGY`,
+${signerRole}`,
       htmlBody: buildRefinedHtmlTemplate(
         "✅ Solicitação Aprovada",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Temos a satisfação de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #10b981; font-weight: bold;">APROVADA</span> e validada tecnicamente.<br/><br/>Seu estudo será encaminhamento para execução técnica. Um analista especializado dará continuidade ao processamento.<br/><br/><strong>Para acompanhar o andamento do seu estudo:</strong> utilize o Portal Técnico APR.`,
@@ -486,7 +488,7 @@ Gestor de Análise de Planificação de Rede - NATURGY`,
           "📌 Para acompanhar o andamento do seu estudo, utilize o Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + signerName + "</strong>",
-          "<strong>Gestor de Análise de Planificação de Rede - NATURGY</strong>",
+          "<strong>" + signerRole + "</strong>",
 ],
         [],
         StudyStatus.AGUARDANDO_EXECUCAO,
@@ -502,9 +504,11 @@ Gestor de Análise de Planificação de Rede - NATURGY`,
     rejectionReason: string,
     responsibleName?: string,
     senderEmail?: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
     const signerName =
       responsibleName || "Equipe de Gestão de Análise de Planificação de Rede";
+    const signerRole = roleDescription || "Gestor de Análise de Planificação de Rede - NATURGY";
     const studyRef = request.studyNumber?.trim();
     return {
       recipientEmail: request.email,
@@ -543,7 +547,7 @@ Para dúvidas ou assistência, entre em contato através do Portal.
 
 Atenciosamente,
 ${signerName}
-Gestor de Análise de Planificação de Rede - NATURGY`,
+${signerRole}`,
       htmlBody: buildRefinedHtmlTemplate(
         "📢 Solicitação Requer Revisão",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Sua solicitação de <strong>Análise de Planificação de Rede</strong> foi analisada e <span style="color: #f97316; font-weight: bold;">requer ajustes</span> antes da aprovação técnica.`,
@@ -595,7 +599,7 @@ Gestor de Análise de Planificação de Rede - NATURGY`,
           "Para dúvidas ou assistência, entre em contato através do Portal.",
           "Atenciosamente,",
           "<strong>" + signerName + "</strong>",
-          "<strong>Gestor de Análise de Planificação de Rede - NATURGY</strong>",
+          "<strong>" + signerRole + "</strong>",
         ],
         [],
         StudyStatus.REJEITADO,
@@ -610,6 +614,7 @@ Gestor de Análise de Planificação de Rede - NATURGY`,
     request: FormData,
     analystEmail: string,
     analystName: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
     return {
@@ -642,26 +647,24 @@ Em caso de dúvidas, utilize o Portal Técnico APR.
 
 Atenciosamente,
 ${analystName}
-Analista de Análise de Planificação de Rede - NATURGY`,
+${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
       htmlBody: buildRefinedHtmlTemplate(
         "⚙️ Estudo em Execução",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que seu estudo encontra-se em <strong>fase de execução técnica</strong>.<br/><br/>Nossa equipe técnica está trabalhando no desenvolvimento do estudo.<br/>Você receberá uma notificação quando o processo for concluído.`,
         [
-          {
-            title: "📋 Dados do Estudo",
-            items: [
-              { label: "Código", value: request.studyNumber || "Não informado" },
-              { label: "Título", value: request.studyTitle || request.clientName || "Não informado" },
-              { label: "Local", value: `${request.address || ""}, ${request.city || ""}` },
-              { label: "Responsável Técnico", value: analystName },
-            ],
-          },
+          { title: '📋 Dados do Estudo', items: [
+            { label: 'Código', value: request.studyNumber || `${request.id}` },
+            { label: 'Título', value: request.studyTitle || 'N/I' },
+            { label: 'Localização', value: `${request.address || 'N/I'} - ${request.city || 'N/I'}` },
+            { label: 'Responsável', value: analystName },
+            { label: 'Data', value: new Date().toLocaleDateString('pt-BR') },
+          ]},
         ],
         [
           "📌 Em caso de dúvidas, utilize o Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + analystName + "</strong>",
-          "<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>",
+          "<strong>" + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + "</strong>",
         ],
         [],
         StudyStatus.EM_EXECUCAO,
@@ -677,6 +680,7 @@ Analista de Análise de Planificação de Rede - NATURGY`,
     analystEmail: string,
     analystName: string,
     holdReason?: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
     return {
@@ -715,7 +719,7 @@ das informações solicitadas.
 
 Atenciosamente,
 ${analystName}
-Analista de Análise de Planificação de Rede - NATURGY`,
+${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
       htmlBody: buildRefinedHtmlTemplate(
         "📩 Solicitação de Informações",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Para dar continuidade ao processamento do seu estudo, solicitamos <strong>informações adicionais</strong> conforme descrito abaixo.`,
@@ -748,7 +752,7 @@ Analista de Análise de Planificação de Rede - NATURGY`,
           "Em caso de dúvidas, utilize o Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + analystName + "</strong>",
-          "<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>",
+          "<strong>" + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + "</strong>",
         ],
         [],
         StudyStatus.AGUARDANDO_INFORMACAO,
@@ -834,9 +838,11 @@ Portal Técnico APR - NATURGY`,
     request: FormData,
     responsibleName?: string,
     senderEmail?: string,
+    roleDescription?: string,
+    respostaFileNames?: string[],
   ): EmailNotificationData => {
     const signerName =
-      responsibleName || "Equipe de Gestão de Análise de Planificação de Rede";
+      responsibleName || roleDescription || "Equipe de Gestão de Análise de Planificação de Rede";
     const studyRef = request.studyNumber?.trim();
     const completionDate = request.completedAt 
       ? safeFormatDate(request.completedAt)
@@ -868,6 +874,7 @@ Data de Conclusão: ${completionDate}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Os arquivos com os resultados técnicos estão disponíveis na pasta 
 de resposta do seu estudo no Portal Técnico APR.
+${respostaFileNames && respostaFileNames.length > 0 ? `\n📄 Arquivos de Resposta:\n${respostaFileNames.map((f, i) => `  ${i + 1}. ${f}`).join('\n')}` : ''}
 
 ▶️ INSTRUÇÕES PARA ACESSO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -882,7 +889,7 @@ através do Portal Técnico APR.
 
 Atenciosamente,
 ${signerName}
-Controle de Qualidade - NATURGY`,
+${roleDescription || 'Controle de Qualidade - NATURGY'}`,
       htmlBody: buildRefinedHtmlTemplate(
         "🎉 Estudo Concluído",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Temos a satisfação de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #10b981; font-weight: bold;">CONCLUÍDA</span> com sucesso!<br/><br/><strong>📂 Acesso aos Resultados</strong><br/>Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo no Portal Técnico APR.`,
@@ -933,12 +940,19 @@ Controle de Qualidade - NATURGY`,
               },
             ],
           },
+          ...(respostaFileNames && respostaFileNames.length > 0 ? [{
+            title: "📄 Arquivos de Resposta",
+            items: respostaFileNames.map((f, i) => ({
+              label: `${i + 1}`,
+              value: f,
+            })),
+          }] : []),
         ],
         [
           "Em caso de dúvidas ou necessidade de suporte, entre em contato através do Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + signerName + "</strong>",
-          "<strong>Controle de Qualidade - NATURGY</strong>",
+          "<strong>" + (roleDescription || 'Controle de Qualidade - NATURGY') + "</strong>",
         ],
         [],
         StudyStatus.CONCLUIDO,
@@ -955,6 +969,7 @@ Controle de Qualidade - NATURGY`,
     analystEmail: string,
     analystName: string,
     recipientEmail?: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
     const completionDate = request.completedAt 
@@ -990,7 +1005,7 @@ Qualidade estabelecidos.
 
 Atenciosamente,
 ${analystName}
-Analista de Análise de Planificação de Rede - NATURGY`,
+${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
       htmlBody: buildRefinedHtmlTemplate(
         '🔍 Solicitação de Controle de Qualidade',
         `Prezado(a) Responsável pelo Controle de Qualidade,<br/><br/>O estudo abaixo foi concluído e está sendo encaminhamento para <strong>revisão e validação técnica</strong>.`,
@@ -1016,7 +1031,7 @@ Analista de Análise de Planificação de Rede - NATURGY`,
         [
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>'
+          '<strong>' + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + '</strong>'
         ],
         [],
         StudyStatus.CONTROLE_QUALIDADE
@@ -1032,6 +1047,7 @@ Analista de Análise de Planificação de Rede - NATURGY`,
     request: FormData,
     analystEmail: string,
     analystName: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
     return {
@@ -1063,7 +1079,7 @@ Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta
 
 Atenciosamente,
 ${analystName}
-Analista de Análise de Planificação de Rede - NATURGY`,
+${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
       htmlBody: buildRefinedHtmlTemplate(
         '📋 Resposta Antecipada do Estudo',
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> está sendo encaminhdo em caráter <strong>antecipado</strong>, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.<br/><br/>O estudo pasará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, <strong>uma versão revisada será emitida e encaminhda</strong>.`,
@@ -1091,7 +1107,7 @@ Analista de Análise de Planificação de Rede - NATURGY`,
           '📂 Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo.',
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>'
+          '<strong>' + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + '</strong>'
         ],
         [],
         StudyStatus.ENVIADO_SEM_CQ
@@ -1107,10 +1123,12 @@ Analista de Análise de Planificação de Rede - NATURGY`,
     request: FormData,
     analystEmail: string,
     analystName: string,
+    delegatedQcEmail?: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
     return {
-      recipientEmail: SYSTEM_EMAIL,
+      recipientEmail: delegatedQcEmail || SYSTEM_EMAIL,
       recipientName: 'Controle de Qualidade APR',
       senderEmail: analystEmail,
       senderName: analystName,
@@ -1139,10 +1157,10 @@ Solicito a análise e validação conforme os critérios do Controle de Qualidad
 
 Atenciosamente,
 ${analystName}
-Analista de Análise de Planificação de Rede - NATURGY`,
+${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
       htmlBody: buildRefinedHtmlTemplate(
         '⚠️ Envio Antecipado Antes do CQ',
-        `Prezada Equipe de Controle de Qualidade,<br/><br/>Informo que o estudo <strong>${request.studyNumber}</strong> foi enviado ao solicitante <strong>ANTES</strong> da conclusão do processo de Controle de Qualidade, em função do <strong>prazo de entrega</strong>.<br/><br/>O estudo está sendocolour untuk análise no CQ normalmente. Caso sejam identificadas correções necessárias, será emitida <strong>nova versão ao solicitante</strong> com as devidas ressalvas corrigidas.`,
+        'Envio antecipado do estudo antes do Controle de Qualidade.',
         [
           {
             title: '📋 Dados do Estudo',
@@ -1166,7 +1184,7 @@ Analista de Análise de Planificação de Rede - NATURGY`,
         [
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>Analista de Análise de Planificação de Rede - NATURGY</strong>'
+          '<strong>' + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + '</strong>'
         ],
         [],
         StudyStatus.CONTROLE_QUALIDADE
@@ -1184,7 +1202,9 @@ Analista de Análise de Planificação de Rede - NATURGY`,
     qcName: string,
     observations?: string,
     qcEmail?: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
+    const signerRole = roleDescription || 'Controle de Qualidade - NATURGY';
     return {
       recipientEmail: analystEmail,
       recipientName: analystName,
@@ -1219,10 +1239,10 @@ para o solicitante através do Portal Técnico APR.
 
 Atenciosamente,
 ${qcName}
-Controle de Qualidade - NATURGY`,
+${signerRole}`,
       htmlBody: buildRefinedHtmlTemplate(
         "✅ Estudo Aprovado no Controle de Qualidade",
-        `Prezado(a) ${analystName},<br/><br/>É com satisfação que informamos que o estudo abaixo foi <span style="color: #10b981; font-weight: bold;">APROVADO</span> no Controle de Qualidade.<br/><br/>O estudo retornou para sua fila com status <strong>"Aprovado pelo CQ"</strong>.`,
+        `Prezado(a) ${analystName},<br/><br/>É com satisfação de informar que o estudo abaixo foi <span style="color: #10b981; font-weight: bold;">APROVADO</span> no Controle de Qualidade.<br/><br/>O estudo retornou para sua fila com status <strong>"Aprovado pelo CQ"</strong>.`,
         [
           {
             title: "📋 Dados do Estudo",
@@ -1250,7 +1270,7 @@ Controle de Qualidade - NATURGY`,
           "⚠️ Por favor, finalize o processo o quanto antes.",
           "Atenciosamente,",
           "<strong>" + qcName + "</strong>",
-          "<strong>Controle de Qualidade - NATURGY</strong>"
+          "<strong>" + signerRole + "</strong>"
         ],
         [],
         StudyStatus.APROVADO_CQ
@@ -1268,7 +1288,9 @@ Controle de Qualidade - NATURGY`,
     qcName: string,
     reason: string,
     qcEmail?: string,
+    roleDescription?: string,
   ): EmailNotificationData => {
+    const signerRole = roleDescription || 'Controle de Qualidade - NATURGY';
     return {
       recipientEmail: analystEmail,
       recipientName: analystName,
@@ -1303,7 +1325,7 @@ ${reason}
 
 Atenciosamente,
 ${qcName}
-Controle de Qualidade - NATURGY`,
+${signerRole}`,
       htmlBody: buildRefinedHtmlTemplate(
         "❌ Estudo Não Aprovado no CQ",
         `Prezado(a) ${analystName},<br/><br/>O estudo abaixo foi analisado pelo Controle de Qualidade e <span style="color: #ef4444; font-weight: bold;">requer ajustes</span> antes da aprovação final.`,
@@ -1336,7 +1358,7 @@ Controle de Qualidade - NATURGY`,
           "Após as correções, reenvie o estudo para nova análise do CQ.",
           "Atenciosamente,",
           "<strong>" + qcName + "</strong>",
-          "<strong>Controle de Qualidade - NATURGY</strong>"
+          "<strong>" + signerRole + "</strong>"
         ],
         [],
         StudyStatus.REPROVADO_CQ

@@ -10,6 +10,8 @@ import { UserManagement } from './pages/UserManagement';
 import { AuditLog } from './pages/AuditLog';
 import { TechnicalExecutionPanel } from './pages/TechnicalExecutionPanel';
 import { PasswordChange } from './pages/PasswordChange';
+import { MathModels } from './pages/MathModels';
+import { MathModelForm } from './pages/MathModelForm';
 
 // EmailPreviewModal removed <!-- id: 11 -->
 import { FormType, User, UserRole, FormData, StudyStatus } from './types/types';
@@ -26,7 +28,7 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
   const [editingRequest, setEditingRequest] = useState<FormData | null>(null);
-  const [view, setView] = useState<'login' | 'onboarding' | 'password-change' | 'menu' | 'form' | 'dashboard' | 'my-requests' | 'analyst-view' | 'users' | 'audit' | 'execution' | 'settings'>('login');
+  const [view, setView] = useState<'login' | 'onboarding' | 'password-change' | 'menu' | 'form' | 'dashboard' | 'my-requests' | 'analyst-view' | 'users' | 'audit' | 'execution' | 'settings' | 'math-models' | 'math-model-form'>('login');
   const [notification, setNotification] = useState<{ message: string; subtext?: string; type?: 'success' | 'info' } | null>(null);
 
   const [allRequests, setAllRequests] = useState<FormData[]>([]);
@@ -37,6 +39,7 @@ const App: React.FC = () => {
   const notifiedHoldIdsRef = useRef<Set<string>>(new Set());
   const [autoOpenRequestId, setAutoOpenRequestId] = useState<string | null>(null);
   const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [selectedMathModel, setSelectedMathModel] = useState<any>(null);
 
   // --- Central de Notificações ---
   const [adminNotifications, setAdminNotifications] = useState<{ req: FormData; type: string; analyst?: string; deadline: string }[]>([]);
@@ -170,29 +173,21 @@ const App: React.FC = () => {
    * Função para exibir preview de email ao validar solicitação
    */
   const generateEmailForApproval = (request: FormData): EmailNotificationData => {
-    return EmailService.generateApprovalEmail(request, user?.name, user?.email);
+    return EmailService.generateApprovalEmail(request, user?.name, user?.email, user?.roleDescription);
   };
 
   /**
    * Função para exibir preview de email ao rejeitar solicitação
    */
   const generateEmailForRejection = (request: FormData, reason: string): EmailNotificationData => {
-    return EmailService.generateRejectionEmail(request, reason, user?.name, user?.email);
+    return EmailService.generateRejectionEmail(request, reason, user?.name, user?.email, user?.roleDescription);
   };
 
   /**
    * Função para exibir preview de email ao concluir solicitação
    */
   const generateEmailForCompletion = (request: FormData): EmailNotificationData => {
-    return EmailService.generateCompletionEmail(request, user?.name, user?.email);
-  };
-
-  /**
-   * Função para exibir preview de email quando estudo entra em execução
-   */
-  const generateEmailForExecution = (request: FormData): EmailNotificationData => {
-    const analyst = allUsers.find(u => u.id === request.assignedTo) || user;
-    return EmailService.generateExecutionEmail(request, analyst?.email || user?.email, analyst?.name || user?.name);
+    return EmailService.generateCompletionEmail(request, user?.name, user?.email, user?.roleDescription);
   };
 
   /**
@@ -200,7 +195,7 @@ const App: React.FC = () => {
    */
   const generateEmailForAwaitingInfo = (request: FormData, holdReason?: string): EmailNotificationData => {
     const analyst = allUsers.find(u => u.id === request.assignedTo) || user;
-    return EmailService.generateAwaitingInfoEmail(request, analyst?.email || user?.email, analyst?.name || user?.name, holdReason);
+    return EmailService.generateAwaitingInfoEmail(request, analyst?.email || user?.email, analyst?.name || user?.name, holdReason, analyst?.roleDescription || user?.roleDescription);
   };
 
   /**
@@ -715,7 +710,7 @@ const App: React.FC = () => {
     const originalRequest = allRequests.find(r => r.id === id);
     try {
       const currentRequests = allRequests || [];
-      let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | 'execution' | 'awaiting_info' | 'info_received' | null; request?: FormData; reason?: string } = { type: null };
+      let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | 'awaiting_info' | 'info_received' | null; request?: FormData; reason?: string } = { type: null };
       let requestToCreate: FormData | null = null;
 
 const updatedList = currentRequests.map(req => {
@@ -807,9 +802,8 @@ const updatedList = currentRequests.map(req => {
               updatedRequestForEmail.type = 'info_received';
               updatedRequestForEmail.request = updated;
             } else {
-              // Se entrou em execução normalmente (não estava aguardando info)
-              updatedRequestForEmail.type = 'execution';
-              updatedRequestForEmail.request = updated;
+              // Se entrou em execução normalmente (não estava aguardando info) — sem email
+              updatedRequestForEmail.type = null;
             }
           } else if (status === StudyStatus.AGUARDANDO_INFORMACAO && req.status !== StudyStatus.AGUARDANDO_INFORMACAO) {
             // Quando solicita informações ao solicitante
@@ -838,10 +832,10 @@ const updatedList = currentRequests.map(req => {
           const ano = cleanStudyNumber.substring(0, 4);
           const sequencial = cleanStudyNumber.substring(4, 8);
           const rev = cleanStudyNumber.substring(8, 10);
-          const pastas = ['solicitacao', 'resposta', 'calculos', 'outros'];
+          const pastas = ['Solicitacao', 'Resposta', 'Outros', 'Winflow'];
           
           await Promise.all(pastas.map(async (pasta) => {
-            const folderPath = `${userFolderPath}\\${ano}\\${sequencial}\\${rev}\\${pasta}`;
+            const folderPath = `${userFolderPath}\\${ano}\\${sequencial}\\R${rev}\\${pasta}`;
             try {
               await fetch('/api/folders/create', {
                 method: 'POST',
@@ -962,23 +956,25 @@ const updatedList = currentRequests.map(req => {
                 );
                 console.log('[QC Email] QC Users found:', qcUsers.map(u => ({ name: u.name, email: u.email })));
 
-                // Se há usuários de QC, enviar para todos em cópia
-                if (qcUsers.length > 0) {
-                  // Pegar o primeiro destinatário principal e incluir os outros em CC
-                  const primaryRecipient = qcUsers[0].email;
-                  const ccRecipients = qcUsers.slice(1).map(u => u.email).join(',');
+                // Determinar destinatário principal: usar qcSupervisor se definido, senão primeiro da lista
+                const supervisorName = updatedRequestForEmail.request.qcData?.qcSupervisor;
+                let primaryUser = supervisorName ? qcUsers.find(u => u.name === supervisorName) : undefined;
+                if (!primaryUser && qcUsers.length > 0) {
+                  primaryUser = qcUsers[0];
+                }
 
-                  console.log('[QC Email] Sending to:', primaryRecipient, 'CC:', ccRecipients);
+                if (primaryUser && primaryUser.email) {
+                  const ccRecipients = qcUsers.filter(u => u.email !== primaryUser!.email).map(u => u.email).join(',');
+                  console.log('[QC Email] Sending to:', primaryUser.email, 'CC:', ccRecipients);
 
-                  // Gerar email com CC
                   const emailData = EmailService.generateQCRequestEmail(
                     updatedRequestForEmail.request,
                     analyst.email,
                     analyst.name,
-                    primaryRecipient
+                    primaryUser.email,
+                    analyst.roleDescription || user?.roleDescription
                   );
 
-                  // Adicionar CC se houver mais destinatários
                   if (ccRecipients) {
                     emailData.ccEmail = ccRecipients;
                   }
@@ -1059,7 +1055,8 @@ const updatedList = currentRequests.map(req => {
                     analyst.name,
                     supervisorName,
                     updatedRequestForEmail.reason,
-                    supervisorUser?.email || user?.email
+                    supervisorUser?.email || user?.email,
+                    supervisorUser?.roleDescription || user?.roleDescription
                   );
                   handleSendEmail(emailData);
                 } else {
@@ -1069,14 +1066,12 @@ const updatedList = currentRequests.map(req => {
                     analyst.name,
                     supervisorName,
                     updatedRequestForEmail.reason || 'Necessita readequação técnica.',
-                    supervisorUser?.email || user?.email
+                    supervisorUser?.email || user?.email,
+                    supervisorUser?.roleDescription || user?.roleDescription
                   );
                   handleSendEmail(emailData);
                 }
               }
-            } else if (updatedRequestForEmail.type === 'execution') {
-              // Email quando estudo entra em execução
-              handleSendEmail(generateEmailForExecution(updatedRequestForEmail.request));
             } else if (updatedRequestForEmail.type === 'awaiting_info') {
               // Email quando solicita informações ao solicitante
               handleSendEmail(generateEmailForAwaitingInfo(updatedRequestForEmail.request, updatedRequestForEmail.reason));
@@ -1322,139 +1317,74 @@ const updatedList = currentRequests.map(req => {
       return;
     }
 
-    // Verificar se já existe outro estudo com mesmo endereço/cidade (de outro solicitante)
-    const normalize = (s: string) => s?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() || "";
-    const addr = normalize(originalRequest.address);
-    const city = normalize(originalRequest.city);
-
-    const existingStudy = allRequests.find(r =>
-      normalize(r.address) === addr &&
-      normalize(r.city) === city &&
+    // Verificar se já existe uma revisão em andamento deste mesmo estudo
+    const pendingRevision = allRequests.find(r =>
+      r.previousStudy === originalRequest.studyNumber &&
       r.id !== originalRequest.id &&
-      r.user_id !== originalRequest.user_id
+      r.status !== StudyStatus.CONCLUIDO
     );
 
-    if (existingStudy) {
-      if (existingStudy.status === StudyStatus.CONCLUIDO) {
-        // Permitir nova revisão como novo estudo
-        (async () => {
-          try {
-            const nextId = await StorageService.getNextId();
-
-            // Use originalInputs as the base for the revision data
-            const baseData = originalRequest.originalInputs || originalRequest;
-            const isDifferentUser = user && originalRequest.user_id && originalRequest.user_id !== user.id;
-
-            const revisionData: FormData = {
-              ...baseData,
-              id: nextId,
-              studyNumber: '',
-              status: StudyStatus.EM_ANALISE,
-              formType: originalRequest.formType,
-              studyType: 'Revisão de Estudo',
-              previousStudy: originalRequest.studyNumber,
-              requestDate: getGMT3ISOString().split('T')[0],
-              assignedTo: undefined,
-              rejectionReason: undefined,
-              selectedFiles: [],
-              categorizedFiles: {},
-              totalExecutionTime: 0,
-              executionStartTime: undefined,
-              responseObservations: '',
-              qcData: undefined,
-              qcRequestDate: undefined,
-              completedAt: undefined,
-              // Clear validation fields
-              gasType: '',
-              suggestedPressureRange: '',
-              minPressure: '',
-              mapReceived: false,
-              relevantStudy: false,
-              gniName: '',
-              studySubType: '',
-              difficulty: '',
-              validatorObservations: '',
-              // Update requester data based on role
-              user_id: (user?.role === UserRole.SOLICITANTE) ? (user?.id || originalRequest.user_id) : '',
-              userId: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : (originalRequest.userId || originalRequest.email)) : '',
-              lastModifiedBy: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : (originalRequest.lastModifiedBy || originalRequest.requesterName)) : (user?.name || ''),
-              requesterName: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : originalRequest.requesterName) : '',
-              email: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : originalRequest.email) : '',
-              phone: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.phone : originalRequest.phone) : '',
-              requesterArea: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.area : originalRequest.requesterArea) : '',
-              naturgyUnit: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.naturgyUnit : originalRequest.naturgyUnit) : ''
-            };
-            setEditingRequest(revisionData);
-            setSelectedForm(originalRequest.formType);
-            setView('form');
-          } catch (err) {
-            console.error('Error getting next ID for revision:', err);
-          }
-        })();
-      } else {
-        setNotification({
-          message: "Estudo Existente",
-          subtext: `Já existe um estudo cadastrado deste local (${existingStudy.studyNumber}) que não foi concluído. Aguarde a conclusão. Status atual: ${existingStudy.status}`,
-          type: 'info'
-        });
-      }
-    } else {
-      // Criar revisão normalmente
-      (async () => {
-        try {
-          const nextId = await StorageService.getNextId();
-
-          // Use originalInputs as the base for the revision data
-          const baseData = originalRequest.originalInputs || originalRequest;
-          const isDifferentUser = user && originalRequest.user_id && originalRequest.user_id !== user.id;
-
-          const revisionData: FormData = {
-            ...baseData,
-            id: nextId,
-            studyNumber: '',
-            status: StudyStatus.PENDENTE,
-            formType: originalRequest.formType,
-            studyType: 'Revisão de Estudo',
-            previousStudy: originalRequest.studyNumber,
-            requestDate: new Date().toISOString().split('T')[0],
-            assignedTo: undefined,
-            rejectionReason: undefined,
-            selectedFiles: [],
-            categorizedFiles: {},
-            totalExecutionTime: 0,
-            executionStartTime: undefined,
-            responseObservations: '',
-            qcData: undefined,
-            qcRequestDate: undefined,
-            completedAt: undefined,
-            // Clear validation fields
-            gasType: '',
-            suggestedPressureRange: '',
-            minPressure: '',
-            mapReceived: false,
-            relevantStudy: false,
-            gniName: '',
-            studySubType: '',
-            difficulty: '',
-            validatorObservations: '',
-            // Update requester data based on role
-            user_id: (user?.role === UserRole.SOLICITANTE) ? (user?.id || originalRequest.user_id) : '',
-            userId: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : (originalRequest.userId || originalRequest.email)) : '',
-            lastModifiedBy: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : (originalRequest.lastModifiedBy || originalRequest.requesterName)) : (user?.name || ''),
-            requesterName: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : originalRequest.requesterName) : '',
-            email: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : originalRequest.email) : '',
-            phone: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.phone : originalRequest.phone) : '',
-            requesterArea: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.area : originalRequest.requesterArea) : '',
-            naturgyUnit: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.naturgyUnit : originalRequest.naturgyUnit) : ''
-          };
-          setEditingRequest(revisionData);
-          setSelectedForm(originalRequest.formType);
-          setView('form');
-        } catch (err) {
-          console.error('Error getting next ID for revision:', err);
-        }
-      })();
+    if (pendingRevision) {
+      setNotification({
+        message: "Revisão Existente",
+        subtext: `Já existe uma revisão em andamento deste estudo (${pendingRevision.studyNumber || 'sem número'}). Aguarde a conclusão. Status: ${pendingRevision.status}`,
+        type: 'info'
+      });
+      return;
     }
+
+    // Criar revisão normalmente
+    (async () => {
+      try {
+        const nextId = await StorageService.getNextId();
+
+        const baseData = originalRequest.originalInputs || originalRequest;
+        const isDifferentUser = user && originalRequest.user_id && originalRequest.user_id !== user.id;
+
+        const revisionData: FormData = {
+          ...baseData,
+          id: nextId,
+          studyNumber: '',
+          status: StudyStatus.EM_ANALISE,
+          formType: originalRequest.formType,
+          studyType: 'Revisão de Estudo',
+          previousStudy: originalRequest.studyNumber,
+          requestDate: getGMT3ISOString().split('T')[0],
+          assignedTo: undefined,
+          rejectionReason: undefined,
+          selectedFiles: [],
+          categorizedFiles: {},
+          totalExecutionTime: 0,
+          executionStartTime: undefined,
+          responseObservations: '',
+          qcData: undefined,
+          qcRequestDate: undefined,
+          completedAt: undefined,
+          gasType: '',
+          suggestedPressureRange: '',
+          minPressure: '',
+          mapReceived: false,
+          relevantStudy: false,
+          gniName: '',
+          studySubType: '',
+          difficulty: '',
+          validatorObservations: '',
+          user_id: (user?.role === UserRole.SOLICITANTE) ? (user?.id || originalRequest.user_id) : '',
+          userId: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : (originalRequest.userId || originalRequest.email)) : '',
+          lastModifiedBy: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : (originalRequest.lastModifiedBy || originalRequest.requesterName)) : (user?.name || ''),
+          requesterName: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : originalRequest.requesterName) : '',
+          email: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : originalRequest.email) : '',
+          phone: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.phone : originalRequest.phone) : '',
+          requesterArea: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.area : originalRequest.requesterArea) : '',
+          naturgyUnit: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.naturgyUnit : originalRequest.naturgyUnit) : ''
+        };
+        setEditingRequest(revisionData);
+        setSelectedForm(originalRequest.formType);
+        setView('form');
+      } catch (err) {
+        console.error('Error getting next ID for revision:', err);
+      }
+    })();
   };
 
   const handleAnalyzeRequest = (request: FormData) => {
@@ -1788,6 +1718,7 @@ const updatedList = currentRequests.map(req => {
                       <button onClick={() => setView('audit')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'audit' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Auditoria</button>
                     </>
                   )}
+                  <button onClick={() => { setSelectedMathModel(null); setView('math-models'); }} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'math-models' || view === 'math-model-form' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Modelos Matemáticos</button>
                 </>
               )}
             </nav>
@@ -1897,6 +1828,23 @@ const updatedList = currentRequests.map(req => {
           )}
           {view === 'audit' && user?.role === UserRole.ADM && (
             <AuditLog currentUser={user} />
+          )}
+          {view === 'math-models' && (
+            <MathModels
+              currentUser={user!}
+              onBack={() => setView('dashboard')}
+              onNewModel={() => setView('math-model-form')}
+              onCreateRevision={(model) => { setSelectedMathModel({ ...model, isRevision: true }); setView('math-model-form'); }}
+            />
+          )}
+          {view === 'math-model-form' && (
+            <MathModelForm
+              currentUser={user!}
+              initialData={selectedMathModel}
+              allUsers={allUsers}
+              onBack={() => { setSelectedMathModel(null); setView('math-models'); }}
+              onSaved={() => { setSelectedMathModel(null); setView('math-models'); }}
+            />
           )}
         </div>
       </main>
