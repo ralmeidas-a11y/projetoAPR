@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { User, StudyStatus, UserRole } from '../types/types';
 import { useDialog } from '../components/AppDialog';
+import { PRESSURE_BASES } from '../constants/constants';
 
 interface MathModelData {
   id?: string;
@@ -36,18 +37,6 @@ interface MathModelFormProps {
   onBack: () => void;
   onSaved: () => void;
 }
-
-const PRESSURE_BASES = [
-  { base: 'A - 150 mbar (BP)', min: 150 },
-  { base: 'B - 300 mbar (BP)', min: 300 },
-  { base: 'C - 400 mbar (MP)', min: 400 },
-  { base: 'D - 500 mbar (MP)', min: 500 },
-  { base: 'E - 700 mbar (MP)', min: 700 },
-  { base: 'F - 1000 mbar (MP)', min: 1000 },
-  { base: 'G - 2000 mbar (MP)', min: 2000 },
-  { base: 'H - 4000 mbar (HP)', min: 4000 },
-  { base: 'I - 6000 mbar (HP)', min: 6000 },
-];
 
 export const MathModelForm: React.FC<MathModelFormProps> = ({
   currentUser,
@@ -94,6 +83,86 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
 
   const isRevision = initialData?.isRevision || false;
 
+  // Auto-select study from initialData when creating a revision
+  // The model is already known — no need to search manually
+  const [autoSelected, setAutoSelected] = useState(false);
+
+  useEffect(() => {
+    if (isRevision && initialData?.id && initialData?.idsigep && !autoSelected) {
+      const num = String(initialData.idsigep || '').replace(/\D/g, '');
+      const autoStudy: StudySearchResult = {
+        id: initialData.id,
+        studyNumber: num,
+        studyTitle: initialData.titulo || '',
+        clientName: '',
+        address: initialData.localiz || '',
+        city: '',
+        neighborhood: '',
+        studySubType: '',
+        gasType: '',
+        pressure: '',
+        assignedTo: '',
+        empresa: '',
+        requesterName: '',
+        email: '',
+        requesterArea: '',
+        previousStudy: ''
+      };
+      setSelectedStudy(autoStudy);
+      setStudyId(num);
+
+      // Pre-fill form data from original model
+      setFormData(prev => ({
+        ...prev,
+        titulo: initialData.titulo || prev.titulo,
+        localiz: initialData.localiz || prev.localiz,
+      }));
+
+      // Fetch full details in background to enrich form data
+      fetch(`/api/requests/study/${num}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(fullStudy => {
+          if (!fullStudy) return;
+          let meta: any = {};
+          if (fullStudy.meta_data) {
+            try {
+              meta = typeof fullStudy.meta_data === 'string' ? JSON.parse(fullStudy.meta_data) : fullStudy.meta_data;
+            } catch { }
+          }
+          setFormData(prev => ({
+            titulo: fullStudy.titulo || fullStudy.studyTitle || prev.titulo,
+            localiz: fullStudy.localiz || fullStudy.address || prev.localiz,
+            municipio: fullStudy.municipio || fullStudy.city || meta.municipio || prev.municipio,
+            bairro: fullStudy.bairro || fullStudy.neighborhood || meta.bairro || prev.bairro,
+            gasType: fullStudy.gasType || meta.gasType || prev.gasType,
+            pressaoRange: fullStudy.pressaoRange || fullStudy.pressure || meta.pressaoRange || prev.pressaoRange,
+            pressaoMin: String(fullStudy.pressaoMin !== undefined && fullStudy.pressaoMin !== null ? fullStudy.pressaoMin : (meta.pressaoMin || prev.pressaoMin)),
+            empresa: fullStudy.empresa || meta.empresa || prev.empresa,
+            solicitante: fullStudy.requesterName || meta.solicitante || prev.solicitante,
+            email: fullStudy.email || meta.email || prev.email,
+            areaSolicitante: fullStudy.requesterArea || meta.areaSolicitante || prev.areaSolicitante,
+            observacoes: fullStudy.observacoes || meta.observacoes || prev.observacoes
+          }));
+        })
+        .catch(() => { });
+
+      setAutoSelected(true);
+    }
+  }, [isRevision, initialData, autoSelected]);
+
+  // Compute the next IDSIGEP for the revision (base8 + currentRev + 1)
+  const nextIdsigep = useMemo(() => {
+    if (!isRevision || !initialData?.idsigep) return null;
+    const num = String(initialData.idsigep || '').replace(/\D/g, '');
+    if (num.length >= 10) {
+      const base8 = num.substring(0, 8);
+      const currentRev = parseInt(num.substring(8, 10)) || 0;
+      const newRev = String(currentRev + 1).padStart(2, '0');
+      return `${base8}${newRev}`;
+    }
+    return null;
+  }, [isRevision, initialData]);
+
   // Validate IDSIGEP for new model creation
   const validateIdsigep = useCallback(async (value: string) => {
     if (!value || isRevision) {
@@ -133,7 +202,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
       setSearchResults([]);
       return;
     }
-    
+
     setSearching(true);
     try {
       const res = await fetch(`/api/math-models/search?q=${encodeURIComponent(query)}`);
@@ -179,12 +248,12 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
     setSelectedStudy(study);
     setStudyId(study.studyNumber);
     setSearchResults([]);
-    
+
     try {
       const res = await fetch(`/api/requests/study/${study.studyNumber}`);
       if (res.ok) {
         const fullStudy = await res.json();
-        
+
         // Extract meta_data properties if available
         let meta: any = {};
         if (fullStudy.meta_data) {
@@ -194,7 +263,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
             console.error('Error parsing study meta_data:', e);
           }
         }
-        
+
         setFormData({
           titulo: fullStudy.titulo || fullStudy.studyTitle || study.studyTitle || '',
           localiz: fullStudy.localiz || fullStudy.address || study.address || '',
@@ -265,7 +334,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
     try {
       let endpoint: string;
       let body: any;
-      
+
       if (isRevision && selectedStudy) {
         endpoint = `/api/math-models/${initialData?.id}/revision`;
         body = {
@@ -285,19 +354,19 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
           ...formData
         };
       }
-      
+
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      
+
       if (!res.ok) {
         const data = await res.json();
         showToast(data.error || 'Erro ao salvar modelo', 'error');
         return;
       }
-      
+
       showToast(isRevision ? 'Revisão criada com sucesso' : 'Modelo criado com sucesso', 'success');
       onSaved();
     } catch (error) {
@@ -316,7 +385,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
     setFormData(prev => ({
       ...prev,
       pressaoRange: value,
-      pressaoMin: selected ? String(selected.min) : ''
+      pressaoMin: selected ? String(selected.pmin) : ''
     }));
   };
 
@@ -345,11 +414,10 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => activeTab === 1 && handlePrevTab()}
-          className={`px-4 py-2 rounded-lg text-[11px] font-bold transition-all ${
-            activeTab === 0
+          className={`px-4 py-2 rounded-lg text-[11px] font-bold transition-all ${activeTab === 0
               ? 'bg-[#004080] text-white'
               : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-          }`}
+            }`}
         >
           <i className="fa-solid fa-database text-[9px] mr-1"></i>
           Dados da Solicitação
@@ -357,11 +425,10 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
         <i className="fa-solid fa-chevron-right text-slate-300 text-[8px]"></i>
         <button
           onClick={() => activeTab === 0 && handleNextTab()}
-          className={`px-4 py-2 rounded-lg text-[11px] font-bold transition-all ${
-            activeTab === 1
+          className={`px-4 py-2 rounded-lg text-[11px] font-bold transition-all ${activeTab === 1
               ? 'bg-[#004080] text-white'
               : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-          }`}
+            }`}
         >
           <i className="fa-solid fa-check-double text-[9px] mr-1"></i>
           Validação
@@ -375,48 +442,12 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
           {isRevision && (
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
               <h3 className="text-[11px] font-black text-[#004080] uppercase tracking-widest flex items-center gap-2">
-                <i className="fa-solid fa-magnifying-glass text-blue-500"></i>
-                Selecionar Modelo para Revisão
+                <i className="fa-solid fa-code-branch text-blue-500"></i>
+                Criar Revisão de Modelo
               </h3>
-              
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                  ID do Modelo (digite para buscar)
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={studyId}
-                    onChange={(e) => {
-                      setStudyId(e.target.value);
-                      setSelectedStudy(null);
-                    }}
-                    placeholder="Ex: 2026028401"
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                  />
-                  {searching && (
-                    <i className="fa-solid fa-spinner fa-spin absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                  )}
-                </div>
-                
-                {searchResults.length > 0 && !selectedStudy && (
-                  <div className="mt-2 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                    {searchResults.map((study) => (
-                      <button
-                        key={study.id}
-                        onClick={() => handleSelectStudy(study)}
-                        className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0"
-                      >
-                        <div className="text-xs font-bold text-[#004080]">{study.studyNumber}</div>
-                        <div className="text-[10px] text-slate-600 truncate">{study.studyTitle || study.clientName}</div>
-                        <div className="text-[9px] text-slate-400">{study.address}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              {selectedStudy && (
+
+              {/* Auto-selected model from list — no manual search needed */}
+              {selectedStudy && nextIdsigep && (
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-bold text-blue-700 uppercase">Modelo Selecionado</span>
@@ -424,6 +455,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
                       onClick={() => {
                         setSelectedStudy(null);
                         setStudyId('');
+                        setAutoSelected(false);
                         setFormData(prev => ({ ...prev, titulo: '', localiz: '' }));
                       }}
                       className="text-[10px] text-red-500 hover:text-red-700"
@@ -432,26 +464,55 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
                     </button>
                   </div>
                   <div className="text-sm font-black text-[#004080]">{selectedStudy.studyNumber}</div>
-                  <div className="text-xs text-slate-600">{selectedStudy.studyTitle || selectedStudy.clientName}</div>
+                  <div className="text-xs text-slate-600">{selectedStudy.studyTitle || selectedStudy.clientName || 'Sem título'}</div>
                   <div className="text-[10px] text-slate-500 mt-1">{selectedStudy.address}</div>
-                  {/* Preview new IDSIGEP for revision */}
-                  {(() => {
-                    const num = String(selectedStudy.studyNumber || '').replace(/\D/g, '');
-                    if (num.length >= 10) {
-                      const base8 = num.substring(0, 8);
-                      const currentRev = parseInt(num.substring(8, 10)) || 0;
-                      const newRev = String(currentRev + 1).padStart(2, '0');
-                      return (
-                        <div className="mt-2 pt-2 border-t border-blue-200">
-                          <span className="text-[10px] font-bold text-blue-600">
-                            <i className="fa-solid fa-code-branch mr-1"></i>
-                            Nova revisão será: <span className="font-black text-[#004080]">{base8}{newRev}</span>
-                          </span>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
+                  {/* Next IDSIGEP auto-generated */}
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <span className="text-[10px] font-bold text-blue-600">
+                      <i className="fa-solid fa-arrow-right mr-1"></i>
+                      Próxima revisão: <span className="font-black text-[#004080] text-sm">{nextIdsigep}</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Manual search only if no auto-selected model */}
+              {!selectedStudy && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    ID do Modelo (digite para buscar)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={studyId}
+                      onChange={(e) => {
+                        setStudyId(e.target.value);
+                        setSelectedStudy(null);
+                      }}
+                      placeholder="Ex: 2026028401"
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                    />
+                    {searching && (
+                      <i className="fa-solid fa-spinner fa-spin absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                    )}
+                  </div>
+
+                  {searchResults.length > 0 && !selectedStudy && (
+                    <div className="mt-2 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                      {searchResults.map((study) => (
+                        <button
+                          key={study.id}
+                          onClick={() => handleSelectStudy(study)}
+                          className="w-full px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                        >
+                          <div className="text-xs font-bold text-[#004080]">{study.studyNumber}</div>
+                          <div className="text-[10px] text-slate-600 truncate">{study.studyTitle || study.clientName}</div>
+                          <div className="text-[9px] text-slate-400">{study.address}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -463,12 +524,12 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
               <i className="fa-solid fa-square-root-variable text-blue-500"></i>
               Dados da Solicitação e Identificação
             </h3>
-            
+
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {isRevision && selectedStudy && (
                 <>
-                  {renderField('ID Modelo', selectedStudy.studyNumber)}
-                  {renderField('Modelo Anterior', selectedStudy.studyNumber)}
+                  {renderField('Modelo Original', selectedStudy.studyNumber)}
+                  {nextIdsigep && renderField('Nova Revisão', nextIdsigep)}
                 </>
               )}
               {!isRevision && (
@@ -492,9 +553,8 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
                       onBlur={() => validateIdsigep(manualIdsigep)}
                       placeholder="Ex: 2026028401"
                       maxLength={10}
-                      className={`w-full px-3 py-2 bg-white border rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
-                        idsigepError ? 'border-red-400 focus:border-red-400' : 'border-slate-200 focus:border-blue-400'
-                      }`}
+                      className={`w-full px-3 py-2 bg-white border rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${idsigepError ? 'border-red-400 focus:border-red-400' : 'border-slate-200 focus:border-blue-400'
+                        }`}
                     />
                     {checkingIdsigep && (
                       <i className="fa-solid fa-spinner fa-spin absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
@@ -519,7 +579,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
               <i className="fa-solid fa-location-dot text-blue-500"></i>
               Localização e Cliente
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Título/Cliente *</label>
@@ -583,7 +643,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
               <i className="fa-solid fa-gears text-blue-500"></i>
               Demanda e Parâmetros Técnicos
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo de Gás</label>
@@ -700,7 +760,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
               <i className="fa-solid fa-user-check text-blue-500"></i>
               Responsável pela Execução
             </h3>
-            
+
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
                 Analista Responsável
@@ -727,7 +787,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
               <i className="fa-solid fa-calendar-check text-blue-500"></i>
               Prazo de Entrega Estimado
             </h3>
-            
+
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
                 Data Estimada de Entrega
@@ -747,7 +807,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
               <i className="fa-solid fa-comment-dots text-blue-500"></i>
               Observações do Validador
             </h3>
-            
+
             <textarea
               value={validatorObservations}
               onChange={(e) => setValidatorObservations(e.target.value)}

@@ -5,6 +5,7 @@ import { formatToLocalTime, formatDate, normalizeArea, isAssignedToMe, isSystemA
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { ValidationModal } from '../components/ValidationModal';
 import { QCControlModal } from '../components/QCControlModal';
+import { StorageService } from '../services/storage';
 import { useDialog } from '../components/AppDialog';
 
 interface DashboardProps {
@@ -879,13 +880,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
           currentUser={user}
           readOnly={qcRequest.status === StudyStatus.REPROVADO_CQ}
           onClose={() => setQcRequest(null)}
-          onApprove={(qcData: QCControlData) => {
+          onApprove={async (qcData: QCControlData) => {
+            // Upload QC files to StorageService with category 'Supervisor'
+            if (qcData.qcFiles && qcData.qcFiles.length > 0) {
+              for (const file of qcData.qcFiles) {
+                try {
+                  await StorageService.uploadFile(qcRequest.id, 'Supervisor', file);
+                } catch (err) {
+                  console.error('[Dashboard] Erro ao upload arquivo QC:', err);
+                }
+              }
+              // Clean up files before saving (File objects can't be serialized)
+              delete qcData.qcFiles;
+            }
             qcData.fromQCModal = true;
             onStatusUpdate(qcRequest.id, StudyStatus.APROVADO_CQ, undefined, undefined, { qcData });
             showToast('Estudo Aprovado pelo CQ! Retornado ao analista para conclusão final.', 'success');
             setQcRequest(null);
           }}
-          onReject={(qcData: QCControlData, reason: string) => {
+          onReject={async (qcData: QCControlData, reason: string) => {
+            // Upload QC files to StorageService with category 'Supervisor'
+            if (qcData.qcFiles && qcData.qcFiles.length > 0) {
+              for (const file of qcData.qcFiles) {
+                try {
+                  await StorageService.uploadFile(qcRequest.id, 'Supervisor', file);
+                } catch (err) {
+                  console.error('[Dashboard] Erro ao upload arquivo QC:', err);
+                }
+              }
+              // Clean up files before saving (File objects can't be serialized)
+              delete qcData.qcFiles;
+            }
             qcData.fromQCModal = true;
             onStatusUpdate(qcRequest.id, StudyStatus.REPROVADO_CQ, reason, undefined, { qcData });
             showToast('Estudo Reprovado pelo CQ. Retornado ao analista para correções.', 'info');

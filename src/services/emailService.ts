@@ -419,8 +419,8 @@ Naturgy - Portal Técnico APR`,
     roleDescription?: string,
   ): EmailNotificationData => {
     const signerName =
-      responsibleName || "Equipe de Gestão de Análise de Planificação de Rede";
-    const signerRole = roleDescription || "Gestor de Análise de Planificação de Rede - NATURGY";
+      responsibleName || "Equipe GECAT - Naturgy";
+    const signerRole = roleDescription || "Equipe GECAT - Naturgy";
     const studyRef = request.studyNumber?.trim();
     return {
       recipientEmail: request.email,
@@ -507,8 +507,8 @@ ${signerRole}`,
     roleDescription?: string,
   ): EmailNotificationData => {
     const signerName =
-      responsibleName || "Equipe de Gestão de Análise de Planificação de Rede";
-    const signerRole = roleDescription || "Gestor de Análise de Planificação de Rede - NATURGY";
+      responsibleName || "Equipe GECAT - Naturgy";
+    const signerRole = roleDescription || "Equipe GECAT - Naturgy";
     const studyRef = request.studyNumber?.trim();
     return {
       recipientEmail: request.email,
@@ -647,7 +647,7 @@ Em caso de dúvidas, utilize o Portal Técnico APR.
 
 Atenciosamente,
 ${analystName}
-${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
       htmlBody: buildRefinedHtmlTemplate(
         "⚙️ Estudo em Execução",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que seu estudo encontra-se em <strong>fase de execução técnica</strong>.<br/><br/>Nossa equipe técnica está trabalhando no desenvolvimento do estudo.<br/>Você receberá uma notificação quando o processo for concluído.`,
@@ -664,10 +664,77 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
           "📌 Em caso de dúvidas, utilize o Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + analystName + "</strong>",
-          "<strong>" + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + "</strong>",
+          "<strong>" + (roleDescription || 'Equipe GECAT - Naturgy') + "</strong>",
         ],
         [],
         StudyStatus.EM_EXECUCAO,
+      ),
+    };
+  },
+
+  /**
+   * Email enviado quando estudo passa de EM_EXECUCAO para CONTROLE_QUALIDADE (analista → solicitante)
+   */
+  generateExecutionToQCEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+    roleDescription?: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    return {
+      recipientEmail: request.email,
+      recipientName: safeName(request.requesterName),
+      senderEmail: analystEmail,
+      senderName: analystName,
+      ccEmail: SYSTEM_EMAIL,
+      subject: `🔍 Estudo em Controle de Qualidade - Estudo Nº ${studyRef || request.id}`,
+      body: `🔍 ESTUDO EM CONTROLE DE QUALIDADE - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prezado(a) ${safeName(request.requesterName)},
+
+Informamos que seu estudo foi concluído pela equipe técnica e agora está 
+sendo encaminhado para o Controle de Qualidade (CQ).
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Código: ${request.studyNumber || "Não informado"}
+Título: ${request.studyTitle || request.clientName || "Não informado"}
+Local: ${request.address || ""}, ${request.city || ""}
+Responsável Técnico: ${analystName}
+
+📌 PRÓXIMOS PASSOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+O estudo será analisado pelo Controle de Qualidade. 
+Após a aprovação, você receberá uma notificação com os resultados.
+
+Em caso de dúvidas, utilize o Portal Técnico APR.
+
+Atenciosamente,
+${analystName}
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
+      htmlBody: buildRefinedHtmlTemplate(
+        "🔍 Estudo em Controle de Qualidade",
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que seu estudo foi concluído pela equipe técnica e agora está sendo encaminhado para o <strong>Controle de Qualidade (CQ)</strong>.`,
+        [
+          { title: '📋 Dados do Estudo', items: [
+            { label: 'Código', value: request.studyNumber || `${request.id}` },
+            { label: 'Título', value: request.studyTitle || 'N/I' },
+            { label: 'Localização', value: `${request.address || 'N/I'} - ${request.city || 'N/I'}` },
+            { label: 'Responsável', value: analystName },
+            { label: 'Data', value: new Date().toLocaleDateString('pt-BR') },
+          ]},
+        ],
+        [
+          "📌 O estudo será analisado pelo Controle de Qualidade.",
+          "Após a aprovação, você receberá uma notificação com os resultados.",
+          "Atenciosamente,",
+          `<strong>${analystName}</strong>`,
+          `<strong>${roleDescription || 'Equipe GECAT - Naturgy'}</strong>`,
+        ],
+        [],
+        StudyStatus.CONTROLE_QUALIDADE,
       ),
     };
   },
@@ -719,7 +786,7 @@ das informações solicitadas.
 
 Atenciosamente,
 ${analystName}
-${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
       htmlBody: buildRefinedHtmlTemplate(
         "📩 Solicitação de Informações",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Para dar continuidade ao processamento do seu estudo, solicitamos <strong>informações adicionais</strong> conforme descrito abaixo.`,
@@ -752,7 +819,7 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
           "Em caso de dúvidas, utilize o Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + analystName + "</strong>",
-          "<strong>" + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + "</strong>",
+          "<strong>" + (roleDescription || 'Equipe GECAT - Naturgy') + "</strong>",
         ],
         [],
         StudyStatus.AGUARDANDO_INFORMACAO,
@@ -761,7 +828,7 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
   },
 
   /**
-   * Email enviado quando o solicitante ENVIA as informações (solicitante → analista)
+   * Email enviado quando informações são recebidas — analista informa ao solicitante (analista → solicitante)
    */
   generateInfoReceivedEmail: (
     request: FormData,
@@ -771,39 +838,39 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
     return {
-      recipientEmail: analystEmail,
-      recipientName: analystName,
-      senderEmail: request.email,
-      senderName: safeName(request.requesterName),
+      recipientEmail: request.email,
+      recipientName: safeName(request.requesterName),
+      senderEmail: analystEmail,
+      senderName: analystName,
       ccEmail: SYSTEM_EMAIL,
       subject: `📨 Informações Recebidas - Estudo Nº ${studyRef || request.id}`,
       body: `📨 INFORMAÇÕES RECEBIDAS - Estudo Nº ${studyRef || request.id}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Prezado(a) ${analystName},
+Prezado(a) ${safeName(request.requesterName)},
 
-O solicitante ${safeName(request.requesterName)} enviou as informações 
-solicitadas para o estudo abaixo:
+As informações solicitadas para o estudo abaixo foram recebidas com sucesso.
 
 📋 DADOS DO ESTUDO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Código: ${request.studyNumber || "Não informado"}
 Título: ${request.studyTitle || request.clientName || "Não informado"}
 Solicitante: ${safeName(request.requesterName)}
 
 📝 INFORMAÇÕES ENVIADAS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${holdResponse || request.holdResponse || "O solicitante enviou resposta."}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${holdResponse || request.holdResponse || "As informações foram recebidas."}
 
-▶️ AÇÃO NECESSÁRIA
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Retomar a execução do estudo no Portal Técnico APR.
+▶️ PRÓXIMO PASSO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A equipe técnica retomará a execução do estudo.
 
 Atenciosamente,
-Portal Técnico APR - NATURGY`,
+${analystName}
+Equipe GECAT - Naturgy`,
       htmlBody: buildRefinedHtmlTemplate(
         "📨 Informações Recebidas",
-        `Prezado(a) ${analystName},<br/><br/>O solicitante <strong>${safeName(request.requesterName)}</strong> enviou as informações solicitadas para o estudo abaixo.`,
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>As informações solicitadas para o estudo abaixo foram <strong>recebidas com sucesso</strong>.`,
         [
           {
             title: "📋 Dados do Estudo",
@@ -816,14 +883,15 @@ Portal Técnico APR - NATURGY`,
           {
             title: "📝 Informações Enviadas",
             items: [
-              { label: "Resposta", value: holdResponse || request.holdResponse || "O solicitante enviou resposta." },
+              { label: "Resposta", value: holdResponse || request.holdResponse || "As informações foram recebidas." },
             ],
           },
         ],
         [
-          "▶️ AÇÃO NECESSÁRIA: Retomar a execução do estudo no Portal Técnico APR.",
+          "▶️ A equipe técnica retomará a execução do estudo.",
           "Atenciosamente,",
-          "<strong>Portal Técnico APR - NATURGY</strong>",
+          `<strong>${analystName}</strong>`,
+          "<strong>Equipe GECAT - Naturgy</strong>",
         ],
         [],
         StudyStatus.EM_EXECUCAO,
@@ -840,9 +908,10 @@ Portal Técnico APR - NATURGY`,
     senderEmail?: string,
     roleDescription?: string,
     respostaFileNames?: string[],
+    additionalCCs?: string,
   ): EmailNotificationData => {
     const signerName =
-      responsibleName || roleDescription || "Equipe de Gestão de Análise de Planificação de Rede";
+      responsibleName || roleDescription || "Equipe GECAT - Naturgy";
     const studyRef = request.studyNumber?.trim();
     const completionDate = request.completedAt 
       ? safeFormatDate(request.completedAt)
@@ -853,7 +922,7 @@ Portal Técnico APR - NATURGY`,
       recipientName: safeName(request.requesterName),
       senderEmail: senderEmail,
       senderName: signerName,
-      ccEmail: `${SYSTEM_EMAIL}; solon@naturgy.com; jmario@naturgy.com`,
+      ccEmail: additionalCCs ? `${SYSTEM_EMAIL}; ${additionalCCs}` : SYSTEM_EMAIL,
       subject: `🎉 Estudo Concluído - Estudo Nº ${studyRef || request.id}`,
       body: `🎉 ESTUDO CONCLUÍDO - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -889,7 +958,7 @@ através do Portal Técnico APR.
 
 Atenciosamente,
 ${signerName}
-${roleDescription || 'Controle de Qualidade - NATURGY'}`,
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
       htmlBody: buildRefinedHtmlTemplate(
         "🎉 Estudo Concluído",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Temos a satisfação de informar que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #10b981; font-weight: bold;">CONCLUÍDA</span> com sucesso!<br/><br/><strong>📂 Acesso aos Resultados</strong><br/>Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo no Portal Técnico APR.`,
@@ -952,7 +1021,7 @@ ${roleDescription || 'Controle de Qualidade - NATURGY'}`,
           "Em caso de dúvidas ou necessidade de suporte, entre em contato através do Portal Técnico APR.",
           "Atenciosamente,",
           "<strong>" + signerName + "</strong>",
-          "<strong>" + (roleDescription || 'Controle de Qualidade - NATURGY') + "</strong>",
+          "<strong>" + (roleDescription || 'Equipe GECAT - Naturgy') + "</strong>",
         ],
         [],
         StudyStatus.CONCLUIDO,
@@ -970,14 +1039,17 @@ ${roleDescription || 'Controle de Qualidade - NATURGY'}`,
     analystName: string,
     recipientEmail?: string,
     roleDescription?: string,
+    recipientName?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
     const completionDate = request.completedAt 
       ? safeFormatDate(request.completedAt)
       : new Date().toLocaleDateString('pt-BR');
+    // FIX Bug 5: Usar o nome real do supervisor se fornecido
+    const greeting = recipientName ? `Prezado(a) ${recipientName}` : 'Prezado(a) Equipe GECAT - Naturgy';
     return {
       recipientEmail: recipientEmail || SYSTEM_EMAIL,
-      recipientName: 'Responsável pelo Controle de Qualidade',
+      recipientName: recipientName || 'Equipe GECAT - Naturgy',
       senderEmail: analystEmail,
       senderName: analystName,
       ccEmail: SYSTEM_EMAIL,
@@ -985,7 +1057,7 @@ ${roleDescription || 'Controle de Qualidade - NATURGY'}`,
       body: `🔍 SOLICITAÇÃO DE CONTROLE DE QUALIDADE - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Prezado(a) Responsável pelo Controle de Qualidade,
+${greeting},
 
 O estudo abaixo foi concluído e está sendo encaminhamento para 
 revisão e validação técnica.
@@ -1005,10 +1077,10 @@ Qualidade estabelecidos.
 
 Atenciosamente,
 ${analystName}
-${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
       htmlBody: buildRefinedHtmlTemplate(
         '🔍 Solicitação de Controle de Qualidade',
-        `Prezado(a) Responsável pelo Controle de Qualidade,<br/><br/>O estudo abaixo foi concluído e está sendo encaminhamento para <strong>revisão e validação técnica</strong>.`,
+        `${greeting},<br/><br/>O estudo abaixo foi concluído e está sendo encaminhamento para <strong>revisão e validação técnica</strong>.`,
         [
           {
             title: '📋 Dados do Estudo',
@@ -1031,7 +1103,7 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
         [
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>' + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + '</strong>'
+          '<strong>' + (roleDescription || 'Equipe GECAT - Naturgy') + '</strong>'
         ],
         [],
         StudyStatus.CONTROLE_QUALIDADE
@@ -1079,7 +1151,7 @@ Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta
 
 Atenciosamente,
 ${analystName}
-${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
       htmlBody: buildRefinedHtmlTemplate(
         '📋 Resposta Antecipada do Estudo',
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que o estudo <strong>${request.studyNumber}</strong> está sendo encaminhdo em caráter <strong>antecipado</strong>, antes da conclusão do processo de Controle de Qualidade, em função do prazo de entrega.<br/><br/>O estudo pasará pelo Controle de Qualidade normalmente. Caso sejam identificadas correções necessárias, <strong>uma versão revisada será emitida e encaminhda</strong>.`,
@@ -1107,7 +1179,7 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
           '📂 Os arquivos com os resultados técnicos estão disponíveis na pasta de resposta do seu estudo.',
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>' + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + '</strong>'
+          '<strong>' + (roleDescription || 'Equipe GECAT - Naturgy') + '</strong>'
         ],
         [],
         StudyStatus.ENVIADO_SEM_CQ
@@ -1157,7 +1229,7 @@ Solicito a análise e validação conforme os critérios do Controle de Qualidad
 
 Atenciosamente,
 ${analystName}
-${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}`,
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
       htmlBody: buildRefinedHtmlTemplate(
         '⚠️ Envio Antecipado Antes do CQ',
         'Envio antecipado do estudo antes do Controle de Qualidade.',
@@ -1184,7 +1256,7 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
         [
           'Atenciosamente,',
           '<strong>' + analystName + '</strong>',
-          '<strong>' + (roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY') + '</strong>'
+          '<strong>' + (roleDescription || 'Equipe GECAT - Naturgy') + '</strong>'
         ],
         [],
         StudyStatus.CONTROLE_QUALIDADE
@@ -1194,6 +1266,7 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
 
   /**
    * Email enviado pelo ADM/QC para o Analista quando o estudo é APROVADO no CQ
+   * FIX Bug 8: Adicionado parâmetro withReservations para diferenciar aprovação com ressalvas
    */
   generateQCApprovalAnalystEmail: (
     request: FormData,
@@ -1203,22 +1276,26 @@ ${roleDescription || 'Analista de Análise de Planificação de Rede - NATURGY'}
     observations?: string,
     qcEmail?: string,
     roleDescription?: string,
+    withReservations?: boolean,
   ): EmailNotificationData => {
-    const signerRole = roleDescription || 'Controle de Qualidade - NATURGY';
+    const signerRole = roleDescription || 'Equipe GECAT - Naturgy';
+    const statusLabel = withReservations ? 'APROVADO COM RESSALVAS' : 'APROVADO';
+    const emoji = withReservations ? '⚠️✅' : '✅';
     return {
       recipientEmail: analystEmail,
       recipientName: analystName,
       senderEmail: qcEmail,
       senderName: qcName,
       ccEmail: SYSTEM_EMAIL,
-      subject: `✅ Estudo Aprovado no CQ - Estudo Nº ${request.studyNumber}`,
-      body: `✅ ESTUDO APROVADO NO CONTROLE DE QUALIDADE - Estudo Nº ${request.studyNumber}
+      subject: `${emoji} Estudo ${statusLabel} no CQ - Estudo Nº ${request.studyNumber}`,
+      body: `${emoji} ESTUDO ${statusLabel} NO CONTROLE DE QUALIDADE - Estudo Nº ${request.studyNumber}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Prezado(a) ${analystName},
 
-É com satisfação que informamos que o estudo abaixo foi APROVADO 
+É com satisfação que informamos que o estudo abaixo foi ${statusLabel} 
 no Controle de Qualidade.
+${withReservations ? '\n⚠️ ATENÇÃO: A aprovação foi concedida COM RESSALVAS. Verifique as observações abaixo e, se aplicável, realize as correções indicadas antes de finalizar o processo.' : ''}
 
 📋 DADOS DO ESTUDO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1226,23 +1303,24 @@ Código: ${request.studyNumber || 'N/A'}
 Título: ${request.studyTitle || request.clientName || 'N/A'}
 Aprovado por: ${qcName}
 
-📝 OBSERVAÇÕES
+📝 ${withReservations ? 'RESSALVAS E OBSERVAÇÕES' : 'OBSERVAÇÕES'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${observations || "Nenhuma observação adicional."}
 
 ▶️ PRÓXIMA AÇÃO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Por favor, finalize o processo enviando o e-mail de conclusão 
-para o solicitante através do Portal Técnico APR.
+${withReservations 
+  ? '1. Verifique as ressalvas indicadas acima\n2. Realize as correções necessárias (se aplicável)\n3. Envie o e-mail de conclusão ao solicitante'
+  : 'Por favor, finalize o processo enviando o e-mail de conclusão para o solicitante através do Portal Técnico APR.'}
 
-⚠️ O estudo retornou para sua fila com status "Aprovado pelo CQ".
+⚠️ O estudo retornou para sua fila com status "${statusLabel} pelo CQ".
 
 Atenciosamente,
 ${qcName}
 ${signerRole}`,
       htmlBody: buildRefinedHtmlTemplate(
-        "✅ Estudo Aprovado no Controle de Qualidade",
-        `Prezado(a) ${analystName},<br/><br/>É com satisfação de informar que o estudo abaixo foi <span style="color: #10b981; font-weight: bold;">APROVADO</span> no Controle de Qualidade.<br/><br/>O estudo retornou para sua fila com status <strong>"Aprovado pelo CQ"</strong>.`,
+        `${emoji} Estudo ${statusLabel} no Controle de Qualidade`,
+        `Prezado(a) ${analystName},<br/><br/>É com satisfação informar que o estudo abaixo foi <span style="color: ${withReservations ? '#f59e0b' : '#10b981'}; font-weight: bold;">${statusLabel}</span> no Controle de Qualidade.${withReservations ? '<br/><br/><span style="color: #f59e0b; font-weight: bold;">⚠️ APROVAÇÃO COM RESSALVAS - Verifique as observações abaixo.</span>' : ''}<br/><br/>O estudo retornou para sua fila com status <strong>"${statusLabel} pelo CQ"</strong>.`,
         [
           {
             title: "📋 Dados do Estudo",
@@ -1253,21 +1331,21 @@ ${signerRole}`,
             ]
           },
           {
-            title: "📝 Observações",
+            title: withReservations ? "⚠️ Ressalvas e Observações" : "📝 Observações",
             items: [
-              { label: "Observações", value: observations || "Nenhuma observação adicional." },
+              { label: withReservations ? "Ressalvas" : "Observações", value: observations || "Nenhuma observação adicional." },
             ]
           },
           {
             title: "▶️ Próxima Ação",
             items: [
-              { label: "Ação", value: "Enviar e-mail final ao solicitante e concluir estudo via Portal" },
-              { label: "Status", value: "APROVADO PELO CQ" },
+              { label: "Ação", value: withReservations ? "Verificar ressalvas e realizar correções antes de finalizar" : "Enviar e-mail final ao solicitante e concluir estudo via Portal" },
+              { label: "Status", value: `${statusLabel} PELO CQ` },
             ]
           }
         ],
         [
-          "⚠️ Por favor, finalize o processo o quanto antes.",
+          withReservations ? "⚠️ Verifique as ressalvas antes de finalizar." : "⚠️ Por favor, finalize o processo o quanto antes.",
           "Atenciosamente,",
           "<strong>" + qcName + "</strong>",
           "<strong>" + signerRole + "</strong>"
@@ -1290,7 +1368,7 @@ ${signerRole}`,
     qcEmail?: string,
     roleDescription?: string,
   ): EmailNotificationData => {
-    const signerRole = roleDescription || 'Controle de Qualidade - NATURGY';
+    const signerRole = roleDescription || 'Equipe GECAT - Naturgy';
     return {
       recipientEmail: analystEmail,
       recipientName: analystName,
@@ -1560,20 +1638,17 @@ ${emailData.body}
       const body = encodeURIComponent(plainBody);
       const mailtoLink = `mailto:${to}?subject=${subject}&body=${body}`;
 
-      // Melhoria para acionar o mailto: de forma mais robusta no navegador
+      // FIX Bug 2: Clicar diretamente sem setTimeout para manter user gesture
       console.log("[EmailService] Triggering mailto...");
       
       const link = document.createElement("a");
       link.href = mailtoLink;
       link.id = "mailto-temp-link";
       document.body.appendChild(link);
-      
+      link.click();
       setTimeout(() => {
-        link.click();
-        setTimeout(() => {
-          document.body.removeChild(link);
-        }, 100);
-      }, 50);
+        document.body.removeChild(link);
+      }, 200);
 
       console.log(
         "%c📧 MAILTO LINK ACIONADO NO NAVEGADOR",

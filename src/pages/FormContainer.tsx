@@ -157,7 +157,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       if (!initialData?.studyNumber) return;
       setIsLoadingFiles(true);
       try {
-        const files = await StorageService.getRequestFiles(initialData.studyNumber, 'Solicitacao');
+        const files = await StorageService.getRequestFiles(initialData.id || initialData.studyNumber, 'Solicitacao');
         if (isMounted) {
           const filtered = files.filter(f => f.name !== '.keep');
           setServerFiles(filtered);

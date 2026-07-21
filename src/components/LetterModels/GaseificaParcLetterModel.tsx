@@ -9,7 +9,7 @@ interface LetterModelProps {
 }
 
 export const GaseificaParcLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, currentUser, reference }) => {
-  const docDate = data.cartaGeneratedAt || data.completedAt || new Date().toISOString();
+  const docDate = new Date().toISOString();
 
   const assignedUser = allUsers.find(u => {
     const matchId = u.id === data.assignedTo;
@@ -27,10 +27,10 @@ export const GaseificaParcLetterModel: React.FC<LetterModelProps> = ({ data, all
     }).join(' ');
   };
 
-  const analystName = toTitleCase(assignedUser?.name || data.assignedToName || data.analystName || 'Responsável Técnico').trim();
+  const analystName = toTitleCase(currentUser?.name || assignedUser?.name || data.assignedToName || data.analystName || 'Responsável Técnico').trim();
   const analystCompany = toTitleCase(assignedUser?.company || data.analystCompany || 'Empresa').trim();
   const analystRole = toTitleCase(assignedUser?.roleDescription || data.analystRole || 'Cargo').trim();
-  const analystGB = (assignedUser?.gb || data.analystGB || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
+  const analystGB = (currentUser?.gb || assignedUser?.gb || data.analystGB || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
 
   const validUntilDate = (() => {
     const d = new Date(docDate);

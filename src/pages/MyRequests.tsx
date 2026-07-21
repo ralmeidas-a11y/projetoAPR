@@ -551,7 +551,10 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                             )}
                           </div>
                           <div className="flex flex-col gap-1">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border inline-block ${getStatusStyle(req.status)}`}>
+                            <span 
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-bold border inline-block ${getStatusStyle(req.status)}`}
+                              title={req.status === StudyStatus.ENVIADO_SEM_CQ ? 'Enviado antes do Controle de Qualidade — o estudo ainda passará pelo CQ posteriormente' : undefined}
+                            >
                               {getStatusDisplay(req.status)}
                             </span>
                             {req.status === StudyStatus.AGUARDANDO_INFORMACAO && req.holdReason && (

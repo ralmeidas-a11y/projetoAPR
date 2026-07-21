@@ -7,7 +7,7 @@ interface LetterModelProps {
   reference: React.RefObject<HTMLDivElement>;
 }
 export const IndustrialLetterModel: React.FC<LetterModelProps> = ({ data, allUsers, currentUser, reference }) => {
-  const docDate = data.cartaGeneratedAt || data.completedAt || new Date().toISOString();
+  const docDate = new Date().toISOString();
   const assignedUser = allUsers.find(u => {
     const matchId = u.id === data.assignedTo;
     const matchEmail = u.email?.toLowerCase() === data.assignedTo?.toLowerCase();
@@ -22,10 +22,10 @@ export const IndustrialLetterModel: React.FC<LetterModelProps> = ({ data, allUse
       return word.charAt(0).toUpperCase() + word.slice(1);
     }).join(' ');
   };
-  const analystName = toTitleCase(assignedUser?.name || data.assignedToName || data.analystName || 'Responsável Técnico').trim();
+  const analystName = toTitleCase(currentUser?.name || assignedUser?.name || data.assignedToName || data.analystName || 'Responsável Técnico').trim();
   const analystCompany = toTitleCase(assignedUser?.company || data.analystCompany || 'Empresa').trim();
   const analystRole = toTitleCase(assignedUser?.roleDescription || data.analystRole || 'Cargo').trim();
-  const analystGB = (assignedUser?.gb || data.analystGB || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
+  const analystGB = (currentUser?.gb || assignedUser?.gb || data.analystGB || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
   const validUntilDate = (() => {
     const d = new Date(docDate);
     d.setFullYear(d.getFullYear() + 1);

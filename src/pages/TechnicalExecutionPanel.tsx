@@ -58,6 +58,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [activeFolder, setActiveFolder] = useState('Solicitacao');
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
+  const [showPreQCModal, setShowPreQCModal] = useState(false);
   const [selectedQCAnalyst, setSelectedQCAnalyst] = useState('');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [previewStudy, setPreviewStudy] = useState<FormData | null>(null);
@@ -292,10 +293,20 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     if (readOnly || !onStatusUpdate) return;
     const confirm = await showConfirm(
       'Confirmar Envio Antecipado?',
-      'Esta ação enviará a resposta ao solicitante e uma justificativa ao sistema PRGC informando que o envio foi feito antes do Controle de Qualidade devido ao prazo. O estudo ainda passará pelo processo de CQ posteriormente.'
+      'Esta ação enviará a resposta ao solicitante e uma justificativa ao supervisor CQ informando que o envio foi feito antes do Controle de Qualidade devido ao prazo. O estudo ainda passará pelo processo de CQ posteriormente.'
     );
     if (confirm) {
-      onStatusUpdate(data.id, StudyStatus.ENVIADO_SEM_CQ);
+      const additional: any = {};
+      // FIX Item 7: Salvar supervisor CQ selecionado para envio da justificativa
+      if (selectedQCAnalyst) {
+        const supervisorUser = allUsers.find(u => u.id === selectedQCAnalyst);
+        additional.qcData = {
+          ...(data.qcData || {}),
+          qcSupervisor: supervisorUser?.name || '',
+        };
+        additional.assignedTo = selectedQCAnalyst;
+      }
+      onStatusUpdate(data.id, StudyStatus.ENVIADO_SEM_CQ, undefined, undefined, additional);
       showToast('Envio antecipado processado com sucesso!', 'success');
       onBack();
     }
@@ -993,7 +1004,6 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 const rev = cleanNum.substring(8, 10);
                 const physicalPath = `${currentUser.folderPath}\\${ano}\\${seq}\\R${rev}\\${activeFolder}`;
 
-                // Convert file to base64
                 const arrayBuffer = await file.arrayBuffer();
                 const bytes = new Uint8Array(arrayBuffer);
                 const chunkSize = 8192;
@@ -1147,6 +1157,12 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     const finalAdditional: any = { totalExecutionTime: elapsedTime };
     if (selectedQCAnalyst) {
       finalAdditional.assignedTo = selectedQCAnalyst;
+      // FIX Bug 4: Salvar o supervisor também em qcData para que o email use o destinatário correto
+      const supervisorUser = allUsers.find(u => u.id === selectedQCAnalyst);
+      finalAdditional.qcData = {
+        ...(data.qcData || {}),
+        qcSupervisor: supervisorUser?.name || '',
+      };
     }
     handleUpdateStatus(StudyStatus.CONTROLE_QUALIDADE, finalAdditional);
     setShowFinishModal(false);
@@ -2551,7 +2567,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                 <i className="fa-solid fa-copy"></i> Enviar Cópia
               </li>
               <li
-                onClick={handleJustifyPreQC}
+                onClick={() => { setSelectedQCAnalyst(data.assignedTo || ''); setShowPreQCModal(true); }}
                 className={`flex items-center gap-2 text-red-500 ${readOnly ? '' : 'cursor-pointer hover:text-red-700'}`}
               >
                 <i className="fa-solid fa-paper-plane"></i> Justificar Envio Antes do Controle
@@ -2977,9 +2993,56 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           </div>
         </div>
       )}
+      {/* MODAL ENVIO ANTECIPADO CQ */}
+      {showPreQCModal && (
+        <div className="fixed inset-0 z-[7000] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-8 text-3xl shadow-inner">
+              <i className="fa-solid fa-paper-plane"></i>
+            </div>
+            <h3 className="text-xl font-black text-[#004080] text-center uppercase tracking-tight mb-3">Envio Antecipado</h3>
+            <p className="text-slate-500 text-center text-sm mb-4 leading-relaxed font-medium">
+              O estudo será enviado ao solicitante antes do Controle de Qualidade devido ao prazo.
+            </p>
+            <p className="text-[10px] text-slate-400 text-center mb-4 uppercase font-black tracking-widest">
+              Selecione o supervisor CQ para notificação:
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">
+                <i className="fa-solid fa-user-check mr-1"></i>Supervisor CQ:
+              </label>
+              <select
+                value={selectedQCAnalyst}
+                onChange={(e) => setSelectedQCAnalyst(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              >
+                <option value="">Selecione o supervisor</option>
+                {allUsers
+                  .filter(u => u.role === UserRole.ADM || u.permissions?.includes('controle_qualidade'))
+                  .map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.sap || u.email})</option>
+                  ))
+                }
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <button onClick={() => setShowPreQCModal(false)} className="py-2.5 px-4 bg-slate-100 text-slate-500 rounded-lg font-black uppercase text-xs hover:bg-slate-200 transition-all active:scale-95">Cancelar</button>
+              <button
+                onClick={() => { setShowPreQCModal(false); handleJustifyPreQC(); }}
+                disabled={!selectedQCAnalyst}
+                className="py-2.5 px-4 bg-red-600 text-white rounded-lg font-black uppercase text-xs shadow-xl shadow-red-100 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i className="fa-solid fa-paper-plane mr-1"></i>Confirmar Envio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* MODAL CONCLUIR */}
       {showFinishModal && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[7000] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="w-20 h-20 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-8 text-3xl shadow-inner">
               <i className="fa-solid fa-circle-check"></i>
@@ -3089,7 +3152,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               <i className="fa-solid fa-folder-open text-[8px]"></i> Pastas
             </h5>
             <div className="space-y-1 overflow-y-auto pr-1 custom-scrollbar">
-              {['Solicitacao', 'Resposta', 'Outros', 'Winflow'].map(t => (
+              {['Solicitacao', 'Resposta', 'Outros', 'Winflow', 'Supervisor'].map(t => (
                 <div
                   key={t}
                   className={`group w-full p-1 rounded-xl flex items-center gap-1 transition-all ${activeFolder === t ? 'bg-orange-50/50' : 'hover:bg-slate-50'}`}

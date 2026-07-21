@@ -59,6 +59,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   const [selectedRevision, setSelectedRevision] = useState<any>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [inlineAlert, setInlineAlert] = useState<{ type: 'error' | 'warning'; message: string } | null>(null);
+  const [qcFiles, setQcFiles] = useState<File[]>([]);
 
   const toggleGroup = (studyNum: string) => {
     setExpandedGroups(prev => ({ ...prev, [studyNum]: !prev[studyNum] }));
@@ -164,11 +165,11 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
     // Prefer DB iterations as they are the source of truth
     // Only fall back to local iterations if DB has no data
     if (dbIterations.length > 0) {
-      // Deduplicate by studyNumber + validationDate + status
+      // FIX Bug 7: Dedup key includes reviewer to prevent losing distinct iterations from different supervisors
       const seen = new Set<string>();
       const unique: any[] = [];
       dbIterations.forEach(it => {
-        const key = `${it.studyNumber || ''}_${it.validationDate || ''}_${it.status || ''}`;
+        const key = `${it.studyNumber || ''}_${it.validationDate || ''}_${it.status || ''}_${it.reviewer || ''}`;
         if (!seen.has(key)) {
           seen.add(key);
           unique.push(it);
@@ -210,6 +211,7 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
       },
     ],
     qcComments: comments,
+    qcFiles: qcFiles.length > 0 ? qcFiles : undefined,
   });
 
   const doApprove = (withReservations: boolean = false) => {
@@ -314,6 +316,17 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
     const current = secondaryCounts[key] || 0;
     const next = Math.max(0, current + delta);
     setSecondaryCounts({ ...secondaryCounts, [key]: next });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      setQcFiles(prev => [...prev, ...newFiles]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setQcFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const thStyle = 'px-3 py-2 text-left text-[10px] font-black text-[#004080] uppercase tracking-wide border-b border-slate-200';
@@ -575,6 +588,54 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* Arquivos do Supervisor */}
+              {(readOnly || !readOnly) && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="bg-blue-50 px-4 py-2 flex items-center justify-between border-b border-blue-100">
+                    <span className="text-[10px] font-black text-[#004080] uppercase tracking-widest flex items-center gap-2">
+                      <i className="fa-solid fa-paperclip"></i>
+                      Anexos do Supervisor
+                    </span>
+                    {!readOnly && (
+                      <label className="cursor-pointer text-[9px] font-black text-[#004080] hover:text-blue-600 uppercase tracking-widest flex items-center gap-1 transition-colors">
+                        <i className="fa-solid fa-upload text-[8px]"></i> Adicionar
+                        <input
+                          type="file"
+                          multiple
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    {qcFiles.length === 0 ? (
+                      <div className="text-[10px] text-slate-400 font-bold italic text-center py-2">
+                        {readOnly ? 'Nenhum arquivo anexado pelo supervisor.' : 'Nenhum arquivo anexado.'}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {qcFiles.map((file, idx) => (
+                          <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-100">
+                            <i className="fa-solid fa-file text-slate-400 text-[10px]"></i>
+                            <span className="text-[10px] text-slate-700 flex-1 truncate">{file.name}</span>
+                            <span className="text-[9px] text-slate-400">{(file.size / 1024).toFixed(0)}KB</span>
+                            {!readOnly && (
+                              <button
+                                onClick={() => removeFile(idx)}
+                                className="text-slate-400 hover:text-red-500 transition-colors"
+                              >
+                                <i className="fa-solid fa-times text-[8px]"></i>
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* RIGHT: Iterations sidebar */}
@@ -834,6 +895,13 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
               <button
                 onClick={handleApprove}
                 disabled={totalCritical > 0 || totalSecondary > 0}
+                title={
+                  totalCritical > 0 || totalSecondary > 0
+                    ? 'Não é possível aprovar com falhas registradas. Utilize Reprovar CQ.'
+                    : comments && comments.trim().length > 0
+                    ? 'Aprovar com Ressalvas: estudo aprovado mas com observações a serem corrigidas'
+                    : 'Aprovar: estudo sem falhas e sem ressalvas'
+                }
                 className={`px-8 py-3.5 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg transition-all active:scale-95 flex items-center gap-2 ${
                   totalCritical > 0 || totalSecondary > 0
                     ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
@@ -841,7 +909,10 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                 }`}
               >
                 <i className="fa-solid fa-check-double"></i>
-                Aprovar CQ
+                {comments && comments.trim().length > 0 && totalCritical === 0 && totalSecondary === 0
+                  ? 'Aprovar CQ com Ressalva'
+                  : 'Aprovar CQ'
+                }
               </button>
             </div>
           )}

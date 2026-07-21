@@ -131,6 +131,7 @@ export interface QCControlData {
   qcComments?: string;
   qcFinalStatus?: string;
   fromQCModal?: boolean; // Flag para indicar que veio do modal de CQ
+  qcFiles?: File[]; // Arquivos anexados pelo supervisor durante o CQ
 }
 
 export interface FormData {

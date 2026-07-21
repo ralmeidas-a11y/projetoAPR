@@ -95,6 +95,10 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
     if (!isOpen || !mapContainerRef.current) return;
 
     const initMap = async () => {
+      // Aguarda animation frame para garantir que o container tenha dimensões
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (!mapContainerRef.current) return;
+
       const mapboxgl = await import('mapbox-gl');
       mapboxglRef.current = mapboxgl.default;
       await import('mapbox-gl/dist/mapbox-gl.css');

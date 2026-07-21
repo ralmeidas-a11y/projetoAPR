@@ -206,6 +206,19 @@ const App: React.FC = () => {
     return EmailService.generateInfoReceivedEmail(request, analyst?.email || user?.email, analyst?.name || user?.name, request.holdResponse);
   };
 
+  /**
+   * Função para exibir preview de email quando estudo entra em execução (analista → solicitante)
+   */
+  const generateEmailForExecutionStarted = (request: FormData): EmailNotificationData => {
+    const analyst = allUsers.find(u => u.id === request.assignedTo) || user;
+    return EmailService.generateExecutionEmail(request, analyst?.email || user?.email, analyst?.name || user?.name, analyst?.roleDescription || user?.roleDescription);
+  };
+
+  const generateEmailForExecutionToQC = (request: FormData): EmailNotificationData => {
+    const analyst = allUsers.find(u => u.id === request.assignedTo) || user;
+    return EmailService.generateExecutionToQCEmail(request, analyst?.email || user?.email, analyst?.name || user?.name, analyst?.roleDescription || user?.roleDescription);
+  };
+
   const handleLogin = async (loggedUser: User) => {
     // PRIORIDADE 0: Se exige troca de senha (primeiro acesso analista/adm)
     if (loggedUser.requiresPasswordChange) {
@@ -710,7 +723,7 @@ const App: React.FC = () => {
     const originalRequest = allRequests.find(r => r.id === id);
     try {
       const currentRequests = allRequests || [];
-      let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | 'awaiting_info' | 'info_received' | null; request?: FormData; reason?: string } = { type: null };
+      let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | 'awaiting_info' | 'info_received' | 'execution_started' | 'execution_to_qc' | null; request?: FormData; reason?: string } = { type: null };
       let requestToCreate: FormData | null = null;
 
 const updatedList = currentRequests.map(req => {
@@ -782,6 +795,10 @@ const updatedList = currentRequests.map(req => {
                 qcComments: '',
               }
             };
+            // FIX item 3: Se veio de EM_EXECUCAO, também enviar email ao solicitante informando a mudança de etapa
+            if (req.status === StudyStatus.EM_EXECUCAO) {
+              (updatedRequestForEmail as any).alsoSendExecutionToQC = true;
+            }
           } else if (status === StudyStatus.ENVIADO_SEM_CQ && req.status !== StudyStatus.ENVIADO_SEM_CQ) {
             updatedRequestForEmail.type = 'pre_qc_response';
             updatedRequestForEmail.request = updated;
@@ -802,8 +819,9 @@ const updatedList = currentRequests.map(req => {
               updatedRequestForEmail.type = 'info_received';
               updatedRequestForEmail.request = updated;
             } else {
-              // Se entrou em execução normalmente (não estava aguardando info) — sem email
-              updatedRequestForEmail.type = null;
+              // FIX: Enviar email ao solicitante quando estudo inicia execução
+              updatedRequestForEmail.type = 'execution_started';
+              updatedRequestForEmail.request = updated;
             }
           } else if (status === StudyStatus.AGUARDANDO_INFORMACAO && req.status !== StudyStatus.AGUARDANDO_INFORMACAO) {
             // Quando solicita informações ao solicitante
@@ -846,22 +864,6 @@ const updatedList = currentRequests.map(req => {
               console.error('[updateRequestStatus] Erro ao criar pasta:', err);
             }
           }));
-          
-          // Gerar e salvar PDF do formulário na pasta solicitacao
-          const formPdfPath = `${userFolderPath}\\${ano}\\${sequencial}\\${rev}\\solicitacao\\Formulario_${cleanStudyNumber}.pdf`;
-          try {
-            await fetch('/api/folders/save-form-pdf', { 
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                studyId: targetReq.id,
-                studyNumber: cleanStudyNumber,
-                targetPath: formPdfPath
-              }),
-            });
-          } catch (err) {
-            console.error('[updateRequestStatus] Erro ao salvar PDF do formulário:', err);
-          }
         }
       }
 
@@ -956,9 +958,16 @@ const updatedList = currentRequests.map(req => {
                 );
                 console.log('[QC Email] QC Users found:', qcUsers.map(u => ({ name: u.name, email: u.email })));
 
-                // Determinar destinatário principal: usar qcSupervisor se definido, senão primeiro da lista
+                // Determinar destinatário principal: usar qcSupervisor se definido, senão assignedTo, senão primeiro da lista
                 const supervisorName = updatedRequestForEmail.request.qcData?.qcSupervisor;
                 let primaryUser = supervisorName ? qcUsers.find(u => u.name === supervisorName) : undefined;
+                if (!primaryUser) {
+                  // FIX Bug 4: Usar assignedTo como fallback (quando o analista definiu o supervisor no finish modal)
+                  const assignedId = updatedRequestForEmail.request.assignedTo;
+                  if (assignedId) {
+                    primaryUser = qcUsers.find(u => u.id === assignedId || u.name === assignedId);
+                  }
+                }
                 if (!primaryUser && qcUsers.length > 0) {
                   primaryUser = qcUsers[0];
                 }
@@ -972,7 +981,8 @@ const updatedList = currentRequests.map(req => {
                     analyst.email,
                     analyst.name,
                     primaryUser.email,
-                    analyst.roleDescription || user?.roleDescription
+                    analyst.roleDescription || user?.roleDescription,
+                    primaryUser.name
                   );
 
                   if (ccRecipients) {
@@ -984,6 +994,10 @@ const updatedList = currentRequests.map(req => {
               } else {
                 console.log('[QC Email] Analyst not found! analystId:', analystId, 'user:', user?.email);
               }
+              // FIX Item 3: Se veio de EM_EXECUCAO, também enviar email ao solicitante
+              if ((updatedRequestForEmail as any).alsoSendExecutionToQC && updatedRequestForEmail.request) {
+                handleSendEmail(generateEmailForExecutionToQC(updatedRequestForEmail.request));
+              }
             } else if (updatedRequestForEmail.type === 'pre_qc_response') {
               const analystId = updatedRequestForEmail.request.assignedTo;
               let analyst = allUsers.find(u => u.id === analystId);
@@ -993,28 +1007,35 @@ const updatedList = currentRequests.map(req => {
                 analyst = user;
               }
 
+              // FIX Item 7: Buscar supervisor CQ para enviar justificativa
+              const qcUsers = allUsers.filter(u =>
+                (u.role === UserRole.ADM || u.permissions?.includes('controle_qualidade')) && u.email
+              );
+              const supervisorName = updatedRequestForEmail.request.qcData?.qcSupervisor;
+              const supervisor = supervisorName ? qcUsers.find(u => u.name === supervisorName) : undefined;
+
               console.log('[PreQC] Analyst:', analyst?.name, analyst?.email);
 
               if (analyst && analyst.email) {
-                console.log('[PreQC] Sending pre-QC response to requester...');
-                // 1. Send response to requester
+                console.log('[PreQC] Sending pre-QC emails synchronously...');
+                
+                // 1. Email para o solicitante (resposta antecipada)
                 handleSendEmail(EmailService.generatePreQCResponseEmail(
                   updatedRequestForEmail.request,
                   analyst.email,
                   analyst.name
                 ));
 
-                console.log('[PreQC] Sending pre-QC system justification...');
-                // 2. Send justification to PRGC system (delayed)
-                setTimeout(() => {
-                  if (updatedRequestForEmail.request && analyst) {
-                    handleSendEmail(EmailService.generatePreQCSysEmail(
-                      updatedRequestForEmail.request,
-                      analyst.email,
-                      analyst.name
-                    ));
-                  }
-                }, 600);
+                // 2. Email para supervisor CQ (justificativa)
+                if (updatedRequestForEmail.request && analyst) {
+                  handleSendEmail(EmailService.generatePreQCSysEmail(
+                    updatedRequestForEmail.request,
+                    analyst.email,
+                    analyst.name,
+                    supervisor?.email,
+                    analyst.roleDescription || user?.roleDescription
+                  ));
+                }
               } else {
                 console.log('[PreQC] Analyst not found, using user as fallback');
                 // Try with current user
@@ -1027,8 +1048,9 @@ const updatedList = currentRequests.map(req => {
                 }
               }
 
-              // Important: After sending without QC, it immediately enters the QC queue
-              updateRequestStatus(updatedRequestForEmail.request.id, StudyStatus.CONTROLE_QUALIDADE);
+              // FIX Bug 6: NÃO chamar updateRequestStatus recursivamente aqui.
+              // O status ENVIADO_SEM_CQ já foi salvo. A transição para CONTROLE_QUALIDADE
+              // acontece naturalmente quando o CQ é aberto pelo supervisor.
             } else if ((updatedRequestForEmail.type === 'qc_approval' || updatedRequestForEmail.type === 'qc_rejection') && updatedRequestForEmail.request) {
               const analystId = updatedRequestForEmail.request.assignedTo;
               console.log('[QC Email] Searching for analyst, assignedTo:', analystId);
@@ -1036,7 +1058,8 @@ const updatedList = currentRequests.map(req => {
                 u.id === analystId || 
                 u.email.toLowerCase() === analystId?.toLowerCase() ||
                 u.name.toLowerCase() === analystId?.toLowerCase() ||
-                u.gb?.toLowerCase() === analystId?.toLowerCase()
+                u.gb?.toLowerCase() === analystId?.toLowerCase() ||
+                u.sap?.toLowerCase() === analystId?.toLowerCase()
               );
               // Fallback: usar usuário atual se não encontrar
               if (!analyst && user) {
@@ -1049,6 +1072,8 @@ const updatedList = currentRequests.map(req => {
               if (analyst && analyst.email) {
                 console.log('[QC Email] Analyst found:', analyst.name, analyst.email);
                 if (updatedRequestForEmail.type === 'qc_approval') {
+                  // FIX Bug 8: Detectar se é aprovação com ressalvas (qcFinalStatus === '400')
+                  const isWithReservations = updatedRequestForEmail.request.qcData?.qcFinalStatus === '400';
                   const emailData = EmailService.generateQCApprovalAnalystEmail(
                     updatedRequestForEmail.request,
                     analyst.email,
@@ -1056,7 +1081,8 @@ const updatedList = currentRequests.map(req => {
                     supervisorName,
                     updatedRequestForEmail.reason,
                     supervisorUser?.email || user?.email,
-                    supervisorUser?.roleDescription || user?.roleDescription
+                    supervisorUser?.roleDescription || user?.roleDescription,
+                    isWithReservations
                   );
                   handleSendEmail(emailData);
                 } else {
@@ -1078,6 +1104,12 @@ const updatedList = currentRequests.map(req => {
             } else if (updatedRequestForEmail.type === 'info_received') {
               // Email quando solicitante envia informações de volta
               handleSendEmail(generateEmailForInfoReceived(updatedRequestForEmail.request));
+            } else if (updatedRequestForEmail.type === 'execution_started') {
+              // FIX: Email ao solicitante quando estudo inicia execução
+              handleSendEmail(generateEmailForExecutionStarted(updatedRequestForEmail.request));
+            } else if (updatedRequestForEmail.type === 'execution_to_qc') {
+              // FIX Item 3: Email ao solicitante informando que estudo foi para CQ
+              handleSendEmail(generateEmailForExecutionToQC(updatedRequestForEmail.request));
             }
           }
         } catch (previewError) {
@@ -1089,55 +1121,6 @@ const updatedList = currentRequests.map(req => {
           });
         }
       }, 0);
-
-      if (requestToCreate && (window as any).api?.createRequestFolder) {
-        const year = requestToCreate.studyNumber?.match(/APR-(\d{4})/)?.[1] || new Date().getFullYear().toString();
-        const isRevision = requestToCreate.studyNumber.includes('-REV');
-        const baseStudyId = isRevision ? requestToCreate.studyNumber.split('-REV')[0] : requestToCreate.studyNumber;
-        const revFolder = isRevision ? `REV${requestToCreate.studyNumber.split('-REV')[1]}` : 'REV1';
-
-        (window as any).api.createRequestFolder({
-          email: requestToCreate.email || '',
-          userName: requestToCreate.requesterName,
-          requestId: requestToCreate.studyNumber,
-          year,
-          baseStudyId,
-          revFolder,
-          fullPath: `Solicitacoes_APR/${year}/${baseStudyId}/${revFolder}`
-        }).then(async (result: any) => {
-          if (result.success) {
-            const files = requestToCreate.selectedFiles || [];
-            if (files.length > 0 && (window as any).api) {
-              for (const f of files) {
-                try {
-                  const solicitacaoDir = `${result.baseFolderPath}/Solicitacao`;
-                  if (f.path) {
-                    await (window as any).api.saveFile(f.path, `${solicitacaoDir}/${f.name}`);
-                  } else {
-                    const toBase64 = (fileObj: any) => new Promise<string>((resolve, reject) => {
-                      const reader = new FileReader();
-                      reader.onload = () => {
-                        const data = reader.result as string;
-                        const base64 = data.split(',')[1] || '';
-                        resolve(base64);
-                      };
-                      reader.onerror = (e) => reject(e);
-                      reader.readAsDataURL(fileObj);
-                    });
-
-                    const base64 = await toBase64(f);
-                    await (window as any).api.saveFileData(f.name, base64, solicitacaoDir);
-                  }
-                } catch (saveErr) {
-                  console.warn('Erro ao salvar anexo:', saveErr);
-                }
-              }
-            }
-          }
-        }).catch((err: any) => {
-          console.warn('Erro ao criar pasta:', err);
-        });
-      }
 
     } catch (outerError) {
       setNotification({
@@ -1541,6 +1524,42 @@ const updatedList = currentRequests.map(req => {
             // Renomear conforme solicitado: Formulário [CÓDIGO].pdf
             const renamedFile = new File([pdfFile], `Formulário ${finalRequest.studyNumber}.pdf`, { type: 'application/pdf' });
             await StorageService.uploadFile(finalRequest.id, 'Solicitacao', renamedFile);
+
+            // Salvar PDF do formulário no disco físico
+            if (user?.folderPath && finalRequest.studyNumber) {
+              try {
+                const cleanNum = finalRequest.studyNumber.replace(/^PROV-/, '');
+                if (cleanNum.length >= 10) {
+                  const ano = cleanNum.substring(0, 4);
+                  const seq = cleanNum.substring(4, 8);
+                  const rev = cleanNum.substring(8, 10);
+                  const solicitacaoPath = `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\Solicitacao`;
+                  
+                  const arrayBuffer = await pdfFile.arrayBuffer();
+                  const bytes = new Uint8Array(arrayBuffer);
+                  const chunkSize = 8192;
+                  let binary = '';
+                  for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+                    const chunk = bytes.subarray(i, i + chunkSize);
+                    binary += String.fromCharCode(...chunk);
+                  }
+                  const base64 = btoa(binary);
+                  
+                  await fetch('/api/folders/save-file-base64', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      folderPath: solicitacaoPath,
+                      fileName: `Formulário ${finalRequest.studyNumber}.pdf`,
+                      contentBase64: base64,
+                    }),
+                  });
+                  console.log('[App] Formulário PDF salvo no disco físico');
+                }
+              } catch (fsErr) {
+                console.warn('[App] Erro ao salvar formulário no disco físico:', fsErr);
+              }
+            }
           }
 
           // Automated email trigger on submit
