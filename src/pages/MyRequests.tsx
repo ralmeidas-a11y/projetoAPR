@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole } from '../types/types';
-import { formatToLocalTime, formatDate, normalizeArea, toTitleCase } from '../utils/utils';
+import { formatDate, normalizeArea, toTitleCase } from '../utils/utils';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { useDialog } from '../components/AppDialog';
 
@@ -15,12 +15,13 @@ interface MyRequestsProps {
   onViewRequest: (request: FormData) => void;
   onRequestRevision?: (request: FormData) => void;
   onUpdateData?: (data: FormData) => void;
+  onInfoReceived?: (request: FormData) => void;
   autoOpenRequestId?: string | null;
   onModalOpened?: () => void;
 }
 
 export const MyRequests: React.FC<MyRequestsProps> = ({
-  requests, allRequests, currentUser, onNewRequest, onEditRequest, onCancelRequest, onViewRequest, onRequestRevision, onUpdateData,
+  requests, allRequests, currentUser, onNewRequest, onEditRequest, onCancelRequest, onViewRequest, onRequestRevision, onUpdateData, onInfoReceived,
   autoOpenRequestId, onModalOpened
 }) => {
   const { showToast } = useDialog();
@@ -367,6 +368,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
                       holdResponseSeen: false 
                     };
                     onUpdateData(updated);
+                    if (onInfoReceived) onInfoReceived(updated);
                     showToast('Resposta enviada com sucesso!', 'success');
                     setViewingHoldReason(null);
                     setHoldResponseText('');

@@ -257,6 +257,9 @@ export interface FormData {
   lastAdminAlertDate?: string;   // Data (YYYY-MM-DD) do último alerta exibido ao ADM
   alertConfirmations?: string[]; // Histórico de confirmações (Read Receipts)
   
+  // CC recipients for email notifications
+  additionalCCs?: string; // E-mails de terceiros em cópia (separados por vírgula ou ponto e vírgula)
+  
   // Validation fields
   gasType?: string;
   mapReceived?: boolean;
@@ -303,4 +306,5 @@ export interface FormData {
   qcRequestDate?: string;
   responseMemo?: string;
   originalInputs?: Partial<FormData>;
+  isCopy?: boolean; // Enviar cópia do estudo ao solicitante
 }

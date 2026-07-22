@@ -206,6 +206,54 @@ export const FormFO01: React.FC<FormFO01Props> = ({ data, onChange, readOnly = f
             </div>
           </div>
         )}
+
+        {/* Cópia para terceiros */}
+        {readOnly ? (
+          data.additionalCCs ? (
+            <div className="px-5 pb-4">
+              <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-100/50">
+                <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest block mb-1">Cópia para:</span>
+                <span className="text-xs text-blue-700 font-semibold">{data.additionalCCs}</span>
+              </div>
+            </div>
+          ) : null
+        ) : (
+          <div className="px-5 pb-4 space-y-3">
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={data.additionalCCs !== undefined && data.additionalCCs !== ''}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      handleInputChange({ target: { name: 'additionalCCs', value: ' ' } } as any);
+                    } else {
+                      handleInputChange({ target: { name: 'additionalCCs', value: '' } } as any);
+                    }
+                  }}
+                  className="peer sr-only"
+                />
+                <div className="w-5 h-5 border-2 border-slate-200 rounded-lg bg-white peer-checked:bg-[#004080] peer-checked:border-[#004080] transition-all flex items-center justify-center">
+                  <i className={`fa-solid fa-check text-[10px] text-white transition-opacity ${data.additionalCCs ? 'opacity-100' : 'opacity-0'}`}></i>
+                </div>
+              </div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-[#004080] transition-colors">Adicionar cópia para outros usuários</span>
+            </label>
+            {data.additionalCCs !== undefined && data.additionalCCs !== '' && (
+              <div className="flex items-center gap-2 ml-8">
+                <i className="fa-solid fa-envelope text-slate-300 text-xs"></i>
+                <input
+                  type="text"
+                  name="additionalCCs"
+                  value={data.additionalCCs || ''}
+                  onChange={handleInputChange}
+                  className={`${inputBaseClass} border-slate-200 bg-white text-xs`}
+                  placeholder="email1@exemplo.com; email2@exemplo.com"
+                />
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* DADOS BASE DO ESTUDO */}

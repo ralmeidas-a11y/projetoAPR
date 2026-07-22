@@ -8,6 +8,7 @@ import { Dashboard } from './pages/Dashboard';
 import { MyRequests } from './pages/MyRequests';
 import { UserManagement } from './pages/UserManagement';
 import { AuditLog } from './pages/AuditLog';
+import { CCSettingsPanel } from './components/CCSettingsPanel';
 import { TechnicalExecutionPanel } from './pages/TechnicalExecutionPanel';
 import { PasswordChange } from './pages/PasswordChange';
 import { MathModels } from './pages/MathModels';
@@ -15,7 +16,7 @@ import { MathModelForm } from './pages/MathModelForm';
 
 // EmailPreviewModal removed <!-- id: 11 -->
 import { FormType, User, UserRole, FormData, StudyStatus } from './types/types';
-import { NaturgyLogo, HeaderTitle, REVERSE_AREA_MAPPING } from './constants/constants';
+import { NaturgyLogo, REVERSE_AREA_MAPPING } from './constants/constants';
 import { StorageService } from './services/storage';
 import { EmailService, EmailNotificationData } from './services/emailService';
 import { getGMT3ISOString, normalizeArea, isAssignedToMe, isSystemAssigned, formatDate } from './utils/utils';
@@ -28,7 +29,7 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
   const [editingRequest, setEditingRequest] = useState<FormData | null>(null);
-  const [view, setView] = useState<'login' | 'onboarding' | 'password-change' | 'menu' | 'form' | 'dashboard' | 'my-requests' | 'analyst-view' | 'users' | 'audit' | 'execution' | 'settings' | 'math-models' | 'math-model-form'>('login');
+  const [view, setView] = useState<'login' | 'onboarding' | 'password-change' | 'menu' | 'form' | 'dashboard' | 'my-requests' | 'analyst-view' | 'users' | 'audit' | 'cc-settings' | 'execution' | 'settings' | 'math-models' | 'math-model-form'>('login');
   const [notification, setNotification] = useState<{ message: string; subtext?: string; type?: 'success' | 'info' } | null>(null);
 
   const [allRequests, setAllRequests] = useState<FormData[]>([]);
@@ -39,6 +40,7 @@ const App: React.FC = () => {
   const notifiedHoldIdsRef = useRef<Set<string>>(new Set());
   const [autoOpenRequestId, setAutoOpenRequestId] = useState<string | null>(null);
   const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const emailQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [selectedMathModel, setSelectedMathModel] = useState<any>(null);
 
   // --- Central de Notificações ---
@@ -131,31 +133,40 @@ const App: React.FC = () => {
   }, [notification]);
 
   /**
-   * Handler para enviar email através do Outlook
+   * Handler para enviar email através do Outlook.
+   * Usa uma fila para serializar envios — quando dois handleSendEmail
+   * disparam ao mesmo tempo (ex.: qc_request + alsoSendExecutionToQC),
+   * dois processos Python são spawnados simultaneamente e no Windows
+   * o segundo pode receber stdin vazio, causando JSONDecodeError que
+   * cai no fallback mailto.
    */
-  const handleSendEmail = async (emailData: EmailNotificationData) => {
-    setIsEmailLoading(true);
-    try {
-      const result = await EmailService.openInOutlook(emailData);
-      if (result.success) {
-        // Notificação de sucesso removida a pedido do usuário
-      } else {
+  const handleSendEmail = (emailData: EmailNotificationData) => {
+    const task = emailQueueRef.current.then(async () => {
+      setIsEmailLoading(true);
+      try {
+        const result = await EmailService.openInOutlook(emailData);
+        if (result.success) {
+          // Notificação de sucesso removida a pedido do usuário
+        } else {
+          setNotification({
+            message: "Erro ao Enviar E-mail",
+            subtext: result.message,
+            type: 'info'
+          });
+        }
+      } catch (error) {
+        console.error('Erro ao enviar email:', error);
         setNotification({
           message: "Erro ao Enviar E-mail",
-          subtext: result.message,
+          subtext: error instanceof Error ? error.message : 'Erro desconhecido',
           type: 'info'
         });
+      } finally {
+        setIsEmailLoading(false);
       }
-    } catch (error) {
-      console.error('Erro ao enviar email:', error);
-      setNotification({
-        message: "Erro ao Enviar E-mail",
-        subtext: error instanceof Error ? error.message : 'Erro desconhecido',
-        type: 'info'
-      });
-    } finally {
-      setIsEmailLoading(false);
-    }
+    });
+    emailQueueRef.current = task.catch(() => {});
+    return task;
   };
 
   /**
@@ -186,8 +197,43 @@ const App: React.FC = () => {
   /**
    * Função para exibir preview de email ao concluir solicitação
    */
-  const generateEmailForCompletion = (request: FormData): EmailNotificationData => {
-    return EmailService.generateCompletionEmail(request, user?.name, user?.email, user?.roleDescription);
+  const getAlwaysCC = async (): Promise<string> => {
+    try {
+      const list = await StorageService.getAlwaysCC();
+      return list.filter(e => e.includes('@')).join('; ');
+    } catch { return ''; }
+  };
+
+  const generateEmailForCompletion = async (request: FormData): Promise<EmailNotificationData> => {
+    const alwaysCC = await getAlwaysCC();
+    const mergedRequest = {
+      ...request,
+      additionalCCs: [request.additionalCCs, alwaysCC].filter(Boolean).join('; '),
+    };
+    const attachmentPaths: string[] = [];
+    if (user?.folderPath && request.studyNumber) {
+      try {
+        const cleanNum = request.studyNumber.replace(/^PROV-/, '');
+        if (cleanNum.length >= 10) {
+          const ano = cleanNum.substring(0, 4);
+          const seq = cleanNum.substring(4, 8);
+          const rev = cleanNum.substring(8, 10);
+          const respostaPath = `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\Resposta`;
+          const resp = await fetch('/api/folders/list-files', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folderPath: respostaPath, prefix: '' }),
+          });
+          const result = await resp.json();
+          if (result.success && result.files?.length > 0) {
+            attachmentPaths.push(...result.files);
+          }
+        }
+      } catch (err) {
+        console.warn('[Email] Erro ao buscar arquivos da pasta Resposta:', err);
+      }
+    }
+    return EmailService.generateCompletionEmail(mergedRequest, user?.name, user?.email, user?.roleDescription, undefined, undefined, attachmentPaths);
   };
 
   /**
@@ -779,7 +825,8 @@ const updatedList = currentRequests.map(req => {
 
             // Delete previously generated Carta PDF when study is rejected
             StorageService.deleteCartaResposta(req.studyNumber);
-          } else if (status === StudyStatus.CONCLUIDO && req.status !== StudyStatus.CONCLUIDO) {
+          } else if (status === StudyStatus.CONCLUIDO && (req.status !== StudyStatus.CONCLUIDO || updated.isCopy)) {
+            // FIX Bug 10: Gerar email de conclusão também quando é cópia
             updatedRequestForEmail.type = 'completion';
             updatedRequestForEmail.request = updated;
           } else if (status === StudyStatus.CONTROLE_QUALIDADE && req.status !== StudyStatus.CONTROLE_QUALIDADE) {
@@ -807,7 +854,7 @@ const updatedList = currentRequests.map(req => {
             updatedRequestForEmail.request = updated;
             updatedRequestForEmail.reason = reason; // Observations
           } else if (status === StudyStatus.REJEITADO || status === StudyStatus.REPROVADO_CQ) {
-            if (req.status === StudyStatus.CONTROLE_QUALIDADE) {
+            if (req.status === StudyStatus.CONTROLE_QUALIDADE || req.status === StudyStatus.ENVIADO_SEM_CQ) {
               updatedRequestForEmail.type = 'qc_rejection';
               updatedRequestForEmail.request = updated;
               updatedRequestForEmail.reason = reason || req.rejectionReason || 'Vistoria técnica não aprovada';
@@ -818,8 +865,8 @@ const updatedList = currentRequests.map(req => {
               // Se estava aguardando informações, o solicitante enviou resposta
               updatedRequestForEmail.type = 'info_received';
               updatedRequestForEmail.request = updated;
-            } else {
-              // FIX: Enviar email ao solicitante quando estudo inicia execução
+            } else if (req.status !== StudyStatus.REPROVADO_CQ) {
+              // FIX Bug 7: NÃO enviar email ao solicitante quando retomando de REPROVADO_CQ
               updatedRequestForEmail.type = 'execution_started';
               updatedRequestForEmail.request = updated;
             }
@@ -901,11 +948,48 @@ const updatedList = currentRequests.map(req => {
           const skipUploadStatus = ['100', '330', '240', '290', 'Em Análise', 'Pendente', 'Rejeitado'];
           const currentStatus = String(updatedReq.status);
 
+          // Helper: save file to physical disk directory
+          const saveFileToPhysicalDir = async (file: File, category: string) => {
+            if (!user?.folderPath || !updatedReq.studyNumber) return;
+            try {
+              const cleanNum = updatedReq.studyNumber.replace(/^PROV-/, '');
+              if (cleanNum.length >= 10) {
+                const ano = cleanNum.substring(0, 4);
+                const seq = cleanNum.substring(4, 8);
+                const rev = cleanNum.substring(8, 10);
+                const physicalPath = `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\${category}`;
+
+                const arrayBuffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                const chunkSize = 8192;
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+                  const chunk = bytes.subarray(i, i + chunkSize);
+                  binary += String.fromCharCode(...chunk);
+                }
+                const base64 = btoa(binary);
+
+                await fetch('/api/folders/save-file-base64', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    folderPath: physicalPath,
+                    fileName: file.name,
+                    contentBase64: base64,
+                  }),
+                });
+              }
+            } catch (fsErr) {
+              console.warn('[Upload] Erro ao salvar na pasta física:', fsErr);
+            }
+          };
+
           if (!skipUploadStatus.includes(currentStatus)) {
             if (updatedReq.selectedFiles && updatedReq.selectedFiles.length > 0) {
               for (const f of updatedReq.selectedFiles) {
                 if (f instanceof File) {
                   await StorageService.uploadFile(updatedReq.id, 'Solicitacao', f);
+                  await saveFileToPhysicalDir(f, 'Solicitacao');
                 }
               }
             }
@@ -916,6 +1000,7 @@ const updatedList = currentRequests.map(req => {
                   for (const f of catFiles) {
                     if (f instanceof File) {
                       await StorageService.uploadFile(updatedReq.id, category, f);
+                      await saveFileToPhysicalDir(f, category);
                     }
                   }
                 }
@@ -932,6 +1017,7 @@ const updatedList = currentRequests.map(req => {
 
       // Processar email FORA do state updater
       setTimeout(() => {
+        (async () => {
         try {
           if (updatedRequestForEmail.type && updatedRequestForEmail.request) {
             if (updatedRequestForEmail.type === 'approval') {
@@ -939,7 +1025,8 @@ const updatedList = currentRequests.map(req => {
             } else if (updatedRequestForEmail.type === 'rejection' && updatedRequestForEmail.reason) {
               handleSendEmail(generateEmailForRejection(updatedRequestForEmail.request, updatedRequestForEmail.reason));
             } else if (updatedRequestForEmail.type === 'completion') {
-              handleSendEmail(generateEmailForCompletion(updatedRequestForEmail.request));
+              const emailData = await generateEmailForCompletion(updatedRequestForEmail.request);
+              handleSendEmail(emailData);
             } else if (updatedRequestForEmail.type === 'qc_request') {
               // Analyst -> QC Users: study finished execution
               const analystId = updatedRequestForEmail.request.assignedTo;
@@ -958,16 +1045,9 @@ const updatedList = currentRequests.map(req => {
                 );
                 console.log('[QC Email] QC Users found:', qcUsers.map(u => ({ name: u.name, email: u.email })));
 
-                // Determinar destinatário principal: usar qcSupervisor se definido, senão assignedTo, senão primeiro da lista
+                // Determinar destinatário principal: usar qcSupervisor se definido, senão primeiro QC user da lista
                 const supervisorName = updatedRequestForEmail.request.qcData?.qcSupervisor;
                 let primaryUser = supervisorName ? qcUsers.find(u => u.name === supervisorName) : undefined;
-                if (!primaryUser) {
-                  // FIX Bug 4: Usar assignedTo como fallback (quando o analista definiu o supervisor no finish modal)
-                  const assignedId = updatedRequestForEmail.request.assignedTo;
-                  if (assignedId) {
-                    primaryUser = qcUsers.find(u => u.id === assignedId || u.name === assignedId);
-                  }
-                }
                 if (!primaryUser && qcUsers.length > 0) {
                   primaryUser = qcUsers[0];
                 }
@@ -989,14 +1069,14 @@ const updatedList = currentRequests.map(req => {
                     emailData.ccEmail = ccRecipients;
                   }
 
-                  handleSendEmail(emailData);
+                  await handleSendEmail(emailData);
                 }
               } else {
                 console.log('[QC Email] Analyst not found! analystId:', analystId, 'user:', user?.email);
               }
               // FIX Item 3: Se veio de EM_EXECUCAO, também enviar email ao solicitante
               if ((updatedRequestForEmail as any).alsoSendExecutionToQC && updatedRequestForEmail.request) {
-                handleSendEmail(generateEmailForExecutionToQC(updatedRequestForEmail.request));
+                await handleSendEmail(generateEmailForExecutionToQC(updatedRequestForEmail.request));
               }
             } else if (updatedRequestForEmail.type === 'pre_qc_response') {
               const analystId = updatedRequestForEmail.request.assignedTo;
@@ -1020,7 +1100,7 @@ const updatedList = currentRequests.map(req => {
                 console.log('[PreQC] Sending pre-QC emails synchronously...');
                 
                 // 1. Email para o solicitante (resposta antecipada)
-                handleSendEmail(EmailService.generatePreQCResponseEmail(
+                await handleSendEmail(EmailService.generatePreQCResponseEmail(
                   updatedRequestForEmail.request,
                   analyst.email,
                   analyst.name
@@ -1028,7 +1108,7 @@ const updatedList = currentRequests.map(req => {
 
                 // 2. Email para supervisor CQ (justificativa)
                 if (updatedRequestForEmail.request && analyst) {
-                  handleSendEmail(EmailService.generatePreQCSysEmail(
+                  await handleSendEmail(EmailService.generatePreQCSysEmail(
                     updatedRequestForEmail.request,
                     analyst.email,
                     analyst.name,
@@ -1040,7 +1120,7 @@ const updatedList = currentRequests.map(req => {
                 console.log('[PreQC] Analyst not found, using user as fallback');
                 // Try with current user
                 if (user && user.email) {
-                  handleSendEmail(EmailService.generatePreQCResponseEmail(
+                  await handleSendEmail(EmailService.generatePreQCResponseEmail(
                     updatedRequestForEmail.request,
                     user.email,
                     user.name || 'Analista'
@@ -1084,7 +1164,7 @@ const updatedList = currentRequests.map(req => {
                     supervisorUser?.roleDescription || user?.roleDescription,
                     isWithReservations
                   );
-                  handleSendEmail(emailData);
+                  await handleSendEmail(emailData);
                 } else {
                   const emailData = EmailService.generateQCRejectionAnalystEmail(
                     updatedRequestForEmail.request,
@@ -1095,7 +1175,7 @@ const updatedList = currentRequests.map(req => {
                     supervisorUser?.email || user?.email,
                     supervisorUser?.roleDescription || user?.roleDescription
                   );
-                  handleSendEmail(emailData);
+                  await handleSendEmail(emailData);
                 }
               }
             } else if (updatedRequestForEmail.type === 'awaiting_info') {
@@ -1120,6 +1200,7 @@ const updatedList = currentRequests.map(req => {
             type: 'info'
           });
         }
+        })();
       }, 0);
 
     } catch (outerError) {
@@ -1352,6 +1433,7 @@ const updatedList = currentRequests.map(req => {
           studySubType: '',
           difficulty: '',
           validatorObservations: '',
+          additionalCCs: '',
           user_id: (user?.role === UserRole.SOLICITANTE) ? (user?.id || originalRequest.user_id) : '',
           userId: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.email : (originalRequest.userId || originalRequest.email)) : '',
           lastModifiedBy: (user?.role === UserRole.SOLICITANTE) ? (isDifferentUser ? user?.name : (originalRequest.lastModifiedBy || originalRequest.requesterName)) : (user?.name || ''),
@@ -1462,6 +1544,7 @@ const updatedList = currentRequests.map(req => {
             studyNumber,
             status: StudyStatus.EM_ANALISE,
             previousStudy: baseRef,
+            additionalCCs: '',
             user_id: user?.id || '',
             userId: user?.email || newRequest.userId,
             lastModifiedBy: user?.name || newRequest.lastModifiedBy
@@ -1517,6 +1600,38 @@ const updatedList = currentRequests.map(req => {
             for (const f of finalRequest.selectedFiles) {
               if (f instanceof File) {
                 await StorageService.uploadFile(finalRequest.id, 'Solicitacao', f);
+                // FIX: Salvar também no disco físico
+                if (user?.folderPath && finalRequest.studyNumber) {
+                  try {
+                    const cleanNum = finalRequest.studyNumber.replace(/^PROV-/, '');
+                    if (cleanNum.length >= 10) {
+                      const ano = cleanNum.substring(0, 4);
+                      const seq = cleanNum.substring(4, 8);
+                      const rev = cleanNum.substring(8, 10);
+                      const solicitacaoPath = `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\Solicitacao`;
+                      const arrayBuffer = await f.arrayBuffer();
+                      const bytes = new Uint8Array(arrayBuffer);
+                      const chunkSize = 8192;
+                      let binary = '';
+                      for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+                        const chunk = bytes.subarray(i, i + chunkSize);
+                        binary += String.fromCharCode(...chunk);
+                      }
+                      const base64 = btoa(binary);
+                      await fetch('/api/folders/save-file-base64', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          folderPath: solicitacaoPath,
+                          fileName: f.name,
+                          contentBase64: base64,
+                        }),
+                      });
+                    }
+                  } catch (fsErr) {
+                    console.warn('[App] Erro ao salvar arquivo solicitacao no disco fisico:', fsErr);
+                  }
+                }
               }
             }
           }
@@ -1734,6 +1849,7 @@ const updatedList = currentRequests.map(req => {
                   {user?.role === UserRole.ADM && (
                     <>
                       <button onClick={() => setView('users')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'users' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Usuários</button>
+                      <button onClick={() => setView('cc-settings')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'cc-settings' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Cópia E-mails</button>
                       <button onClick={() => setView('audit')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${view === 'audit' ? 'bg-[#004080] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>Auditoria</button>
                     </>
                   )}
@@ -1832,6 +1948,7 @@ const updatedList = currentRequests.map(req => {
               onViewRequest={handleViewRequest}
               onRequestRevision={handleRequestRevision}
               onUpdateData={handleUpdateRequestData}
+              onInfoReceived={(req) => handleSendEmail(generateEmailForInfoReceived(req))}
               autoOpenRequestId={autoOpenRequestId}
               onModalOpened={() => setAutoOpenRequestId(null)}
             />
@@ -1844,6 +1961,9 @@ const updatedList = currentRequests.map(req => {
               onDeleteUser={handleDeleteUser}
               onResetUsers={handleResetUsers}
             />
+          )}
+          {view === 'cc-settings' && user?.role === UserRole.ADM && (
+            <CCSettingsPanel />
           )}
           {view === 'audit' && user?.role === UserRole.ADM && (
             <AuditLog currentUser={user} />

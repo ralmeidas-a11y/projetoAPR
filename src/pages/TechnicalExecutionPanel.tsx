@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole, FormType, InterconnectionPoint, PlannedExtension } from '../types/types';
-import { formatDateTimeBR, calculateDeadline, isSystemAssigned } from '../utils/utils';
+import { formatDateTimeBR, calculateDeadline } from '../utils/utils';
 import { StorageService } from '../services/storage';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { QCControlModal } from '../components/QCControlModal';
 import { LocationPickerModal } from '../components/LocationPickerModal';
 import { useDialog } from '../components/AppDialog';
 import { NETWORK_GROUPS, PRESSURE_BASES, STANDARDIZED_CONDITIONS_BLOCKS } from '../constants/constants';
-import { VAZAO_UNITARIA_DATA, DIVERSIFICACAO_DATA, VazaoUnitItem, DiversificacaoItem } from '../constants/calculationData';
+import { DIVERSIFICACAO_DATA } from '../constants/calculationData';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { getLetterModel } from '../components/LetterModels';
@@ -293,7 +293,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     if (readOnly || !onStatusUpdate) return;
     const confirm = await showConfirm(
       'Confirmar Envio Antecipado?',
-      'Esta ação enviará a resposta ao solicitante e uma justificativa ao supervisor CQ informando que o envio foi feito antes do Controle de Qualidade devido ao prazo. O estudo ainda passará pelo processo de CQ posteriormente.'
+      'Esta ação enviará a resposta ao solicitante e uma justificativa ao responsável pelo CQ informando que o envio foi feito antes do Controle de Qualidade devido ao prazo. O estudo ainda passará pelo processo de CQ posteriormente.'
     );
     if (confirm) {
       const additional: any = {};
@@ -994,8 +994,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         for (const file of rawFiles) {
           await StorageService.uploadFile(requestId, activeFolder, file);
 
-          // Also save to physical directory on disk
-          if (currentUser?.folderPath && data.studyNumber) {
+          // Also save to physical directory on disk (EXCETO pasta Supervisor/Controle de Qualidade - somente BLOB)
+          if (currentUser?.folderPath && data.studyNumber && activeFolder !== 'Supervisor') {
             try {
               const cleanNum = data.studyNumber.replace(/^PROV-/, '');
               if (cleanNum.length >= 10) {
@@ -1431,6 +1431,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
             {renderTechnicalField('Data de Solicitação', formatDateTimeBR(data.createdAt))}
             {renderTechnicalField('Solicitante', data.requesterName || '-')}
             {renderTechnicalField('E-mail', data.email || 'NÃO UTILIZAR ESSE REGISTRO')}
+            {data.additionalCCs && renderTechnicalField('Cópia para', data.additionalCCs)}
             {renderTechnicalField('Área Solicitante', data.requesterArea || 'Desconhecido')}
           </div>
         </div>
@@ -3005,19 +3006,19 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               O estudo será enviado ao solicitante antes do Controle de Qualidade devido ao prazo.
             </p>
             <p className="text-[10px] text-slate-400 text-center mb-4 uppercase font-black tracking-widest">
-              Selecione o supervisor CQ para notificação:
+              Selecione o responsável pelo CQ para notificação:
             </p>
 
             <div className="mb-6">
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">
-                <i className="fa-solid fa-user-check mr-1"></i>Supervisor CQ:
+                <i className="fa-solid fa-user-check mr-1"></i>Responsável pelo CQ:
               </label>
               <select
                 value={selectedQCAnalyst}
                 onChange={(e) => setSelectedQCAnalyst(e.target.value)}
                 className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
               >
-                <option value="">Selecione o supervisor</option>
+                <option value="">Selecione o responsável pelo CQ</option>
                 {allUsers
                   .filter(u => u.role === UserRole.ADM || u.permissions?.includes('controle_qualidade'))
                   .map(u => (
@@ -3152,7 +3153,12 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
               <i className="fa-solid fa-folder-open text-[8px]"></i> Pastas
             </h5>
             <div className="space-y-1 overflow-y-auto pr-1 custom-scrollbar">
-              {['Solicitacao', 'Resposta', 'Outros', 'Winflow', 'Supervisor'].map(t => (
+              {['Solicitacao', 'Resposta', 'Outros', 'Winflow', 'Supervisor'].map(t => {
+                const folderLabels: Record<string, string> = {
+                  'Supervisor': 'Controle de Qualidade'
+                };
+                const displayLabel = folderLabels[t] || t;
+                return (
                 <div
                   key={t}
                   className={`group w-full p-1 rounded-xl flex items-center gap-1 transition-all ${activeFolder === t ? 'bg-orange-50/50' : 'hover:bg-slate-50'}`}
@@ -3163,7 +3169,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   >
                     <div className="flex items-center gap-3">
                       <i className={`fa-solid fa-folder${activeFolder === t ? '-open text-orange-400' : ''} text-base`}></i>
-                      {t}
+                      {displayLabel}
                     </div>
                   </button>
                   <div className="flex items-center gap-1 pr-2">
@@ -3174,7 +3180,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                     )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 shadow-inner">

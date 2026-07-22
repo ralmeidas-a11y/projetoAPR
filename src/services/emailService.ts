@@ -1,4 +1,4 @@
-import { FormData, User, UserRole, StudyStatus } from "../types/types";
+import { FormData, StudyStatus } from "../types/types";
 import mjml2html from "mjml-browser";
 import { formatDate, toTitleCase, normalizeString } from "../utils/utils";
 
@@ -34,21 +34,43 @@ const escapeHtml = (value: string) =>
 const buildStepperMjml = (status?: StudyStatus) => {
   if (!status) return "";
 
+  // Novas etapas conforme solicitado, com etapas de transição mais apagadas
   const steps = [
     {
       label: "Solicitado",
-      statuses: [
-        StudyStatus.PENDENTE,
-        StudyStatus.REJEITADO,
-        StudyStatus.EM_ANALISE,
-      ],
+      statuses: [StudyStatus.PENDENTE, StudyStatus.EM_ANALISE],
+      dimmed: false,
     },
-    { label: "Validado", statuses: [StudyStatus.AGUARDANDO_EXECUCAO] },
+    {
+      label: "Rejeitado",
+      statuses: [StudyStatus.REJEITADO],
+      dimmed: true,
+    },
+    {
+      label: "Validado",
+      statuses: [StudyStatus.VALIDADO, StudyStatus.AGUARDANDO_EXECUCAO],
+      dimmed: false,
+    },
     {
       label: "Executando",
-      statuses: [StudyStatus.EM_EXECUCAO, StudyStatus.CONTROLE_QUALIDADE],
+      statuses: [StudyStatus.EM_EXECUCAO],
+      dimmed: false,
     },
-    { label: "Concluído", statuses: [StudyStatus.CONCLUIDO] },
+    {
+      label: "Aguard. Info",
+      statuses: [StudyStatus.AGUARDANDO_INFORMACAO],
+      dimmed: true,
+    },
+    {
+      label: "CQ",
+      statuses: [StudyStatus.CONTROLE_QUALIDADE, StudyStatus.ENVIADO_SEM_CQ],
+      dimmed: false,
+    },
+    {
+      label: "Concluído",
+      statuses: [StudyStatus.CONCLUIDO],
+      dimmed: false,
+    },
   ];
 
   let currentStepIdx = -1;
@@ -58,32 +80,34 @@ const buildStepperMjml = (status?: StudyStatus) => {
     }
   });
 
-  // Se concluído, marca todos como concluídos
-  if (status === StudyStatus.CONCLUIDO) currentStepIdx = 3;
+  if (status === StudyStatus.CONCLUIDO) currentStepIdx = steps.length - 1;
 
   return `
-    <mj-section background-color="#ffffff" padding="0 32px 32px 32px">
+    <mj-section background-color="#ffffff" padding="0 24px 32px 24px">
       <mj-group width="100%">
         ${steps
       .map((step, idx) => {
-        const isCompleted =
-          idx < currentStepIdx || status === StudyStatus.CONCLUIDO;
-        const isActive =
-          idx === currentStepIdx && status !== StudyStatus.CONCLUIDO;
-        const color = isCompleted
+        const isCompleted = idx < currentStepIdx || status === StudyStatus.CONCLUIDO;
+        const isActive = idx === currentStepIdx && status !== StudyStatus.CONCLUIDO;
+        const isDimmed = step.dimmed && !isCompleted && !isActive;
+
+        const baseColor = isCompleted
           ? "#10b981"
           : isActive
             ? "#f97316"
             : "#cbd5e1";
-        const circleIcon = isCompleted ? "●" : isActive ? "○" : "○";
+        const color = isDimmed ? "#d1d5db" : baseColor;
+        const opacity = isDimmed ? "opacity: 0.5;" : "";
+        const icon = isCompleted ? "✅" : isActive ? "🔄" : "○";
+        const fontWeight = isCompleted || isActive ? "900" : "600";
 
         return `
-            <mj-column width="25%">
+            <mj-column width="${(100 / steps.length).toFixed(1)}%">
               <mj-text align="center" padding="0">
-                <div style="font-size: 14px; color: ${color}; font-weight: 900; margin-bottom: 4px;">${circleIcon}</div>
-                <div style="font-size: 8px; color: ${color}; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">${step.label}</div>
+                <div style="font-size: 14px; color: ${color}; font-weight: ${fontWeight}; margin-bottom: 2px; ${opacity}">${icon}</div>
+                <div style="font-size: 7px; color: ${color}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; ${opacity}">${step.label}</div>
               </mj-text>
-              <mj-divider border-width="3px" border-color="${color}" padding="10px 0" />
+              <mj-divider border-width="2px" border-color="${color}" padding="6px 0" />
             </mj-column>
           `;
       })
@@ -101,6 +125,7 @@ const buildRefinedHtmlTemplate = (
   attachments: string[] = [],
   status?: StudyStatus,
   ctaUrl: string = "https://naturgy-apr-portal.web.app",
+  attachmentPaths?: string[],
 ) => {
   const sectionsMjml = sections
     .map(
@@ -116,8 +141,8 @@ const buildRefinedHtmlTemplate = (
           .map(
             (item) => `
             <tr>
-              <td style="padding: 10px 0; color: #94a3b8; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px;">${item.label}</td>
-              <td style="padding: 10px 0; color: #1e293b; font-weight: 700; text-align: right;">${item.value}</td>
+              <td style="padding: 10px 0; color: #475569; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px;">${item.label}</td>
+              <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${item.value}</td>
             </tr>
           `,
           )
@@ -138,14 +163,17 @@ const buildRefinedHtmlTemplate = (
         <mj-text color="#c2410c" font-size="11px" font-weight="900" text-transform="uppercase" letter-spacing="0.1em" align="center">
           📦 Documentos e Anexos Vinculados
         </mj-text>
-        <mj-text align="center">
+        <mj-text align="center" color="#9a3412" font-size="12px" font-weight="800">
           ${attachments
         .map(
-          (att) => `
-            <span style="background-color: #ffffff; color: #9a3412; padding: 8px 16px; border-radius: 12px; font-size: 12px; font-weight: 800; display: inline-block; margin: 4px; border: 1px solid #ffedd5;">
-              📎 ${att}
-            </span>
-          `,
+          (att, idx) => {
+            const hasPath = attachmentPaths && attachmentPaths[idx] && attachmentPaths[idx].trim().length > 0;
+            if (hasPath) {
+              const filePath = attachmentPaths[idx];
+              return `<a href="http://localhost:3001/api/folders/serve-file?path=${encodeURIComponent(filePath)}" style="background-color: #ffffff; color: #9a3412; padding: 8px 16px; border-radius: 12px; font-size: 12px; font-weight: 800; display: inline-block; margin: 4px; border: 1px solid #ffedd5; text-decoration: none;">📎 ${att}</a>`;
+            }
+            return `<span style="background-color: #ffffff; color: #9a3412; padding: 8px 16px; border-radius: 12px; font-size: 12px; font-weight: 800; display: inline-block; margin: 4px; border: 1px solid #ffedd5;">📎 ${att}</span>`;
+          },
         )
         .join("")}
         </mj-text>
@@ -196,22 +224,17 @@ const buildRefinedHtmlTemplate = (
   </mj-head>
   <mj-body background-color="#f8fafc" width="600px">
     <mj-wrapper padding="40px 10px">
-      <mj-section background-color="#ffffff" padding="0" border-radius="32px 32px 0 0" css-class="premium-header">
+      <mj-section background-color="#004080" padding="0" border-radius="32px 32px 0 0">
         <mj-column padding="40px 32px">
           <mj-text color="#ffffff" font-size="26px" font-weight="900" text-transform="uppercase" letter-spacing="-0.04em" line-height="1.1">
             ${stylizedTitle}
-          </mj-text>
-          <mj-text color="#bfdbfe" font-size="10px" font-weight="900" text-transform="uppercase" letter-spacing="0.2em" padding-top="12px">
-            <span style="background: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);">
-              Portal Técnico APR • Oficial
-            </span>
           </mj-text>
         </mj-column>
       </mj-section>
 
       <mj-section background-color="#ffffff" padding="32px 32px 0 32px">
         <mj-column background-color="#f1f5f9" border-radius="20px" padding="24px" border="1px solid #e2e8f0">
-          <mj-text color="#334155" font-size="15px" line-height="1.6" font-weight="500" padding="0">
+          <mj-text color="#1e293b" font-size="15px" line-height="1.6" font-weight="500" padding="0">
             ${stylizedIntro}
           </mj-text>
         </mj-column>
@@ -238,12 +261,8 @@ const buildRefinedHtmlTemplate = (
         
         <mj-section padding-top="40px" border-top="2px solid #f1f5f9">
           <mj-column background-color="#f8fafc" border-radius="20px" padding="24px" border="1px solid #f1f5f9">
-            <mj-text color="#64748b" font-size="11px" line-height="1.8" font-weight="600" text-transform="uppercase" letter-spacing="0.05em">
+            <mj-text color="#475569" font-size="11px" line-height="1.8" font-weight="600" text-transform="uppercase" letter-spacing="0.05em">
               ${footerText.join("<br/>")}
-            </mj-text>
-            <mj-divider border-width="1px" border-color="#e2e8f0" padding-top="16px" />
-            <mj-text color="#94a3b8" font-size="9px" font-weight="800" text-transform="uppercase" letter-spacing="0.3em" align="center">
-              © ${new Date().getFullYear()} NATURGY PORTAL TÉCNICO
             </mj-text>
           </mj-column>
         </mj-section>
@@ -289,9 +308,11 @@ export const EmailService = {
         : "Nenhum arquivo anexado";
 
     const studyRef = request.studyNumber?.trim();
+    const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
       recipientEmail: adminEmail,
       recipientName: "Administrador",
+      ccEmail: ccBase,
       subject: `Solicitação de Estudo Nº ${studyRef || request.id}`,
       body: `🔔 NOVA SOLICITAÇÃO REGISTRADA
 ───────────────────────────────────────────────────────────
@@ -329,8 +350,7 @@ ${attachmentList}
 
 Atenciosamente,
 ${safeName(request.requesterName) || "Solicitante"}
-${request.requesterArea || ""}
-Naturgy - Portal Técnico APR`,
+${request.requesterArea || ""}`,
       htmlBody: buildRefinedHtmlTemplate(
         "🔔 Nova Solicitação de APR Registrada",
         "Prezada Equipe APR,\nUma nova solicitação de Análise de Planificação de Rede foi gerada no sistema.",
@@ -397,10 +417,11 @@ Naturgy - Portal Técnico APR`,
           "Atenciosamente,",
           "<strong>" + (safeName(request.requesterName) || "Solicitante") + "</strong>",
           request.requesterArea || "",
-          "<strong>Naturgy - Portal Técnico APR</strong>",
         ],
         attachmentNames,
         request.status,
+        undefined,
+        attachmentPaths,
       ),
       attachments: attachmentNames,
       attachmentPaths: attachmentPaths,
@@ -422,12 +443,13 @@ Naturgy - Portal Técnico APR`,
       responsibleName || "Equipe GECAT - Naturgy";
     const signerRole = roleDescription || "Equipe GECAT - Naturgy";
     const studyRef = request.studyNumber?.trim();
+    const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
       senderEmail: senderEmail,
       senderName: signerName,
-      ccEmail: SYSTEM_EMAIL,
+      ccEmail: ccBase,
       subject: `✅ Solicitação Aprovada - Estudo Nº ${studyRef || request.id}`,
       body: `✅ SOLICITAÇÃO APROVADA - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -510,12 +532,13 @@ ${signerRole}`,
       responsibleName || "Equipe GECAT - Naturgy";
     const signerRole = roleDescription || "Equipe GECAT - Naturgy";
     const studyRef = request.studyNumber?.trim();
+    const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
       senderEmail: senderEmail,
       senderName: signerName,
-      ccEmail: SYSTEM_EMAIL,
+      ccEmail: ccBase,
       subject: `📢 Solicitação Requer Revisão - Estudo Nº ${studyRef || request.id}`,
       body: `📢 SOLICITAÇÃO REQUER REVISÃO - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -617,12 +640,13 @@ ${signerRole}`,
     roleDescription?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
+    const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
       senderEmail: analystEmail,
       senderName: analystName,
-      ccEmail: SYSTEM_EMAIL,
+      ccEmail: ccBase,
       subject: `⚙️ Estudo em Execução - Estudo Nº ${studyRef || request.id}`,
       body: `⚙️ ESTUDO EM EXECUÇÃO - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -682,12 +706,13 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
     roleDescription?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
+    const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
       senderEmail: analystEmail,
       senderName: analystName,
-      ccEmail: SYSTEM_EMAIL,
+      ccEmail: ccBase,
       subject: `🔍 Estudo em Controle de Qualidade - Estudo Nº ${studyRef || request.id}`,
       body: `🔍 ESTUDO EM CONTROLE DE QUALIDADE - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -750,12 +775,13 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
     roleDescription?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
+    const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
       senderEmail: analystEmail,
       senderName: analystName,
-      ccEmail: SYSTEM_EMAIL,
+      ccEmail: ccBase,
       subject: `📩 Solicitação de Informações - Estudo Nº ${studyRef || request.id}`,
       body: `📩 SOLICITAÇÃO DE INFORMAÇÕES - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -837,12 +863,13 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
     holdResponse?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
+    const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
       senderEmail: analystEmail,
       senderName: analystName,
-      ccEmail: SYSTEM_EMAIL,
+      ccEmail: ccBase,
       subject: `📨 Informações Recebidas - Estudo Nº ${studyRef || request.id}`,
       body: `📨 INFORMAÇÕES RECEBIDAS - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -909,6 +936,7 @@ Equipe GECAT - Naturgy`,
     roleDescription?: string,
     respostaFileNames?: string[],
     additionalCCs?: string,
+    attachmentPaths?: string[],
   ): EmailNotificationData => {
     const signerName =
       responsibleName || roleDescription || "Equipe GECAT - Naturgy";
@@ -916,14 +944,21 @@ Equipe GECAT - Naturgy`,
     const completionDate = request.completedAt 
       ? safeFormatDate(request.completedAt)
       : new Date().toLocaleDateString('pt-BR');
+    // FIX Bug 10: Adicionar "Cópia" no assunto quando for envio de cópia
+    const copyPrefix = (request as any).isCopy ? '📋 Cópia - ' : '';
     
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
       senderEmail: senderEmail,
       senderName: signerName,
-      ccEmail: additionalCCs ? `${SYSTEM_EMAIL}; ${additionalCCs}` : SYSTEM_EMAIL,
-      subject: `🎉 Estudo Concluído - Estudo Nº ${studyRef || request.id}`,
+      ccEmail: (() => {
+        const parts = [SYSTEM_EMAIL];
+        if (request.additionalCCs) parts.push(request.additionalCCs);
+        if (additionalCCs) parts.push(additionalCCs);
+        return parts.join('; ');
+      })(),
+      subject: `${copyPrefix}🎉 Estudo Concluído - Estudo Nº ${studyRef || request.id}`,
       body: `🎉 ESTUDO CONCLUÍDO - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1023,9 +1058,12 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
           "<strong>" + signerName + "</strong>",
           "<strong>" + (roleDescription || 'Equipe GECAT - Naturgy') + "</strong>",
         ],
-        [],
+        (attachmentPaths || []).map(fp => fp.split(/[\\/]/).pop() || fp),
         StudyStatus.CONCLUIDO,
+        undefined,
+        attachmentPaths,
       ),
+      attachmentPaths: attachmentPaths || [],
     };
   },
 
@@ -1052,7 +1090,7 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
       recipientName: recipientName || 'Equipe GECAT - Naturgy',
       senderEmail: analystEmail,
       senderName: analystName,
-      ccEmail: SYSTEM_EMAIL,
+      ccEmail: request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL,
       subject: `🔍 Solicitação de Controle de Qualidade - Estudo Nº ${studyRef || request.id}`,
       body: `🔍 SOLICITAÇÃO DE CONTROLE DE QUALIDADE - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1127,7 +1165,7 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
       recipientName: safeName(request.requesterName),
       senderEmail: analystEmail,
       senderName: analystName,
-      ccEmail: SYSTEM_EMAIL,
+      ccEmail: request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL,
       subject: `📋 Resposta Antecipada do Estudo Nº ${studyRef || request.id}`,
       body: `📋 RESPOSTA ANTECIPADA DO ESTUDO - Estudo Nº ${studyRef || request.id}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1455,7 +1493,7 @@ ${signerRole}`,
     return {
       recipientEmail: userEmail,
       recipientName: userName,
-      subject: `Código de Segurança: ${resetCode} - Portal Técnico APR`,
+      subject: `Redefinição de Senha - Portal Técnico APR`,
       body: `🔐 REDEFINIÇÃO DE SENHA
 ───────────────────────────────────────────────────────────
 Prezado(a) ${userName},
@@ -1489,46 +1527,11 @@ Naturgy`,
         ],
         [
           "Se você não solicitou esta redefinição, sinta-se à vontade para ignorar este e-mail.",
-          "<strong>Naturgy - Portal Técnico APR</strong>",
         ],
       ),
     };
   },
 
-  /**
-   * Exibe uma tela de preview de email para o usuário enviar
-   */
-  showEmailPreview: (emailData: EmailNotificationData) => {
-    const subject = `ASSUNTO: ${emailData.subject}`;
-    const from = `DE: ${emailData.senderEmail || SYSTEM_EMAIL}`;
-    const to = `PARA: ${emailData.recipientEmail}`;
-
-    const attachmentsList =
-      emailData.attachments && emailData.attachments.length > 0
-        ? `\nANEXOS: ${emailData.attachments.map((a, i) => `\n  ${i + 1}. ${a}`).join("")}`
-        : "";
-
-    const preview = `
-═══════════════════════════════════════════════════════════
-PREVIEW DE E-MAIL
-═══════════════════════════════════════════════════════════
-${from}
-${to}
-${subject}
-${attachmentsList}
-
-───────────────────────────────────────────────────────────
-${emailData.body}
-═══════════════════════════════════════════════════════════
-    `;
-
-    return preview;
-  },
-
-  /**
-   * Abre o cliente de email padrão (Outlook/Gmail/etc) com o email pré-preenchido
-   * Funciona via mailto: link no navegador/Electron
-   */
   /**
    * Converte EmailNotificationData para formato .eml
    */
@@ -1613,22 +1616,52 @@ ${emailData.body}
               message: `Draft de email aberto no cliente padrão`,
             };
           }
-          console.warn("Electron IPC falhou, usando fallback EML download...");
+          console.warn("Electron IPC falhou, usando fallback...");
         } catch (ipcError) {
           console.warn("API Electron falhou:", ipcError);
         }
       }
 
       // ═══════════════════════════════════════════════════════════
-      // PATH 2: Web → Mailto link (Apenas Texto)
-      // Abre a janela de "Novo Email" do sistema instantaneamente.
-      // E-mail gerado sem arquivos HTML/EML extras, conforme solicitado.
+      // PATH 2: Python/Outlook API → Abre email com HTML no Outlook
       // ═══════════════════════════════════════════════════════════
+      try {
+        const response = await fetch('/api/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: emailData.recipientEmail,
+            cc: emailData.ccEmail || '',
+            subject: emailData.subject,
+            htmlBody: emailData.htmlBody || emailData.body,
+            senderName: emailData.senderName || '',
+            attachments: emailData.attachmentPaths || [],
+          }),
+        });
 
+        const result = await response.json();
+
+        if (result.success) {
+          console.log(
+            "%c📧 EMAIL ABERTO NO OUTLOOK VIA PYTHON",
+            "color: #10b981; font-weight: bold; font-size: 14px",
+          );
+          return {
+            success: true,
+            message: `Email aberto no Outlook com sucesso.`,
+          };
+        }
+        console.warn("[EmailService] Python/Outlook falhou:", result.message);
+      } catch (apiError) {
+        console.warn("[EmailService] API /api/email/send falhou:", apiError);
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // PATH 3: Fallback → Mailto link (com suporte a CC)
+      // ═══════════════════════════════════════════════════════════
       const to = encodeURIComponent(emailData.recipientEmail);
       const subject = encodeURIComponent(emailData.subject);
 
-      // Sanitiza o texto (remove quebras muito complexas ou tags html)
       const plainBody = emailData.body
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<\/p>/gi, '\n\n')
@@ -1636,11 +1669,11 @@ ${emailData.body}
         .replace(/&nbsp;/g, ' ');
 
       const body = encodeURIComponent(plainBody);
-      const mailtoLink = `mailto:${to}?subject=${subject}&body=${body}`;
+      const ccParam = emailData.ccEmail ? `&cc=${encodeURIComponent(emailData.ccEmail)}` : '';
+      const mailtoLink = `mailto:${to}?subject=${subject}&body=${body}${ccParam}`;
 
-      // FIX Bug 2: Clicar diretamente sem setTimeout para manter user gesture
-      console.log("[EmailService] Triggering mailto...");
-      
+      console.log("[EmailService] Triggering mailto fallback...");
+
       const link = document.createElement("a");
       link.href = mailtoLink;
       link.id = "mailto-temp-link";
@@ -1651,8 +1684,8 @@ ${emailData.body}
       }, 200);
 
       console.log(
-        "%c📧 MAILTO LINK ACIONADO NO NAVEGADOR",
-        "color: #0078D4; font-weight: bold; font-size: 14px",
+        "%c📧 MAILTO LINK ACIONADO NO NAVEGADOR (FALLBACK)",
+        "color: #f59e0b; font-weight: bold; font-size: 14px",
       );
 
       return {
@@ -1660,7 +1693,7 @@ ${emailData.body}
         message: `Cliente de e-mail padrão aberto com sucesso.`,
       };
     } catch (error) {
-      console.error("Erro ao gerar EML:", error);
+      console.error("Erro ao enviar e-mail:", error);
       return {
         success: false,
         message: `Erro ao enviar e-mail: ${error instanceof Error ? error.message : "Erro desconhecido"}`,
@@ -1668,67 +1701,4 @@ ${emailData.body}
     }
   },
 
-  /**
-   * Método unificado de envio de email.
-   * Delega para openInOutlook que decide o melhor caminho (Resend web ou EML desktop).
-   */
-  send: async (
-    emailData: EmailNotificationData,
-  ): Promise<{ success: boolean; message: string }> => {
-    return await EmailService.openInOutlook(emailData);
-  },
-
-  /**
-   * Valida se um usuário tem acesso a um arquivo específico
-   * Solicitantes só podem acessar arquivos em "Solicitação" e "Resposta"
-   */
-  canUserAccessFile: (
-    filePath: string,
-    userRole: UserRole,
-    userEmail?: string,
-    requestOwnerId?: string,
-  ): boolean => {
-    // Admin e Analista têm acesso total
-    if (userRole === UserRole.ADM || userRole === UserRole.ANALISTA) {
-      return true;
-    }
-
-    // Solicitante só pode acessar pastas "Solicitação" e "Resposta"
-    if (userRole === UserRole.SOLICITANTE) {
-      const normalizedPath = filePath.toLowerCase().replace(/\\/g, "/");
-      const allowedFolders = ["solicitação", "resposta"];
-
-      // Verificar se o caminho contém uma das pastas permitidas
-      const hasAllowedFolder = allowedFolders.some(
-        (folder) =>
-          normalizedPath.includes(`/${folder}/`) ||
-          normalizedPath.includes(`\\${folder}\\`) ||
-          new RegExp(`[/\\\\]${folder}[/\\\\]`).test(normalizedPath),
-      );
-
-      return hasAllowedFolder;
-    }
-
-    return false;
-  },
-
-  /**
-   * Filtra lista de arquivos baseado no acesso do usuário
-   */
-  filterAccessibleFiles: (
-    files: Array<{ name: string; path: string }>,
-    userRole: UserRole,
-  ): Array<{ name: string; path: string }> => {
-    if (userRole === UserRole.ADM || userRole === UserRole.ANALISTA) {
-      return files;
-    }
-
-    if (userRole === UserRole.SOLICITANTE) {
-      return files.filter((file) =>
-        EmailService.canUserAccessFile(file.path || file.name, userRole),
-      );
-    }
-
-    return [];
-  },
 };

@@ -3,7 +3,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { FormType, FormData, StudyStatus, User, UserRole } from '../types/types';
 import { FORM_OPTIONS } from '../constants/constants';
-import { getGMT3ISOString, isWithinLast12Months, toTitleCase, isAssignedToMe, formatDateTimeBR } from '../utils/utils';
+import { getGMT3ISOString, toTitleCase, isAssignedToMe, formatDateTimeBR } from '../utils/utils';
 import { getCompanyByCity } from '../utils/cityCompanyMapping';
 import { FormFO01 } from './FormFO01';
 import { FormFO02 } from './FormFO02';
@@ -54,6 +54,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
       requesterArea: '',
       phone: '',
       email: '',
+      additionalCCs: '',
       gridDataFO02: {
         residenciais: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
         comerciais: { atuais: '', y2: '', y5: '', y20: '', totalQ: '' },
@@ -254,7 +255,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
   // Debounced backend duplicate check
   useEffect(() => {
     // Skip if already decided or read-only
-    if (readOnly || duplicateDecision) return;
+    if (readOnly || duplicateDecision || initialData?.studyNumber) return;
 
     // Only check if we have enough info (address + city + title)
     if (!formData.address || !formData.city || !formData.studyTitle) {
@@ -316,7 +317,7 @@ export const FormContainer: React.FC<FormContainerProps> = ({
 
   useEffect(() => {
     // Local duplicate check fallback - show modal regardless of status
-    if (precedentStudy && !readOnly && !duplicateDecision && !backendPrecedentStudy) {
+    if (precedentStudy && !readOnly && !duplicateDecision && !backendPrecedentStudy && !initialData?.studyNumber) {
       setShowDuplicateModal(true);
     }
   }, [precedentStudy, readOnly, duplicateDecision, backendPrecedentStudy]);

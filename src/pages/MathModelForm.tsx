@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { User, StudyStatus, UserRole } from '../types/types';
+import { User, UserRole } from '../types/types';
 import { useDialog } from '../components/AppDialog';
 import { PRESSURE_BASES } from '../constants/constants';
 
@@ -182,7 +182,7 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
       const res = await fetch(`/api/math-models/check-idsigep/${cleaned}`);
       const data = await res.json();
       if (data.exists) {
-        setIdsigepError('Este ID.MODELO já está cadastrado');
+        setIdsigepError('Este modelo já está cadastrado');
         setCheckingIdsigep(false);
         return false;
       }
@@ -415,8 +415,8 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
         <button
           onClick={() => activeTab === 1 && handlePrevTab()}
           className={`px-4 py-2 rounded-lg text-[11px] font-bold transition-all ${activeTab === 0
-              ? 'bg-[#004080] text-white'
-              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+            ? 'bg-[#004080] text-white'
+            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
             }`}
         >
           <i className="fa-solid fa-database text-[9px] mr-1"></i>
@@ -426,8 +426,8 @@ export const MathModelForm: React.FC<MathModelFormProps> = ({
         <button
           onClick={() => activeTab === 0 && handleNextTab()}
           className={`px-4 py-2 rounded-lg text-[11px] font-bold transition-all ${activeTab === 1
-              ? 'bg-[#004080] text-white'
-              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+            ? 'bg-[#004080] text-white'
+            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
             }`}
         >
           <i className="fa-solid fa-check-double text-[9px] mr-1"></i>

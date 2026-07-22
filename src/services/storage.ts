@@ -166,6 +166,22 @@ class StorageManager {
     return this.provider.updateUserPassword(email, hash);
   }
 
+  async getAlwaysCC(): Promise<string[]> {
+    try {
+      const res = await fetch('/api/always-cc');
+      if (res.ok) return await res.json();
+    } catch { /* ignore */ }
+    return [];
+  }
+
+  async saveAlwaysCC(emails: string[]): Promise<void> {
+    await fetch('/api/always-cc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emails }),
+    });
+  }
+
   setProvider(provider: StorageProvider) {
     this.provider = provider;
   }

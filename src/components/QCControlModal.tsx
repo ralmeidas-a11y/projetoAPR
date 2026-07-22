@@ -60,6 +60,16 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [inlineAlert, setInlineAlert] = useState<{ type: 'error' | 'warning'; message: string } | null>(null);
   const [qcFiles, setQcFiles] = useState<File[]>([]);
+  const [storageFiles, setStorageFiles] = useState<any[]>([]);
+
+  // Load files from storage when in readOnly mode (Bug 6 fix)
+  useEffect(() => {
+    if (readOnly && data.id) {
+      StorageService.getRequestFiles(data.id, 'Supervisor')
+        .then(files => setStorageFiles(files.filter((f: any) => f.name !== '.keep')))
+        .catch(() => {});
+    }
+  }, [readOnly, data.id]);
 
   const toggleGroup = (studyNum: string) => {
     setExpandedGroups(prev => ({ ...prev, [studyNum]: !prev[studyNum] }));
@@ -610,28 +620,56 @@ export const QCControlModal: React.FC<QCControlModalProps> = ({
                     )}
                   </div>
                   <div className="p-3">
-                    {qcFiles.length === 0 ? (
-                      <div className="text-[10px] text-slate-400 font-bold italic text-center py-2">
-                        {readOnly ? 'Nenhum arquivo anexado pelo supervisor.' : 'Nenhum arquivo anexado.'}
-                      </div>
+                    {readOnly ? (
+                      storageFiles.length === 0 ? (
+                        <div className="text-[10px] text-slate-400 font-bold italic text-center py-2">
+                          Nenhum arquivo anexado pelo supervisor.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {storageFiles.map((file: any, idx: number) => (
+                            <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-100">
+                              <i className="fa-solid fa-file text-slate-400 text-[10px]"></i>
+                              <span className="text-[10px] text-slate-700 flex-1 truncate">{file.name}</span>
+                              <span className="text-[9px] text-slate-400">{file.size ? `${(file.size / 1024).toFixed(0)}KB` : ''}</span>
+                              {file.fullPath && (
+                                <a
+                                  href={file.fullPath}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[9px] text-blue-600 hover:text-blue-800 font-bold"
+                                >
+                                  <i className="fa-solid fa-external-link-alt"></i>
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )
                     ) : (
-                      <div className="space-y-2">
-                        {qcFiles.map((file, idx) => (
-                          <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-100">
-                            <i className="fa-solid fa-file text-slate-400 text-[10px]"></i>
-                            <span className="text-[10px] text-slate-700 flex-1 truncate">{file.name}</span>
-                            <span className="text-[9px] text-slate-400">{(file.size / 1024).toFixed(0)}KB</span>
-                            {!readOnly && (
-                              <button
-                                onClick={() => removeFile(idx)}
-                                className="text-slate-400 hover:text-red-500 transition-colors"
-                              >
-                                <i className="fa-solid fa-times text-[8px]"></i>
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                      qcFiles.length === 0 ? (
+                        <div className="text-[10px] text-slate-400 font-bold italic text-center py-2">
+                          Nenhum arquivo anexado.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {qcFiles.map((file, idx) => (
+                            <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-100">
+                              <i className="fa-solid fa-file text-slate-400 text-[10px]"></i>
+                              <span className="text-[10px] text-slate-700 flex-1 truncate">{file.name}</span>
+                              <span className="text-[9px] text-slate-400">{(file.size / 1024).toFixed(0)}KB</span>
+                              {!readOnly && (
+                                <button
+                                  onClick={() => removeFile(idx)}
+                                  className="text-slate-400 hover:text-red-500 transition-colors"
+                                >
+                                  <i className="fa-solid fa-times text-[8px]"></i>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )
                     )}
                   </div>
                 </div>

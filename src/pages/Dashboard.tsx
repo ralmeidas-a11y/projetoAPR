@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { StudyStatus, FormData, User, UserRole, QCControlData } from '../types/types';
-import { formatToLocalTime, formatDate, normalizeArea, isAssignedToMe, isSystemAssigned } from '../utils/utils';
+import { formatDate, normalizeArea, isAssignedToMe, isSystemAssigned } from '../utils/utils';
 import { FileBrowserModal } from '../components/FileBrowserModal';
 import { ValidationModal } from '../components/ValidationModal';
 import { QCControlModal } from '../components/QCControlModal';
@@ -298,7 +298,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const isMe = isAssignedToMe(req.assignedTo, user);
       const isSystem = isSystemAssigned(req.assignedTo);
       const isPRGC = req.assignedTo && req.assignedTo.toLowerCase() === 'prgc';
-      const isLockedForMe = req.assignedTo && !isMe && !isSystem && !isAdmin && !(isQC && req.status === StudyStatus.CONTROLE_QUALIDADE) && !isPRGC;
+      const isLockedForMe = req.assignedTo && !isMe && !isSystem && !isAdmin && !(isQC && (req.status === StudyStatus.CONTROLE_QUALIDADE || req.status === StudyStatus.ENVIADO_SEM_CQ)) && !isPRGC;
 
       if (isLockedForMe) {
         return (
@@ -359,7 +359,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         );
       }
 
-      if (req.status === StudyStatus.CONCLUIDO || req.status === StudyStatus.CONTROLE_QUALIDADE || req.status === StudyStatus.APROVADO_CQ || req.status === StudyStatus.REPROVADO_CQ) {
+      if (req.status === StudyStatus.CONCLUIDO || req.status === StudyStatus.CONTROLE_QUALIDADE || req.status === StudyStatus.APROVADO_CQ || req.status === StudyStatus.REPROVADO_CQ || req.status === StudyStatus.ENVIADO_SEM_CQ) {
         const isAprovedCQ = req.status === StudyStatus.APROVADO_CQ;
         const isAssignedToMeFlag = isAssignedToMe(req.assignedTo, user);
         const canFinalize = isAprovedCQ && isAssignedToMeFlag;
@@ -721,7 +721,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                           {renderActionButton(req)}
 
-                          {isQC && req.status === StudyStatus.CONTROLE_QUALIDADE && (
+                          {isQC && (req.status === StudyStatus.CONTROLE_QUALIDADE || req.status === StudyStatus.ENVIADO_SEM_CQ) && (
                             <button
                               onClick={() => setQcRequest(req)}
                               className="w-10 h-10 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-all flex items-center justify-center text-xs shadow-sm active:scale-95"
@@ -852,9 +852,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           initialData={validatingRequest}
           executors={executors}
           onConfirm={(assignedTo, data) => handleConfirmAction('validate', data, assignedTo)}
-          onReject={(reason) => {
+          onReject={validatingRequest.status !== StudyStatus.AGUARDANDO_EXECUCAO && validatingRequest.status !== StudyStatus.EM_EXECUCAO ? (reason) => {
             handleConfirmAction('reject', undefined, undefined, reason);
-          }}
+          } : undefined}
           onCancel={() => setValidatingRequest(null)}
           onOpenFiles={() => handleOpenFolder(validatingRequest)}
         />

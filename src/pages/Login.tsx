@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types/types';
 import { NaturgyBranding } from '../components/NaturgyBranding';
 import { StorageService } from '../services/storage';
+import { EmailService } from '../services/emailService';
 import bcrypt from 'bcryptjs';
 
 interface LoginProps {
@@ -18,6 +19,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
   const [isDetecting, setIsDetecting] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+
+  // Forgot password state
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'email' | 'code' | 'newPassword'>('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotCode, setForgotCode] = useState('');
+  const [forgotGeneratedCode, setForgotGeneratedCode] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
+  const [forgotUser, setForgotUser] = useState<User | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +134,96 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    setForgotError('');
+    setForgotSuccess('');
+    if (!forgotEmail.trim()) {
+      setForgotError('Informe seu e-mail ou GB.');
+      return;
+    }
+    try {
+      const users = await StorageService.getUsers();
+      const found = users.find(u =>
+        u.email.toLowerCase() === forgotEmail.trim().toLowerCase() ||
+        (u.sap && String(u.sap).trim() === forgotEmail.trim()) ||
+        (u.gb && String(u.gb).trim() === forgotEmail.trim())
+      );
+      if (!found) {
+        setForgotError('Usuário não encontrado.');
+        return;
+      }
+      setForgotUser(found);
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      setForgotGeneratedCode(code);
+
+      const emailData = EmailService.generatePasswordResetEmail(
+        found.email,
+        found.name || found.email,
+        code,
+      );
+      await EmailService.openInOutlook(emailData);
+
+      setForgotStep('code');
+      setForgotSuccess(`Código de 6 dígitos enviado para ${found.email}. Verifique sua caixa de entrada.`);
+    } catch {
+      setForgotError('Erro ao enviar e-mail de recuperação.');
+    }
+  };
+
+  const handleVerifyCode = () => {
+    setForgotError('');
+    if (forgotCode.trim() !== forgotGeneratedCode) {
+      setForgotError('Código incorreto. Tente novamente.');
+      return;
+    }
+    setForgotStep('newPassword');
+  };
+
+  const handleResetPassword = async () => {
+    setForgotError('');
+    if (!forgotNewPassword.trim() || !forgotConfirmPassword.trim()) {
+      setForgotError('Preencha todos os campos.');
+      return;
+    }
+    if (forgotNewPassword.length < 6) {
+      setForgotError('A senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setForgotError('As senhas não coincidem.');
+      return;
+    }
+    try {
+      const salt = bcrypt.genSaltSync(10);
+      const hash = bcrypt.hashSync(forgotNewPassword, salt);
+      await StorageService.saveUser({ ...forgotUser!, password: hash });
+      setForgotSuccess('Senha redefinida com sucesso! Faça login com a nova senha.');
+      setTimeout(() => {
+        setShowForgotModal(false);
+        setForgotStep('email');
+        setForgotEmail('');
+        setForgotCode('');
+        setForgotNewPassword('');
+        setForgotConfirmPassword('');
+        setForgotSuccess('');
+      }, 2000);
+    } catch {
+      setForgotError('Erro ao redefinir senha.');
+    }
+  };
+
+  const resetForgotModal = () => {
+    setShowForgotModal(false);
+    setForgotStep('email');
+    setForgotEmail('');
+    setForgotCode('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotError('');
+    setForgotSuccess('');
+    setForgotUser(null);
+  };
+
   return (
     <div className="min-h-screen bg-[#F0F4F8] flex flex-col font-sans selection:bg-orange-100">
       <div className="flex-grow flex items-center justify-center p-4 md:p-8">
@@ -167,6 +270,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
                     className="w-full pl-11 pr-4 py-4 bg-white/10 border border-white/20 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder-white/60 focus:border-white/60"
                   />
                 </div>
+              </div>
+
+              <div className="flex justify-end px-1">
+                <button
+                  type="button"
+                  onClick={() => { setShowForgotModal(true); setForgotEmail(email); }}
+                  className="text-[9px] font-black text-white/50 uppercase tracking-widest hover:text-orange-400 transition-colors"
+                >
+                  Esqueci a senha
+                </button>
               </div>
 
               <div className="flex items-center gap-3 px-2">
@@ -271,6 +384,167 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onCreateAccount }) => {
       <footer className="p-8 text-center">
         <p className="text-[10px] font-black text-[#004080]/30 uppercase tracking-[0.3em]">© 2026 Naturgy • APR Técnica</p>
       </footer>
+
+      {/* Modal Esqueci a Senha */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={resetForgotModal}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-[#004080] p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center">
+                    <i className="fa-solid fa-key"></i>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider">Redefinir Senha</h3>
+                    <p className="text-[10px] text-white/60 font-semibold uppercase tracking-widest">
+                      {forgotStep === 'email' && 'Passo 1 de 3 — Informe seu e-mail'}
+                      {forgotStep === 'code' && 'Passo 2 de 3 — Verifique o código'}
+                      {forgotStep === 'newPassword' && 'Passo 3 de 3 — Nova senha'}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={resetForgotModal} className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors">
+                  <i className="fa-solid fa-xmark text-sm"></i>
+                </button>
+              </div>
+              {/* Progress bar */}
+              <div className="mt-4 flex gap-2">
+                {['email', 'code', 'newPassword'].map((step, i) => (
+                  <div key={step} className={`flex-1 h-1 rounded-full transition-all ${i <= ['email', 'code', 'newPassword'].indexOf(forgotStep) ? 'bg-orange-400' : 'bg-white/20'}`} />
+                ))}
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              {forgotStep === 'email' && (
+                <>
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Informe o e-mail ou GB da conta para receber o código de recuperação.
+                  </p>
+                  <div className="relative">
+                    <i className="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()}
+                      placeholder="E-mail ou GB"
+                      className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-4 focus:ring-[#004080]/5 focus:bg-white focus:border-[#004080] transition-all text-sm"
+                    />
+                  </div>
+                </>
+              )}
+
+              {forgotStep === 'code' && (
+                <>
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Um código de 6 dígitos foi enviado para <strong className="text-[#004080]">{forgotUser?.email}</strong>. Verifique sua caixa de entrada.
+                  </p>
+                  <div className="relative">
+                    <i className="fa-solid fa-shield-halved absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
+                    <input
+                      type="text"
+                      autoFocus
+                      maxLength={6}
+                      value={forgotCode}
+                      onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, ''))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleVerifyCode()}
+                      placeholder="000000"
+                      className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-4 focus:ring-[#004080]/5 focus:bg-white focus:border-[#004080] transition-all text-sm tracking-[0.3em] font-mono text-center text-lg"
+                    />
+                  </div>
+                </>
+              )}
+
+              {forgotStep === 'newPassword' && (
+                <>
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Crie uma nova senha para sua conta.
+                  </p>
+                  <div className="relative">
+                    <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
+                    <input
+                      type="password"
+                      autoFocus
+                      value={forgotNewPassword}
+                      onChange={(e) => setForgotNewPassword(e.target.value)}
+                      placeholder="Nova senha (mín. 6 caracteres)"
+                      className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-4 focus:ring-[#004080]/5 focus:bg-white focus:border-[#004080] transition-all text-sm"
+                    />
+                  </div>
+                  <div className="relative">
+                    <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
+                    <input
+                      type="password"
+                      value={forgotConfirmPassword}
+                      onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()}
+                      placeholder="Confirmar nova senha"
+                      className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-4 focus:ring-[#004080]/5 focus:bg-white focus:border-[#004080] transition-all text-sm"
+                    />
+                  </div>
+                </>
+              )}
+
+              {forgotError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+                  <i className="fa-solid fa-circle-exclamation text-red-400 text-sm"></i>
+                  <p className="text-red-600 text-xs font-bold">{forgotError}</p>
+                </div>
+              )}
+
+              {forgotSuccess && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+                  <i className="fa-solid fa-circle-check text-green-500 text-sm"></i>
+                  <p className="text-green-700 text-xs font-bold">{forgotSuccess}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 bg-slate-50 flex gap-3">
+              <button
+                onClick={resetForgotModal}
+                className="flex-1 py-3 px-4 text-xs font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors bg-white rounded-xl border border-slate-100"
+              >
+                Cancelar
+              </button>
+              {forgotStep === 'email' && (
+                <button
+                  onClick={handleForgotPassword}
+                  className="flex-[2] py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-[#004080] text-white shadow-lg shadow-blue-900/20 hover:bg-[#003060] transition-all active:scale-[0.98]"
+                >
+                  Enviar Código
+                </button>
+              )}
+              {forgotStep === 'code' && (
+                <button
+                  onClick={handleVerifyCode}
+                  className="flex-[2] py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-[#004080] text-white shadow-lg shadow-blue-900/20 hover:bg-[#003060] transition-all active:scale-[0.98]"
+                >
+                  Verificar Código
+                </button>
+              )}
+              {forgotStep === 'newPassword' && (
+                <button
+                  onClick={handleResetPassword}
+                  className="flex-[2] py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-orange-500 text-white shadow-lg shadow-orange-200 hover:bg-orange-600 transition-all active:scale-[0.98]"
+                >
+                  Redefinir Senha
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

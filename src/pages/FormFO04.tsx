@@ -107,8 +107,9 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
             <ReadOnlyField label="Telefone" value={data.phone} colSpan={4} />
             <ReadOnlyField label="Área Solicitante" value={data.requesterArea} colSpan={12} />
             <ReadOnlyField label="E-mail" value={data.email} colSpan={12} />
+            {data.additionalCCs && <ReadOnlyField label="Cópia para" value={data.additionalCCs} colSpan={12} />}
           </div>
-        ) : (
+        ) : (<>
           <div className="p-4 grid grid-cols-12 gap-x-6 gap-y-3 bg-white">
             <div className="col-span-12 flex items-center gap-2">
               <label className={`${labelClass} w-32`}>Naturgy :</label>
@@ -157,7 +158,44 @@ export const FormFO04: React.FC<FormFO04Props> = ({ data, onChange, readOnly = f
               <input type="email" name="email" value={data.email || ''} onChange={handleInputChange} className={`${inputBaseClass} border border-slate-200 bg-white`} />
             </div>
           </div>
-        )}
+
+          {/* Cópia para terceiros */}
+          <div className="col-span-12 space-y-2">
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={data.additionalCCs !== undefined && data.additionalCCs !== ''}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      handleInputChange({ target: { name: 'additionalCCs', value: ' ' } } as any);
+                    } else {
+                      handleInputChange({ target: { name: 'additionalCCs', value: '' } } as any);
+                    }
+                  }}
+                  className="peer sr-only"
+                />
+                <div className="w-5 h-5 border-2 border-slate-200 rounded-lg bg-white peer-checked:bg-[#004080] peer-checked:border-[#004080] transition-all flex items-center justify-center">
+                  <i className={`fa-solid fa-check text-[10px] text-white transition-opacity ${data.additionalCCs ? 'opacity-100' : 'opacity-0'}`}></i>
+                </div>
+              </div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-[#004080] transition-colors">Adicionar cópia para outros usuários</span>
+            </label>
+            {data.additionalCCs !== undefined && data.additionalCCs !== '' && (
+              <div className="flex items-center gap-2 ml-8">
+                <i className="fa-solid fa-envelope text-slate-300 text-xs"></i>
+                <input
+                  type="text"
+                  name="additionalCCs"
+                  value={data.additionalCCs || ''}
+                  onChange={handleInputChange}
+                  className={`${inputBaseClass} border border-slate-200 bg-white text-xs flex-1`}
+                  placeholder="email1@exemplo.com; email2@exemplo.com"
+                />
+              </div>
+            )}
+          </div>
+        </>)}
       </section>
 
       {/* DADOS BASE DO ESTUDO */}

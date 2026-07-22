@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const PDFDocument = require('pdfkit');
+const { spawn } = require('child_process');
 require('dotenv').config();
 
 const serverStartTime = new Date();
@@ -568,6 +569,50 @@ IF COL_LENGTH('Users_Solicitantes', 'sap') IS NULL
         res.json({ success: true, ...systemConfigCache });
       } catch (err) {
         console.error('[Config] Error saving config:', err);
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    // 2.3 Always-CC Emails (destinatários permanentes em cópia)
+    const ALWAYS_CC_KEY = 'always_cc_emails';
+
+    app.get('/api/always-cc', async (req, res) => {
+      try {
+        const request = new sql.Request();
+        request.input('configKey', sql.VarChar, ALWAYS_CC_KEY);
+        const result = await request.query`
+          SELECT configValue FROM SystemConfig WHERE configKey = @configKey
+        `;
+        if (result.recordset.length > 0) {
+          res.json(JSON.parse(result.recordset[0].configValue));
+        } else {
+          res.json([]);
+        }
+      } catch (err) {
+        console.error('[AlwaysCC] Error fetching:', err);
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.post('/api/always-cc', async (req, res) => {
+      try {
+        const { emails } = req.body;
+        const request = new sql.Request();
+        request.input('configKey', sql.VarChar, ALWAYS_CC_KEY);
+        request.input('configValue', sql.VarChar, JSON.stringify(emails || []));
+        await request.query`
+          MERGE INTO SystemConfig AS target
+          USING (SELECT @configKey as configKey) AS source
+          ON target.configKey = source.configKey
+          WHEN MATCHED THEN
+            UPDATE SET configValue = @configValue, updatedAt = GETDATE()
+          WHEN NOT MATCHED THEN
+            INSERT (configKey, configValue, createdAt, updatedAt)
+            VALUES (@configKey, @configValue, GETDATE(), GETDATE());
+        `;
+        res.json({ success: true, emails: emails || [] });
+      } catch (err) {
+        console.error('[AlwaysCC] Error saving:', err);
         res.status(500).json({ success: false, error: err.message });
       }
     });
@@ -3644,6 +3689,181 @@ app.post('/api/folders/save-file-base64', async (req, res) => {
   } catch (err) {
     console.error('[SaveFileBase64] Error:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// LIST FILES in a physical directory
+// ═══════════════════════════════════════════════════════════════
+app.post('/api/folders/list-files', async (req, res) => {
+  try {
+    const { folderPath, prefix } = req.body;
+    if (!folderPath) {
+      return res.status(400).json({ success: false, error: 'folderPath is required' });
+    }
+    if (!fs.existsSync(folderPath)) {
+      return res.json({ success: true, files: [] });
+    }
+    let files = fs.readdirSync(folderPath);
+    if (prefix) {
+      files = files.filter(f => f.startsWith(prefix));
+    }
+    const filePaths = files.map(f => path.join(folderPath, f));
+    res.json({ success: true, files: filePaths });
+  } catch (err) {
+    console.error('[ListFiles] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SERVE FILE from physical directory (for email links)
+// ═══════════════════════════════════════════════════════════════
+app.get('/api/folders/serve-file', async (req, res) => {
+  try {
+    const filePath = req.query.path;
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    const stat = fs.statSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+      '.pdf': 'application/pdf',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.bmp': 'image/bmp',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.txt': 'text/plain',
+      '.csv': 'text/csv',
+      '.dwg': 'application/acad',
+      '.dxf': 'application/dxf',
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error('[ServeFile] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// EMAIL ENDPOINT - Python/Outlook Automation
+// ═══════════════════════════════════════════════════════════════
+
+let cachedPythonPath = null;
+
+function findPython() {
+  if (cachedPythonPath) return Promise.resolve(cachedPythonPath);
+
+  const candidates = ['python', 'python3', 'py'];
+  let checked = 0;
+
+  return new Promise((resolve) => {
+    candidates.forEach((cmd) => {
+      const test = spawn(cmd, ['--version']);
+      let output = '';
+      test.stdout.on('data', (d) => { output += d.toString(); });
+      test.stderr.on('data', (d) => { output += d.toString(); });
+      test.on('close', (code) => {
+        checked++;
+        if (!cachedPythonPath && code === 0 && output.toLowerCase().includes('python')) {
+          cachedPythonPath = cmd;
+        }
+        if (checked === candidates.length) {
+          resolve(cachedPythonPath);
+        }
+      });
+      test.on('error', () => {
+        checked++;
+        if (checked === candidates.length) {
+          resolve(cachedPythonPath);
+        }
+      });
+    });
+  });
+}
+
+app.post('/api/email/send', async (req, res) => {
+  try {
+    const { to, cc, subject, htmlBody, senderName, attachments, inlineImages } = req.body;
+
+    if (!to) {
+      return res.status(400).json({ success: false, message: 'Recipient (to) is required' });
+    }
+
+    const pythonPath = await findPython();
+    if (!pythonPath) {
+      return res.status(500).json({
+        success: false,
+        message: 'Python não encontrado. Instale Python 3 e pywin32 (pip install pywin32).'
+      });
+    }
+
+    // Always include logo as inline CID image
+    const logoPath = path.join(__dirname, '..', 'public', 'logo.png');
+    const allInlineImages = [{ path: logoPath, contentId: 'apr-logo' }];
+    if (inlineImages && Array.isArray(inlineImages)) {
+      allInlineImages.push(...inlineImages);
+    }
+
+    const scriptPath = path.join(__dirname, 'outlook_email.py');
+    const jsonData = JSON.stringify({ to, cc, subject, htmlBody, senderName, attachments: attachments || [], inlineImages: allInlineImages });
+
+    const child = spawn(pythonPath, ['-X', 'utf8', scriptPath], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => { stdout += data.toString('utf-8'); });
+    child.stderr.on('data', (data) => { stderr += data.toString('utf-8'); });
+
+    child.stdin.write(jsonData);
+    child.stdin.end();
+
+    const timeout = setTimeout(() => {
+      child.kill();
+      res.status(500).json({ success: false, message: 'Timeout ao executar Python/Outlook' });
+    }, 30000);
+
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      try {
+        const result = JSON.parse(stdout);
+        console.log(`[EmailService] Outlook result:`, result.message);
+        res.json(result);
+      } catch (parseErr) {
+        console.error('[EmailService] Python output:', stdout, stderr);
+        res.status(500).json({
+          success: false,
+          message: `Erro ao processar resposta do Python: ${stderr || stdout || 'Saída inválida'}`
+        });
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timeout);
+      console.error('[EmailService] Failed to spawn Python:', err.message);
+      res.status(500).json({
+        success: false,
+        message: `Erro ao executar Python: ${err.message}`
+      });
+    });
+
+  } catch (err) {
+    console.error('[EmailService] Endpoint error:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
