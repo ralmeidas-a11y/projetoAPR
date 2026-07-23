@@ -309,12 +309,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
 
       if (req.status === StudyStatus.AGUARDANDO_EXECUCAO || req.status === StudyStatus.EM_EXECUCAO || req.status === StudyStatus.ABERTO) {
+        const isAssignedToMeFlag = isAssignedToMe(req.assignedTo, user);
+        const canChangeToExecution = isAssignedToMeFlag && req.status === StudyStatus.AGUARDANDO_EXECUCAO;
         return (
           <div className="flex gap-2">
             <button
-              onClick={() => { try { onExecute(req); } catch (e) { console.error('Erro:', e); } }}
+              onClick={() => {
+                try { onExecute(req); } catch (e) { console.error('Erro:', e); }
+              }}
               className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#004080] to-blue-700 text-white hover:from-orange-500 hover:to-orange-600 transition-all flex items-center justify-center text-xs shadow-lg shadow-blue-500/30 active:scale-95"
-              title="Abrir Painel de Execução"
+              title={canChangeToExecution ? "Iniciar Execução e Abrir Painel" : "Abrir Painel de Execução"}
             >
               <i className="fa-solid fa-play"></i>
             </button>
@@ -361,8 +365,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       if (req.status === StudyStatus.CONCLUIDO || req.status === StudyStatus.CONTROLE_QUALIDADE || req.status === StudyStatus.APROVADO_CQ || req.status === StudyStatus.REPROVADO_CQ || req.status === StudyStatus.ENVIADO_SEM_CQ) {
         const isAprovedCQ = req.status === StudyStatus.APROVADO_CQ;
+        const isReprovadoCQ = req.status === StudyStatus.REPROVADO_CQ;
         const isAssignedToMeFlag = isAssignedToMe(req.assignedTo, user);
         const canFinalize = isAprovedCQ && isAssignedToMeFlag;
+        const canReopenExecution = isReprovadoCQ && isAssignedToMeFlag;
 
         // Se estiver aprovado pelo CQ, o "aviãozinho" é exclusivo do analista responsável
         // Outros usuários (não admin) veem o ícone de bloqueio
@@ -381,15 +387,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 if (canFinalize) {
                   onStatusUpdate(req.id, StudyStatus.CONCLUIDO);
                   showToast('Estudo Concluído e E-mail enviado!', 'success');
+                } else if (canReopenExecution) {
+                  onStatusUpdate(req.id, StudyStatus.EM_EXECUCAO);
+                  try { onExecute(req); } catch (e) { console.error('Erro:', e); }
                 } else {
                   try { onExecute(req); } catch (e) { console.error('Erro:', e); }
                 }
               }}
-              className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center text-xs shadow-sm active:scale-95 border ${canFinalize ? 'bg-indigo-600 text-white hover:bg-orange-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white'
+              className={`w-10 h-10 rounded-xl transition-all flex items-center justify-center text-xs shadow-sm active:scale-95 border ${canFinalize ? 'bg-indigo-600 text-white hover:bg-orange-500' : canReopenExecution ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white'
                 }`}
-              title={canFinalize ? "Clique para Finalizar e Enviar E-mail ao Solicitante" : "Visualizar Painel Técnico"}
+              title={canFinalize ? "Clique para Finalizar e Enviar E-mail ao Solicitante" : canReopenExecution ? "Reabrir Execução e Abrir Painel" : "Visualizar Painel Técnico"}
             >
-              <i className={`fa-solid ${canFinalize ? 'fa-paper-plane' : 'fa-eye'}`}></i>
+              <i className={`fa-solid ${canFinalize ? 'fa-paper-plane' : canReopenExecution ? 'fa-play' : 'fa-eye'}`}></i>
             </button>
             {req.status === StudyStatus.REPROVADO_CQ && (
               <button

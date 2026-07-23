@@ -9,6 +9,7 @@ interface MyRequestsProps {
   requests: FormData[];
   allRequests: FormData[];
   currentUser?: User;
+  allUsers?: User[];
   onNewRequest: () => void;
   onEditRequest: (request: FormData) => void;
   onCancelRequest: (id: string) => void;
@@ -21,7 +22,7 @@ interface MyRequestsProps {
 }
 
 export const MyRequests: React.FC<MyRequestsProps> = ({
-  requests, allRequests, currentUser, onNewRequest, onEditRequest, onCancelRequest, onViewRequest, onRequestRevision, onUpdateData, onInfoReceived,
+  requests, allRequests, currentUser, allUsers, onNewRequest, onEditRequest, onCancelRequest, onViewRequest, onRequestRevision, onUpdateData, onInfoReceived,
   autoOpenRequestId, onModalOpened
 }) => {
   const { showToast } = useDialog();
@@ -757,6 +758,7 @@ export const MyRequests: React.FC<MyRequestsProps> = ({
         <FileBrowserModal
           request={browsingRequest}
           user={currentUser!}
+          allUsers={allUsers}
           allRequests={requests}
           onClose={() => setBrowsingRequest(null)}
         />

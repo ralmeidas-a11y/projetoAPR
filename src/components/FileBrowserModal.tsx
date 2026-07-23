@@ -67,9 +67,11 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
 
   const categories = ['Solicitacao', 'Resposta', 'Calculos', 'Outros'];
   const availableCategories = useMemo(() => {
+    const isConcludedLike = selectedRevisionData.status === StudyStatus.CONCLUIDO
+      || selectedRevisionData.status === StudyStatus.ENVIADO_SEM_CQ;
     const base = isStaff
       ? categories
-      : categories.filter(c => c === 'Solicitacao' || (c === 'Resposta' && selectedRevisionData.status === StudyStatus.CONCLUIDO));
+      : categories.filter(c => c === 'Solicitacao' || (c === 'Resposta' && isConcludedLike));
 
     if (restrictToCategory) {
       return base.filter(c => c === restrictToCategory);
@@ -121,8 +123,71 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
     if (!requestId) return;
     setLoading(true);
     try {
+      // For Resposta category: import Mapa_* files from physical dir to DB first
+      if (activeCategory === 'Resposta') {
+        const reqData = selectedRevisionData;
+        if (reqData?.studyNumber && allUsers?.length > 0) {
+          const executor = allUsers.find(u =>
+            u.id === reqData.assignedTo ||
+            u.email?.toLowerCase() === reqData.assignedTo?.toLowerCase()
+          );
+          if (executor?.folderPath) {
+            try {
+              const cleanNum = reqData.studyNumber.replace(/^PROV-/, '');
+              if (cleanNum.length >= 10) {
+                const ano = cleanNum.substring(0, 4);
+                const seq = cleanNum.substring(4, 8);
+                const rev = cleanNum.substring(8, 10);
+                const studyFolderPath = `${executor.folderPath}\\${ano}\\${seq}\\R${rev}`;
+                await fetch('/api/files/import-mapas-to-db', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ requestId, folderPath: studyFolderPath }),
+                });
+              }
+            } catch (importErr) {
+              console.warn('[FileBrowserModal] Erro ao importar Mapas:', importErr);
+            }
+          }
+        }
+      }
+
       const result = await StorageService.getRequestFiles(requestId, activeCategory);
       const remoteFiles = result.filter(f => !f.name.startsWith('.')); // Ocultar .keep
+
+      // Load files from physical directory (executor's folderPath)
+      let fsFiles: any[] = [];
+      const reqData = selectedRevisionData;
+      if (reqData?.studyNumber && allUsers?.length > 0) {
+        const executor = allUsers.find(u =>
+          u.id === reqData.assignedTo ||
+          u.email?.toLowerCase() === reqData.assignedTo?.toLowerCase()
+        );
+        if (executor?.folderPath) {
+          try {
+            const fsRes = await fetch('/api/files/study-folder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userFolderPath: executor.folderPath,
+                studyNumber: reqData.studyNumber,
+                category: activeCategory,
+              }),
+            });
+            const fsData = await fsRes.json();
+            if (fsData.success && fsData.files) {
+              fsFiles = fsData.files;
+            }
+          } catch (fsErr) {
+            console.warn('[FileBrowserModal] Erro ao ler pasta física:', fsErr);
+          }
+        }
+      }
+
+      // Merge: DB files first, then physical files not already in DB
+      const normalize = (name: string) => (name || '').toLowerCase().replace(/[\s_\-\.]+/g, '');
+      const dbNames = new Set(remoteFiles.map((f: any) => normalize(f.name)));
+      const uniqueFs = fsFiles.filter((f: any) => !dbNames.has(normalize(f.name)));
 
       // Merging local files ONLY if looking at the "current" physical request being edited
       const isCurrentRequest = activeRevision === request.studyNumber;
@@ -135,16 +200,16 @@ export const FileBrowserModal: React.FC<FileBrowserModalProps> = ({
       // Filter out invalid/empty files from local state
       const validLocalFiles = localFiles.filter((f: any) => f && f.name && f.name !== '-');
 
-      const remoteNames = new Set(remoteFiles.map(f => f.name));
-      const filteredLocalFiles = validLocalFiles.filter((f: any) => !remoteNames.has(f.name));
+      const allRemoteNames = new Set([...remoteFiles, ...uniqueFs].map((f: any) => normalize(f.name)));
+      const filteredLocalFiles = validLocalFiles.filter((f: any) => !allRemoteNames.has(normalize(f.name)));
 
-      setFiles([...remoteFiles, ...filteredLocalFiles]);
+      setFiles([...remoteFiles, ...uniqueFs, ...filteredLocalFiles]);
     } catch (error) {
       console.error('Error loading files:', error);
     } finally {
       setLoading(false);
     }
-  }, [activeRevision, activeCategory, request.studyNumber, request.selectedFiles, request.categorizedFiles]);
+  }, [activeRevision, activeCategory, request.studyNumber, request.selectedFiles, request.categorizedFiles, requestId, selectedRevisionData, allUsers]);
 
   useEffect(() => {
     loadFiles();

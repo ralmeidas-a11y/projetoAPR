@@ -61,6 +61,16 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
   const [showPreQCModal, setShowPreQCModal] = useState(false);
   const [selectedQCAnalyst, setSelectedQCAnalyst] = useState('');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  // Find the executor's folderPath from allUsers (falls back to currentUser)
+  const executorUser = useMemo(() => {
+    if (!data.assignedTo) return currentUser;
+    const found = allUsers.find(u =>
+      u.id === data.assignedTo ||
+      u.email?.toLowerCase() === data.assignedTo?.toLowerCase()
+    );
+    return found || currentUser;
+  }, [data.assignedTo, allUsers, currentUser]);
   const [previewStudy, setPreviewStudy] = useState<FormData | null>(null);
   const [browsingRevision, setBrowsingRevision] = useState<FormData | null>(null);
   const [filePreview, setFilePreview] = useState<{ name: string; base64: string; mime: string } | null>(null);
@@ -561,15 +571,15 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
         const dbFiles = await StorageService.getRequestFiles(data.id, activeFolder);
         const filtered = dbFiles.filter((f: any) => f.name !== '.keep');
 
-        // 2. Load files from physical directory (if user has folderPath)
+        // 2. Load files from physical directory (if executor has folderPath)
         let fsFiles: any[] = [];
-        if (currentUser?.folderPath && data.studyNumber) {
+        if (executorUser?.folderPath && data.studyNumber) {
           try {
             const fsRes = await fetch('/api/files/study-folder', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                userFolderPath: currentUser.folderPath,
+                userFolderPath: executorUser.folderPath,
                 studyNumber: data.studyNumber,
                 category: activeFolder,
               }),
@@ -598,7 +608,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     };
     fetchFiles();
     return () => { isMounted = false; };
-  }, [activeFolder, data.id, data.studyNumber, currentUser?.folderPath]);
+  }, [activeFolder, data.id, data.studyNumber, executorUser?.folderPath]);
   // Consolidate estimatedDeliveryDate Logic and Repair Execution Dates
   useEffect(() => {
     let changed = false;
@@ -1176,6 +1186,16 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
     );
     if (!confirmed) return;
     handleUpdateStatus(StudyStatus.CONCLUIDO, { totalExecutionTime: elapsedTime });
+    onBack();
+  };
+  const handleQCApprove = (qcData: any) => {
+    handleUpdateStatus(StudyStatus.APROVADO_CQ, { qcData, totalExecutionTime: elapsedTime });
+    setShowQCModal(false);
+    onBack();
+  };
+  const handleQCReject = (qcData: any, reason: string) => {
+    handleUpdateStatus(StudyStatus.REPROVADO_CQ, { qcData, rejectionReason: reason, totalExecutionTime: elapsedTime });
+    setShowQCModal(false);
     onBack();
   };
   const handlePauseToggle = () => setIsPaused(prev => !prev);
@@ -2584,7 +2604,7 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
                   }`}
               >
                 <i className={`fa-solid ${data.qcData?.qcStatusCQ === 'Reprovado' ? 'fa-triangle-exclamation text-red-500' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'fa-check-circle text-green-500' : 'fa-plus text-[#004080]'}`}></i>
-                {data.qcData?.qcStatusCQ === 'Reprovado' ? 'Ver Motivo da Reprovação CQ' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'Ver Aprovação CQ' : 'Abrir Controle de Qualidade'}
+                {data.qcData?.qcStatusCQ === 'Reprovado' ? 'Ver Motivo da Reprovação CQ' : data.qcData?.qcStatusCQ === 'Aprovado' ? 'Ver Aprovação CQ' : revisionHistory.length > 0 ? 'Ver Histórico CQ' : 'Abrir Controle de Qualidade'}
               </li>
             </ul>
           </div>
@@ -3350,7 +3370,8 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
       {browsingRevision && (
         <FileBrowserModal
           request={browsingRevision}
-          user={{} as any} // User is not directly available here, but modal only needs it for role checks
+          user={currentUser || {} as any}
+          allUsers={allUsers}
           allRequests={allRequests}
           onClose={() => setBrowsingRevision(null)}
         />
@@ -3476,8 +3497,10 @@ export const TechnicalExecutionPanel: React.FC<TechnicalExecutionPanelProps> = (
           data={data}
           allUsers={allUsers}
           currentUser={currentUser}
-          readOnly={true}
+          readOnly={data.status !== StudyStatus.CONTROLE_QUALIDADE && data.status !== StudyStatus.ENVIADO_SEM_CQ}
           onClose={() => setShowQCModal(false)}
+          onApprove={handleQCApprove}
+          onReject={handleQCReject}
         />
       )}
       {showLocationPicker && (

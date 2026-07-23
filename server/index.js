@@ -3342,6 +3342,70 @@ app.post('/api/files/study-folder', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// IMPORT Mapa_* files from physical Resposta dir into DB blobs
+// Ensures Mapa_ files on disk are always registered in RequestAttachments
+// ═══════════════════════════════════════════════════════════════
+app.post('/api/files/import-mapas-to-db', async (req, res) => {
+  try {
+    const { requestId, folderPath } = req.body;
+    if (!requestId || !folderPath) {
+      return res.status(400).json({ success: false, error: 'requestId and folderPath are required' });
+    }
+
+    const respostaPath = path.join(folderPath, 'Resposta');
+    if (!fs.existsSync(respostaPath)) {
+      return res.json({ success: true, imported: 0, message: 'Resposta folder does not exist' });
+    }
+
+    // Get existing Mapa_ files in DB
+    const sqlReq = new sql.Request();
+    sqlReq.input('requestId', sql.VarChar, String(requestId));
+    const existing = await sqlReq.query(`
+      SELECT fileName FROM RequestAttachments 
+      WHERE requestId = @requestId AND category = 'Resposta' AND fileName LIKE 'Mapa_%'
+    `);
+    const existingNames = new Set(existing.recordset.map(r => r.fileName));
+
+    // Scan physical directory for Mapa_* files
+    const entries = fs.readdirSync(respostaPath, { withFileTypes: true });
+    const mapaFiles = entries.filter(e => e.isFile() && e.name.startsWith('Mapa_') && !existingNames.has(e.name));
+
+    let imported = 0;
+    for (const file of mapaFiles) {
+      try {
+        const filePath = path.join(respostaPath, file.name);
+        const buffer = fs.readFileSync(filePath);
+        const ext = path.extname(file.name).toLowerCase();
+        const mimeMap = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xls': 'application/vnd.ms-excel' };
+        const fileType = mimeMap[ext] || 'application/octet-stream';
+
+        const insReq = new sql.Request();
+        insReq.input('requestId', sql.VarChar, String(requestId));
+        insReq.input('fileName', sql.NVarChar, file.name);
+        insReq.input('fileContent', sql.VarBinary(sql.MAX), buffer);
+        insReq.input('fileType', sql.NVarChar, fileType);
+        insReq.input('category', sql.NVarChar, 'Resposta');
+        await insReq.query(`
+          INSERT INTO RequestAttachments (requestId, fileName, fileContent, fileType, category)
+          VALUES (@requestId, @fileName, @fileContent, @fileType, @category)
+        `);
+        imported++;
+      } catch (fileErr) {
+        console.warn(`[ImportMapas] Erro ao importar ${file.name}:`, fileErr.message);
+      }
+    }
+
+    if (imported > 0) {
+      console.log(`[ImportMapas] ${imported} arquivo(s) Mapa_* importado(s) para DB para requestId=${requestId}`);
+    }
+    res.json({ success: true, imported });
+  } catch (err) {
+    console.error('[ImportMapas] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Read a file from disk as base64 (for viewing in browser)
 app.post('/api/files/read', async (req, res) => {
   try {
@@ -3693,6 +3757,53 @@ app.post('/api/folders/save-file-base64', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// SYNC DB BLOBS → PHYSICAL DIRECTORY
+// Fetches files from RequestAttachments and writes them to disk
+// ═══════════════════════════════════════════════════════════════
+app.post('/api/requests/sync-files-to-disk', async (req, res) => {
+  try {
+    const { requestId, category, folderPath } = req.body;
+    if (!requestId || !folderPath) {
+      return res.status(400).json({ success: false, error: 'requestId and folderPath are required' });
+    }
+
+    const sqlReq = new sql.Request();
+    sqlReq.input('requestId', sql.VarChar, String(requestId));
+    let query = 'SELECT fileName, fileContent FROM RequestAttachments WHERE requestId = @requestId';
+    if (category) {
+      sqlReq.input('category', sql.NVarChar, category);
+      query += ' AND category = @category';
+    }
+    const result = await sqlReq.query(query);
+
+    if (result.recordset.length === 0) {
+      return res.json({ success: true, saved: 0, message: 'No files in DB for this request' });
+    }
+
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+
+    let saved = 0;
+    for (const file of result.recordset) {
+      try {
+        const filePath = path.join(folderPath, file.fileName);
+        fs.writeFileSync(filePath, file.fileContent);
+        saved++;
+      } catch (writeErr) {
+        console.warn(`[SyncFiles] Erro ao escrever ${file.fileName}:`, writeErr.message);
+      }
+    }
+
+    console.log(`[SyncFiles] ${saved}/${result.recordset.length} arquivo(s) salvos em ${folderPath}`);
+    res.json({ success: true, saved, total: result.recordset.length });
+  } catch (err) {
+    console.error('[SyncFiles] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
 // LIST FILES in a physical directory
 // ═══════════════════════════════════════════════════════════════
 app.post('/api/folders/list-files', async (req, res) => {
@@ -3792,8 +3903,9 @@ function findPython() {
 }
 
 app.post('/api/email/send', async (req, res) => {
+  let tempDir = null;
   try {
-    const { to, cc, subject, htmlBody, senderName, attachments, inlineImages } = req.body;
+    const { to, cc, subject, htmlBody, senderName, attachments, inlineImages, requestId, category } = req.body;
 
     if (!to) {
       return res.status(400).json({ success: false, message: 'Recipient (to) is required' });
@@ -3807,15 +3919,39 @@ app.post('/api/email/send', async (req, res) => {
       });
     }
 
-    // Always include logo as inline CID image
-    const logoPath = path.join(__dirname, '..', 'public', 'logo.png');
-    const allInlineImages = [{ path: logoPath, contentId: 'apr-logo' }];
-    if (inlineImages && Array.isArray(inlineImages)) {
-      allInlineImages.push(...inlineImages);
+    let finalAttachments = [...(attachments || [])];
+
+    // If no file paths provided but requestId is given, fetch files from DB and write to temp dir
+    if (finalAttachments.length === 0 && requestId) {
+      try {
+        const sqlReq = new sql.Request();
+        sqlReq.input('requestId', sql.VarChar, String(requestId));
+        let query = 'SELECT id, fileName, fileContent, fileType, category FROM RequestAttachments WHERE requestId = @requestId';
+        if (category) {
+          sqlReq.input('category', sql.NVarChar, category);
+          query += ' AND category = @category';
+        }
+        const result = await sqlReq.query(query);
+
+        if (result.recordset.length > 0) {
+          tempDir = path.join(__dirname, 'temp_email_attachments', requestId);
+          if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+          }
+          for (const file of result.recordset) {
+            const filePath = path.join(tempDir, file.fileName);
+            fs.writeFileSync(filePath, file.fileContent);
+            finalAttachments.push(filePath);
+          }
+          console.log(`[EmailService] Fetched ${result.recordset.length} file(s) from DB for requestId=${requestId}`);
+        }
+      } catch (dbErr) {
+        console.warn('[EmailService] Erro ao buscar anexos do banco:', dbErr.message);
+      }
     }
 
     const scriptPath = path.join(__dirname, 'outlook_email.py');
-    const jsonData = JSON.stringify({ to, cc, subject, htmlBody, senderName, attachments: attachments || [], inlineImages: allInlineImages });
+    const jsonData = JSON.stringify({ to, cc, subject, htmlBody, senderName, attachments: finalAttachments, inlineImages: inlineImages || [] });
 
     const child = spawn(pythonPath, ['-X', 'utf8', scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -3834,11 +3970,19 @@ app.post('/api/email/send', async (req, res) => {
 
     const timeout = setTimeout(() => {
       child.kill();
+      cleanupTemp();
       res.status(500).json({ success: false, message: 'Timeout ao executar Python/Outlook' });
     }, 30000);
 
+    function cleanupTemp() {
+      if (tempDir && fs.existsSync(tempDir)) {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+      }
+    }
+
     child.on('close', (code) => {
       clearTimeout(timeout);
+      cleanupTemp();
       try {
         const result = JSON.parse(stdout);
         console.log(`[EmailService] Outlook result:`, result.message);
@@ -3854,6 +3998,7 @@ app.post('/api/email/send', async (req, res) => {
 
     child.on('error', (err) => {
       clearTimeout(timeout);
+      cleanupTemp();
       console.error('[EmailService] Failed to spawn Python:', err.message);
       res.status(500).json({
         success: false,

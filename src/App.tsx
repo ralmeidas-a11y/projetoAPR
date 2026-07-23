@@ -769,7 +769,7 @@ const App: React.FC = () => {
     const originalRequest = allRequests.find(r => r.id === id);
     try {
       const currentRequests = allRequests || [];
-      let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | 'awaiting_info' | 'info_received' | 'execution_started' | 'execution_to_qc' | null; request?: FormData; reason?: string } = { type: null };
+      let updatedRequestForEmail: { type: 'approval' | 'rejection' | 'completion' | 'qc_request' | 'qc_approval' | 'qc_rejection' | 'pre_qc_response' | 'pre_qc_sys' | 'awaiting_info' | 'info_received' | 'execution_started' | 'execution_to_qc' | 'cancellation' | null; request?: FormData; reason?: string } = { type: null };
       let requestToCreate: FormData | null = null;
 
 const updatedList = currentRequests.map(req => {
@@ -852,7 +852,7 @@ const updatedList = currentRequests.map(req => {
           } else if (status === StudyStatus.APROVADO_CQ && req.status !== StudyStatus.APROVADO_CQ) {
             updatedRequestForEmail.type = 'qc_approval';
             updatedRequestForEmail.request = updated;
-            updatedRequestForEmail.reason = reason; // Observations
+            updatedRequestForEmail.reason = reason || updated.qcData?.qcComments || '';
           } else if (status === StudyStatus.REJEITADO || status === StudyStatus.REPROVADO_CQ) {
             if (req.status === StudyStatus.CONTROLE_QUALIDADE || req.status === StudyStatus.ENVIADO_SEM_CQ) {
               updatedRequestForEmail.type = 'qc_rejection';
@@ -875,6 +875,11 @@ const updatedList = currentRequests.map(req => {
             updatedRequestForEmail.type = 'awaiting_info';
             updatedRequestForEmail.request = updated;
             updatedRequestForEmail.reason = reason || req.holdReason;
+          } else if (status === StudyStatus.CANCELADO && req.status !== StudyStatus.CANCELADO) {
+            // Quando solicitação é cancelada
+            updatedRequestForEmail.type = 'cancellation';
+            updatedRequestForEmail.request = updated;
+            updatedRequestForEmail.reason = reason;
           }
 
           if (status === StudyStatus.AGUARDANDO_EXECUCAO && req.status !== StudyStatus.AGUARDANDO_EXECUCAO) {
@@ -948,48 +953,42 @@ const updatedList = currentRequests.map(req => {
           const skipUploadStatus = ['100', '330', '240', '290', 'Em Análise', 'Pendente', 'Rejeitado'];
           const currentStatus = String(updatedReq.status);
 
-          // Helper: save file to physical disk directory
-          const saveFileToPhysicalDir = async (file: File, category: string) => {
-            if (!user?.folderPath || !updatedReq.studyNumber) return;
+          // Helper: build physical path from studyNumber
+          const buildPhysicalPath = (category: string): string | null => {
+            if (!user?.folderPath || !updatedReq.studyNumber) return null;
+            const cleanNum = updatedReq.studyNumber.replace(/^PROV-/, '');
+            if (cleanNum.length < 10) return null;
+            const ano = cleanNum.substring(0, 4);
+            const seq = cleanNum.substring(4, 8);
+            const rev = cleanNum.substring(8, 10);
+            return `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\${category}`;
+          };
+
+          // Helper: sync ALL DB files for a category to physical directory
+          const syncCategoryToDisk = async (category: string) => {
+            const physicalPath = buildPhysicalPath(category);
+            if (!physicalPath) return;
             try {
-              const cleanNum = updatedReq.studyNumber.replace(/^PROV-/, '');
-              if (cleanNum.length >= 10) {
-                const ano = cleanNum.substring(0, 4);
-                const seq = cleanNum.substring(4, 8);
-                const rev = cleanNum.substring(8, 10);
-                const physicalPath = `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\${category}`;
-
-                const arrayBuffer = await file.arrayBuffer();
-                const bytes = new Uint8Array(arrayBuffer);
-                const chunkSize = 8192;
-                let binary = '';
-                for (let i = 0; i < bytes.byteLength; i += chunkSize) {
-                  const chunk = bytes.subarray(i, i + chunkSize);
-                  binary += String.fromCharCode(...chunk);
-                }
-                const base64 = btoa(binary);
-
-                await fetch('/api/folders/save-file-base64', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    folderPath: physicalPath,
-                    fileName: file.name,
-                    contentBase64: base64,
-                  }),
-                });
-              }
+              await fetch('/api/requests/sync-files-to-disk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  requestId: updatedReq.id,
+                  category,
+                  folderPath: physicalPath,
+                }),
+              });
             } catch (fsErr) {
-              console.warn('[Upload] Erro ao salvar na pasta física:', fsErr);
+              console.warn('[Upload] Erro ao sincronizar arquivos para disco:', fsErr);
             }
           };
 
           if (!skipUploadStatus.includes(currentStatus)) {
+            // Upload File instances to DB (if any)
             if (updatedReq.selectedFiles && updatedReq.selectedFiles.length > 0) {
               for (const f of updatedReq.selectedFiles) {
                 if (f instanceof File) {
                   await StorageService.uploadFile(updatedReq.id, 'Solicitacao', f);
-                  await saveFileToPhysicalDir(f, 'Solicitacao');
                 }
               }
             }
@@ -1000,10 +999,17 @@ const updatedList = currentRequests.map(req => {
                   for (const f of catFiles) {
                     if (f instanceof File) {
                       await StorageService.uploadFile(updatedReq.id, category, f);
-                      await saveFileToPhysicalDir(f, category);
                     }
                   }
                 }
+              }
+            }
+
+            // Sync ALL DB files (including newly uploaded) to physical directory
+            await syncCategoryToDisk('Solicitacao');
+            if (updatedReq.categorizedFiles) {
+              for (const category of Object.keys(updatedReq.categorizedFiles)) {
+                await syncCategoryToDisk(category);
               }
             }
           }
@@ -1037,6 +1043,17 @@ const updatedList = currentRequests.map(req => {
                 analyst = user;
               }
 
+              // Email 1: Para o solicitante informando que o estudo vai para CQ
+              if (analyst && analyst.email) {
+                await handleSendEmail(EmailService.generateQCRequestToRequesterEmail(
+                  updatedRequestForEmail.request,
+                  analyst.email,
+                  analyst.name,
+                  analyst.roleDescription || user?.roleDescription
+                ));
+              }
+
+              // Email 2: Para o supervisor CQ delegado
               if (analyst && analyst.email) {
                 console.log('[QC Email] Analyst:', analyst.name, analyst.email);
                 const qcUsers = allUsers.filter(u =>
@@ -1045,17 +1062,20 @@ const updatedList = currentRequests.map(req => {
                 );
                 console.log('[QC Email] QC Users found:', qcUsers.map(u => ({ name: u.name, email: u.email })));
 
-                // Determinar destinatário principal: usar qcSupervisor se definido, senão primeiro QC user da lista
+                // Priority: use assignedTo ID (from selectedQCAnalyst), fallback to qcSupervisor name
+                const delegatedId = updatedRequestForEmail.request.assignedTo;
                 const supervisorName = updatedRequestForEmail.request.qcData?.qcSupervisor;
-                let primaryUser = supervisorName ? qcUsers.find(u => u.name === supervisorName) : undefined;
+                let primaryUser = delegatedId
+                  ? qcUsers.find(u => u.id === delegatedId)
+                  : undefined;
+                if (!primaryUser && supervisorName) {
+                  primaryUser = qcUsers.find(u => u.name === supervisorName);
+                }
                 if (!primaryUser && qcUsers.length > 0) {
                   primaryUser = qcUsers[0];
                 }
 
                 if (primaryUser && primaryUser.email) {
-                  const ccRecipients = qcUsers.filter(u => u.email !== primaryUser!.email).map(u => u.email).join(',');
-                  console.log('[QC Email] Sending to:', primaryUser.email, 'CC:', ccRecipients);
-
                   const emailData = EmailService.generateQCRequestEmail(
                     updatedRequestForEmail.request,
                     analyst.email,
@@ -1064,19 +1084,12 @@ const updatedList = currentRequests.map(req => {
                     analyst.roleDescription || user?.roleDescription,
                     primaryUser.name
                   );
-
-                  if (ccRecipients) {
-                    emailData.ccEmail = ccRecipients;
-                  }
+                  emailData.ccEmail = 'prgc@naturgy.com';
 
                   await handleSendEmail(emailData);
                 }
               } else {
                 console.log('[QC Email] Analyst not found! analystId:', analystId, 'user:', user?.email);
-              }
-              // FIX Item 3: Se veio de EM_EXECUCAO, também enviar email ao solicitante
-              if ((updatedRequestForEmail as any).alsoSendExecutionToQC && updatedRequestForEmail.request) {
-                await handleSendEmail(generateEmailForExecutionToQC(updatedRequestForEmail.request));
               }
             } else if (updatedRequestForEmail.type === 'pre_qc_response') {
               const analystId = updatedRequestForEmail.request.assignedTo;
@@ -1091,8 +1104,11 @@ const updatedList = currentRequests.map(req => {
               const qcUsers = allUsers.filter(u =>
                 (u.role === UserRole.ADM || u.permissions?.includes('controle_qualidade')) && u.email
               );
+              const delegatedId = updatedRequestForEmail.request.assignedTo;
               const supervisorName = updatedRequestForEmail.request.qcData?.qcSupervisor;
-              const supervisor = supervisorName ? qcUsers.find(u => u.name === supervisorName) : undefined;
+              const supervisor = delegatedId
+                ? qcUsers.find(u => u.id === delegatedId)
+                : (supervisorName ? qcUsers.find(u => u.name === supervisorName) : undefined);
 
               console.log('[PreQC] Analyst:', analyst?.name, analyst?.email);
 
@@ -1146,9 +1162,12 @@ const updatedList = currentRequests.map(req => {
                 console.log('[QC Email] Analyst not found, using current user:', user.name);
                 analyst = user;
               }
-              // Get supervisor name from qcData if available
+              // Get supervisor from assignedTo ID first, then qcSupervisor name
+              const delegatedId = updatedRequestForEmail.request.assignedTo;
               const supervisorName = updatedRequestForEmail.request.qcData?.qcSupervisor || user?.name || 'Gestor APR';
-              const supervisorUser = allUsers.find(u => u.name === supervisorName);
+              const supervisorUser = delegatedId
+                ? allUsers.find(u => u.id === delegatedId)
+                : allUsers.find(u => u.name === supervisorName);
               if (analyst && analyst.email) {
                 console.log('[QC Email] Analyst found:', analyst.name, analyst.email);
                 if (updatedRequestForEmail.type === 'qc_approval') {
@@ -1190,6 +1209,14 @@ const updatedList = currentRequests.map(req => {
             } else if (updatedRequestForEmail.type === 'execution_to_qc') {
               // FIX Item 3: Email ao solicitante informando que estudo foi para CQ
               handleSendEmail(generateEmailForExecutionToQC(updatedRequestForEmail.request));
+            } else if (updatedRequestForEmail.type === 'cancellation') {
+              // Email ao solicitante informando cancelamento
+              handleSendEmail(EmailService.generateCancellationEmail(
+                updatedRequestForEmail.request,
+                user?.name || 'Administrador',
+                updatedRequestForEmail.reason,
+                user?.roleDescription
+              ));
             }
           }
         } catch (previewError) {
@@ -1227,8 +1254,15 @@ const updatedList = currentRequests.map(req => {
       return;
     }
 
-    // If REPROVADO_CQ, analyst re-opens for corrections → revert to EM_EXECUCAO
+    // If REPROVADO_CQ, only the assigned analyst can re-open for corrections
     if (request.status === StudyStatus.REPROVADO_CQ) {
+      const isExecutor = !request.assignedTo || isSystemAssigned(request.assignedTo) || isAssignedToMe(request.assignedTo, user);
+      if (!isExecutor) {
+        // ADM/viewer: open read-only, no status change
+        setEditingRequest(request);
+        setView('execution');
+        return;
+      }
       const now = new Date().toISOString();
       const updatedReq = { ...request, status: StudyStatus.EM_EXECUCAO, completedAt: undefined };
       setEditingRequest(updatedReq);
@@ -1339,8 +1373,8 @@ const updatedList = currentRequests.map(req => {
     }, 1000); // Wait 1 second of inactivity to save
   };
 
-  const handleCancelRequest = (id: string) => {
-    updateRequestStatus(id, StudyStatus.CANCELADO);
+  const handleCancelRequest = (id: string, cancelReason?: string) => {
+    updateRequestStatus(id, StudyStatus.CANCELADO, cancelReason);
   };
 
   const handleStartForm = async (formId: FormType) => {
@@ -1600,38 +1634,6 @@ const updatedList = currentRequests.map(req => {
             for (const f of finalRequest.selectedFiles) {
               if (f instanceof File) {
                 await StorageService.uploadFile(finalRequest.id, 'Solicitacao', f);
-                // FIX: Salvar também no disco físico
-                if (user?.folderPath && finalRequest.studyNumber) {
-                  try {
-                    const cleanNum = finalRequest.studyNumber.replace(/^PROV-/, '');
-                    if (cleanNum.length >= 10) {
-                      const ano = cleanNum.substring(0, 4);
-                      const seq = cleanNum.substring(4, 8);
-                      const rev = cleanNum.substring(8, 10);
-                      const solicitacaoPath = `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\Solicitacao`;
-                      const arrayBuffer = await f.arrayBuffer();
-                      const bytes = new Uint8Array(arrayBuffer);
-                      const chunkSize = 8192;
-                      let binary = '';
-                      for (let i = 0; i < bytes.byteLength; i += chunkSize) {
-                        const chunk = bytes.subarray(i, i + chunkSize);
-                        binary += String.fromCharCode(...chunk);
-                      }
-                      const base64 = btoa(binary);
-                      await fetch('/api/folders/save-file-base64', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          folderPath: solicitacaoPath,
-                          fileName: f.name,
-                          contentBase64: base64,
-                        }),
-                      });
-                    }
-                  } catch (fsErr) {
-                    console.warn('[App] Erro ao salvar arquivo solicitacao no disco fisico:', fsErr);
-                  }
-                }
               }
             }
           }
@@ -1639,41 +1641,31 @@ const updatedList = currentRequests.map(req => {
             // Renomear conforme solicitado: Formulário [CÓDIGO].pdf
             const renamedFile = new File([pdfFile], `Formulário ${finalRequest.studyNumber}.pdf`, { type: 'application/pdf' });
             await StorageService.uploadFile(finalRequest.id, 'Solicitacao', renamedFile);
+          }
 
-            // Salvar PDF do formulário no disco físico
-            if (user?.folderPath && finalRequest.studyNumber) {
-              try {
-                const cleanNum = finalRequest.studyNumber.replace(/^PROV-/, '');
-                if (cleanNum.length >= 10) {
-                  const ano = cleanNum.substring(0, 4);
-                  const seq = cleanNum.substring(4, 8);
-                  const rev = cleanNum.substring(8, 10);
-                  const solicitacaoPath = `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\Solicitacao`;
-                  
-                  const arrayBuffer = await pdfFile.arrayBuffer();
-                  const bytes = new Uint8Array(arrayBuffer);
-                  const chunkSize = 8192;
-                  let binary = '';
-                  for (let i = 0; i < bytes.byteLength; i += chunkSize) {
-                    const chunk = bytes.subarray(i, i + chunkSize);
-                    binary += String.fromCharCode(...chunk);
-                  }
-                  const base64 = btoa(binary);
-                  
-                  await fetch('/api/folders/save-file-base64', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      folderPath: solicitacaoPath,
-                      fileName: `Formulário ${finalRequest.studyNumber}.pdf`,
-                      contentBase64: base64,
-                    }),
-                  });
-                  console.log('[App] Formulário PDF salvo no disco físico');
-                }
-              } catch (fsErr) {
-                console.warn('[App] Erro ao salvar formulário no disco físico:', fsErr);
+          // Sync ALL DB files to physical directory (works for both File objects and DB blobs)
+          if (user?.folderPath && finalRequest.studyNumber) {
+            try {
+              const cleanNum = finalRequest.studyNumber.replace(/^PROV-/, '');
+              if (cleanNum.length >= 10) {
+                const ano = cleanNum.substring(0, 4);
+                const seq = cleanNum.substring(4, 8);
+                const rev = cleanNum.substring(8, 10);
+                const solicitacaoPath = `${user.folderPath}\\${ano}\\${seq}\\R${rev}\\Solicitacao`;
+
+                await fetch('/api/requests/sync-files-to-disk', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    requestId: finalRequest.id,
+                    category: 'Solicitacao',
+                    folderPath: solicitacaoPath,
+                  }),
+                });
+                console.log('[App] Arquivos sincronizados para disco físico');
               }
+            } catch (fsErr) {
+              console.warn('[App] Erro ao sincronizar arquivos para disco físico:', fsErr);
             }
           }
 
@@ -1919,7 +1911,7 @@ const updatedList = currentRequests.map(req => {
               onUpdateData={handleUpdateRequestData}
               allUsers={allUsers}
               currentUser={user || undefined}
-              readOnly={editingRequest.status === StudyStatus.CONCLUIDO || editingRequest.status === StudyStatus.CONTROLE_QUALIDADE || editingRequest.status === StudyStatus.APROVADO_CQ}
+              readOnly={editingRequest.status === StudyStatus.CONCLUIDO || editingRequest.status === StudyStatus.CONTROLE_QUALIDADE || editingRequest.status === StudyStatus.APROVADO_CQ || editingRequest.status === StudyStatus.ENVIADO_SEM_CQ}
             />
           )}
           {view === 'dashboard' && (
@@ -1942,6 +1934,7 @@ const updatedList = currentRequests.map(req => {
               requests={visibleRequests}
               allRequests={allRequests}
               currentUser={user}
+              allUsers={allUsers}
               onNewRequest={() => setView('menu')}
               onEditRequest={handleEditRequest}
               onCancelRequest={handleCancelRequest}

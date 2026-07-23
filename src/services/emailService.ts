@@ -13,6 +13,8 @@ export interface EmailNotificationData {
   attachments?: string[];
   attachmentPaths?: string[];
   ccEmail?: string;
+  requestId?: string;
+  attachmentCategory?: string;
 }
 
 const SYSTEM_EMAIL = "prgc@naturgy.com";
@@ -31,10 +33,25 @@ const safeName = (name: string | undefined | null): string => {
 const escapeHtml = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const buildStepperMjml = (status?: StudyStatus) => {
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.tiff', '.tif', '.ico']);
+
+const isImageFile = (fileName: string): boolean => {
+  const ext = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
+};
+
+const buildStepperMjml = (status?: StudyStatus, historyStatuses?: StudyStatus[]) => {
   if (!status) return "";
 
-  // Novas etapas conforme solicitado, com etapas de transição mais apagadas
+  const hasPassedThrough = (targetStatuses: StudyStatus[]): boolean => {
+    if (!historyStatuses || historyStatuses.length === 0) return false;
+    return historyStatuses.some(s => targetStatuses.includes(s));
+  };
+
+  const isCurrentOrPast = (targetStatuses: StudyStatus[]): boolean => {
+    return targetStatuses.includes(status) || hasPassedThrough(targetStatuses);
+  };
+
   const steps = [
     {
       label: "Solicitado",
@@ -45,6 +62,7 @@ const buildStepperMjml = (status?: StudyStatus) => {
       label: "Rejeitado",
       statuses: [StudyStatus.REJEITADO],
       dimmed: true,
+      showOnlyIfPassed: true,
     },
     {
       label: "Validado",
@@ -60,6 +78,7 @@ const buildStepperMjml = (status?: StudyStatus) => {
       label: "Aguard. Info",
       statuses: [StudyStatus.AGUARDANDO_INFORMACAO],
       dimmed: true,
+      showOnlyIfPassed: true,
     },
     {
       label: "CQ",
@@ -73,19 +92,26 @@ const buildStepperMjml = (status?: StudyStatus) => {
     },
   ];
 
+  const visibleSteps = steps.filter(step => {
+    if (step.showOnlyIfPassed) {
+      return step.statuses.includes(status) || hasPassedThrough(step.statuses);
+    }
+    return true;
+  });
+
   let currentStepIdx = -1;
-  steps.forEach((step, idx) => {
+  visibleSteps.forEach((step, idx) => {
     if (step.statuses.includes(status)) {
       currentStepIdx = idx;
     }
   });
 
-  if (status === StudyStatus.CONCLUIDO) currentStepIdx = steps.length - 1;
+  if (status === StudyStatus.CONCLUIDO) currentStepIdx = visibleSteps.length - 1;
 
   return `
     <mj-section background-color="#ffffff" padding="0 24px 32px 24px">
       <mj-group width="100%">
-        ${steps
+        ${visibleSteps
       .map((step, idx) => {
         const isCompleted = idx < currentStepIdx || status === StudyStatus.CONCLUIDO;
         const isActive = idx === currentStepIdx && status !== StudyStatus.CONCLUIDO;
@@ -98,11 +124,26 @@ const buildStepperMjml = (status?: StudyStatus) => {
             : "#cbd5e1";
         const color = isDimmed ? "#d1d5db" : baseColor;
         const opacity = isDimmed ? "opacity: 0.5;" : "";
-        const icon = isCompleted ? "✅" : isActive ? "🔄" : "○";
+
+        let icon = "○";
+        if (isCompleted) {
+          icon = "✅";
+        } else if (isActive) {
+          if (status === StudyStatus.AGUARDANDO_INFORMACAO) {
+            icon = "⏸";
+          } else if (status === StudyStatus.REPROVADO_CQ) {
+            icon = "❌";
+          } else if (status === StudyStatus.REJEITADO) {
+            icon = "❌";
+          } else {
+            icon = "🔄";
+          }
+        }
+
         const fontWeight = isCompleted || isActive ? "900" : "600";
 
         return `
-            <mj-column width="${(100 / steps.length).toFixed(1)}%">
+            <mj-column width="${(100 / visibleSteps.length).toFixed(1)}%">
               <mj-text align="center" padding="0">
                 <div style="font-size: 14px; color: ${color}; font-weight: ${fontWeight}; margin-bottom: 2px; ${opacity}">${icon}</div>
                 <div style="font-size: 7px; color: ${color}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; ${opacity}">${step.label}</div>
@@ -126,6 +167,7 @@ const buildRefinedHtmlTemplate = (
   status?: StudyStatus,
   ctaUrl: string = "https://naturgy-apr-portal.web.app",
   attachmentPaths?: string[],
+  historyStatuses?: StudyStatus[],
 ) => {
   const sectionsMjml = sections
     .map(
@@ -163,16 +205,17 @@ const buildRefinedHtmlTemplate = (
         <mj-text color="#c2410c" font-size="11px" font-weight="900" text-transform="uppercase" letter-spacing="0.1em" align="center">
           📦 Documentos e Anexos Vinculados
         </mj-text>
-        <mj-text align="center" color="#9a3412" font-size="12px" font-weight="800">
+        <mj-text align="center" color="#9a3412" font-size="12px" font-weight="800" padding-top="8px">
           ${attachments
         .map(
           (att, idx) => {
             const hasPath = attachmentPaths && attachmentPaths[idx] && attachmentPaths[idx].trim().length > 0;
-            if (hasPath) {
-              const filePath = attachmentPaths[idx];
-              return `<a href="http://localhost:3001/api/folders/serve-file?path=${encodeURIComponent(filePath)}" style="background-color: #ffffff; color: #9a3412; padding: 8px 16px; border-radius: 12px; font-size: 12px; font-weight: 800; display: inline-block; margin: 4px; border: 1px solid #ffedd5; text-decoration: none;">📎 ${att}</a>`;
+            if (hasPath && isImageFile(att)) {
+              const contentId = `att-${idx}-${att}`;
+              return `<img src="cid:${contentId}" alt="${att}" style="max-width: 100%; height: auto; border-radius: 8px; margin: 4px; border: 1px solid #ffedd5;" />`;
             }
-            return `<span style="background-color: #ffffff; color: #9a3412; padding: 8px 16px; border-radius: 12px; font-size: 12px; font-weight: 800; display: inline-block; margin: 4px; border: 1px solid #ffedd5;">📎 ${att}</span>`;
+            const ext = att.substring(att.lastIndexOf('.') + 1).toUpperCase();
+            return `<div style="background-color: #ffffff; color: #9a3412; padding: 10px 16px; border-radius: 12px; font-size: 12px; font-weight: 800; display: inline-block; margin: 4px; border: 1px solid #ffedd5;"><span style="margin-right: 6px;">📎</span>${att} <span style="color: #fb923c; font-size: 9px; font-weight: 600;">[${ext}]</span></div>`;
           },
         )
         .join("")}
@@ -183,7 +226,7 @@ const buildRefinedHtmlTemplate = (
   `
       : "";
 
-  const stepperMjml = buildStepperMjml(status);
+  const stepperMjml = buildStepperMjml(status, historyStatuses);
 
   // Processo para injetar gradiente no "concluído" se estiver no título ou texto
   const stylizedTitle = title.replace(
@@ -253,9 +296,9 @@ const buildRefinedHtmlTemplate = (
 
         <mj-section padding="24px 0">
           <mj-column>
-            <mj-button href="${ctaUrl}" css-class="cta-button" font-size="14px" padding="20px 0" width="100%">
-              Acessar Portal Técnico APR
-            </mj-button>
+            <mj-text align="center" css-class="cta-button" font-size="14px" padding="20px 0" width="100%">
+             
+            </mj-text>
           </mj-column>
         </mj-section>
         
@@ -308,11 +351,10 @@ export const EmailService = {
         : "Nenhum arquivo anexado";
 
     const studyRef = request.studyNumber?.trim();
-    const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
       recipientEmail: adminEmail,
       recipientName: "Administrador",
-      ccEmail: ccBase,
+      ccEmail: request.additionalCCs || '',
       subject: `Solicitação de Estudo Nº ${studyRef || request.id}`,
       body: `🔔 NOVA SOLICITAÇÃO REGISTRADA
 ───────────────────────────────────────────────────────────
@@ -425,14 +467,15 @@ ${request.requesterArea || ""}`,
       ),
       attachments: attachmentNames,
       attachmentPaths: attachmentPaths,
+      requestId: request.id,
       senderEmail: request.email,
       senderName: safeName(request.requesterName),
     };
   },
 
-/**
-   * Email enviado quando uma solicitação é aprovada (admin → solicitante)
-   */
+  /**
+     * Email enviado quando uma solicitação é aprovada (admin → solicitante)
+     */
   generateApprovalEmail: (
     request: FormData,
     responsibleName?: string,
@@ -511,7 +554,7 @@ ${signerRole}`,
           "Atenciosamente,",
           "<strong>" + signerName + "</strong>",
           "<strong>" + signerRole + "</strong>",
-],
+        ],
         [],
         StudyStatus.AGUARDANDO_EXECUCAO,
       ),
@@ -676,13 +719,15 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
         "⚙️ Estudo em Execução",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que seu estudo encontra-se em <strong>fase de execução técnica</strong>.<br/><br/>Nossa equipe técnica está trabalhando no desenvolvimento do estudo.<br/>Você receberá uma notificação quando o processo for concluído.`,
         [
-          { title: '📋 Dados do Estudo', items: [
-            { label: 'Código', value: request.studyNumber || `${request.id}` },
-            { label: 'Título', value: request.studyTitle || 'N/I' },
-            { label: 'Localização', value: `${request.address || 'N/I'} - ${request.city || 'N/I'}` },
-            { label: 'Responsável', value: analystName },
-            { label: 'Data', value: new Date().toLocaleDateString('pt-BR') },
-          ]},
+          {
+            title: '📋 Dados do Estudo', items: [
+              { label: 'Código', value: request.studyNumber || `${request.id}` },
+              { label: 'Título', value: request.studyTitle || 'N/I' },
+              { label: 'Localização', value: `${request.address || 'N/I'} - ${request.city || 'N/I'}` },
+              { label: 'Responsável', value: analystName },
+              { label: 'Data', value: new Date().toLocaleDateString('pt-BR') },
+            ]
+          },
         ],
         [
           "📌 Em caso de dúvidas, utilize o Portal Técnico APR.",
@@ -743,13 +788,15 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
         "🔍 Estudo em Controle de Qualidade",
         `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que seu estudo foi concluído pela equipe técnica e agora está sendo encaminhado para o <strong>Controle de Qualidade (CQ)</strong>.`,
         [
-          { title: '📋 Dados do Estudo', items: [
-            { label: 'Código', value: request.studyNumber || `${request.id}` },
-            { label: 'Título', value: request.studyTitle || 'N/I' },
-            { label: 'Localização', value: `${request.address || 'N/I'} - ${request.city || 'N/I'}` },
-            { label: 'Responsável', value: analystName },
-            { label: 'Data', value: new Date().toLocaleDateString('pt-BR') },
-          ]},
+          {
+            title: '📋 Dados do Estudo', items: [
+              { label: 'Código', value: request.studyNumber || `${request.id}` },
+              { label: 'Título', value: request.studyTitle || 'N/I' },
+              { label: 'Localização', value: `${request.address || 'N/I'} - ${request.city || 'N/I'}` },
+              { label: 'Responsável', value: analystName },
+              { label: 'Data', value: new Date().toLocaleDateString('pt-BR') },
+            ]
+          },
         ],
         [
           "📌 O estudo será analisado pelo Controle de Qualidade.",
@@ -865,18 +912,18 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
     const studyRef = request.studyNumber?.trim();
     const ccBase = request.additionalCCs ? `${SYSTEM_EMAIL}; ${request.additionalCCs}` : SYSTEM_EMAIL;
     return {
-      recipientEmail: request.email,
-      recipientName: safeName(request.requesterName),
-      senderEmail: analystEmail,
-      senderName: analystName,
+      recipientEmail: analystEmail,
+      recipientName: analystName,
+      senderEmail: request.email,
+      senderName: safeName(request.requesterName),
       ccEmail: ccBase,
-      subject: `📨 Informações Recebidas - Estudo Nº ${studyRef || request.id}`,
-      body: `📨 INFORMAÇÕES RECEBIDAS - Estudo Nº ${studyRef || request.id}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      subject: `📨 Informações Enviadas - Estudo Nº ${studyRef || request.id}`,
+      body: `📨 INFORMAÇÕES ENVIADAS - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Prezado(a) ${safeName(request.requesterName)},
+Prezado(a) ${analystName},
 
-As informações solicitadas para o estudo abaixo foram recebidas com sucesso.
+As informações solicitadas para o estudo abaixo foram enviadas pelo solicitante.
 
 📋 DADOS DO ESTUDO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -886,18 +933,18 @@ Solicitante: ${safeName(request.requesterName)}
 
 📝 INFORMAÇÕES ENVIADAS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${holdResponse || request.holdResponse || "As informações foram recebidas."}
+${holdResponse || request.holdResponse || "As informações foram enviadas."}
 
 ▶️ PRÓXIMO PASSO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-A equipe técnica retomará a execução do estudo.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Favor retomar a execução do estudo.
 
 Atenciosamente,
-${analystName}
-Equipe GECAT - Naturgy`,
+${safeName(request.requesterName)}
+${request.requesterArea || ''}`,
       htmlBody: buildRefinedHtmlTemplate(
-        "📨 Informações Recebidas",
-        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>As informações solicitadas para o estudo abaixo foram <strong>recebidas com sucesso</strong>.`,
+        "📨 Informações Enviadas",
+        `Prezado(a) ${analystName},<br/><br/>As informações solicitadas para o estudo abaixo foram <strong>enviadas com sucesso</strong> pelo solicitante.`,
         [
           {
             title: "📋 Dados do Estudo",
@@ -910,15 +957,15 @@ Equipe GECAT - Naturgy`,
           {
             title: "📝 Informações Enviadas",
             items: [
-              { label: "Resposta", value: holdResponse || request.holdResponse || "As informações foram recebidas." },
+              { label: "Resposta", value: holdResponse || request.holdResponse || "As informações foram enviadas." },
             ],
           },
         ],
         [
-          "▶️ A equipe técnica retomará a execução do estudo.",
+          "▶️ Favor retomar a execução do estudo.",
           "Atenciosamente,",
-          `<strong>${analystName}</strong>`,
-          "<strong>Equipe GECAT - Naturgy</strong>",
+          `<strong>${safeName(request.requesterName)}</strong>`,
+          `<strong>${request.requesterArea || ''}</strong>`,
         ],
         [],
         StudyStatus.EM_EXECUCAO,
@@ -926,9 +973,9 @@ Equipe GECAT - Naturgy`,
     };
   },
 
-/**
-   * Email enviado quando uma solicitação é concluída (admin → solicitante)
-   */
+  /**
+     * Email enviado quando uma solicitação é concluída (admin → solicitante)
+     */
   generateCompletionEmail: (
     request: FormData,
     responsibleName?: string,
@@ -941,12 +988,12 @@ Equipe GECAT - Naturgy`,
     const signerName =
       responsibleName || roleDescription || "Equipe GECAT - Naturgy";
     const studyRef = request.studyNumber?.trim();
-    const completionDate = request.completedAt 
+    const completionDate = request.completedAt
       ? safeFormatDate(request.completedAt)
       : new Date().toLocaleDateString('pt-BR');
     // FIX Bug 10: Adicionar "Cópia" no assunto quando for envio de cópia
     const copyPrefix = (request as any).isCopy ? '📋 Cópia - ' : '';
-    
+
     return {
       recipientEmail: request.email,
       recipientName: safeName(request.requesterName),
@@ -1064,13 +1111,14 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
         attachmentPaths,
       ),
       attachmentPaths: attachmentPaths || [],
+      requestId: request.id,
     };
   },
 
-/**
-   * Email enviado quando o analista conclude a execução e envia para Controle de Qualidade
-   * (analista → responsável CQ)
-   */
+  /**
+     * Email enviado quando o analista conclude a execução e envia para Controle de Qualidade
+     * (analista → responsável CQ)
+     */
   generateQCRequestEmail: (
     request: FormData,
     analystEmail: string,
@@ -1080,7 +1128,7 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
     recipientName?: string,
   ): EmailNotificationData => {
     const studyRef = request.studyNumber?.trim();
-    const completionDate = request.completedAt 
+    const completionDate = request.completedAt
       ? safeFormatDate(request.completedAt)
       : new Date().toLocaleDateString('pt-BR');
     // FIX Bug 5: Usar o nome real do supervisor se fornecido
@@ -1149,10 +1197,89 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
     };
   },
 
-/**
-   * Email enviado pelo analista ao solicitante quando o estudo é enviado ANTES do CQ
-   * (analista → solicitante) — resposta antecipada por prazo
-   */
+  /**
+     * Email enviado ao solicitante quando o estudo vai para CQ
+     * (analista → solicitante) — notificação de envio para CQ
+     */
+  generateQCRequestToRequesterEmail: (
+    request: FormData,
+    analystEmail: string,
+    analystName: string,
+    roleDescription?: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    const completionDate = request.completedAt
+      ? safeFormatDate(request.completedAt)
+      : new Date().toLocaleDateString('pt-BR');
+    const ccBase = request.additionalCCs || '';
+    return {
+      recipientEmail: request.email,
+      recipientName: safeName(request.requesterName),
+      senderEmail: analystEmail,
+      senderName: analystName,
+      ccEmail: ccBase,
+      subject: `🔍 Estudo em Controle de Qualidade - Estudo Nº ${studyRef || request.id}`,
+      body: `🔍 ESTUDO EM CONTROLE DE QUALIDADE - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prezado(a) ${safeName(request.requesterName)},
+
+Informamos que seu estudo foi concluído pela equipe técnica e agora está 
+sendo encaminhado para o Controle de Qualidade (CQ).
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Código: ${request.studyNumber || 'N/A'}
+Título: ${request.studyTitle || request.clientName || 'N/A'}
+Local: ${request.address || ''}, ${request.city || ''}
+Responsável Técnico: ${analystName}
+
+📌 PRÓXIMOS PASSOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+O estudo será analisado pelo Controle de Qualidade. 
+Após a aprovação, você receberá uma notificação com os resultados.
+
+Atenciosamente,
+${analystName}
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
+      htmlBody: buildRefinedHtmlTemplate(
+        '🔍 Estudo em Controle de Qualidade',
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que seu estudo foi concluído pela equipe técnica e agora está sendo encaminhado para o <strong>Controle de Qualidade (CQ)</strong>.`,
+        [
+          {
+            title: '📋 Dados do Estudo',
+            items: [
+              { label: 'Código', value: request.studyNumber || 'N/A' },
+              { label: 'Título', value: request.studyTitle || request.clientName || 'N/A' },
+              { label: 'Local', value: `${request.address || ''}, ${request.city || ''}` },
+              { label: 'Responsável Técnico', value: analystName },
+              { label: 'Data', value: completionDate },
+            ]
+          },
+          {
+            title: '📌 Próximos Passos',
+            items: [
+              { label: 'Status', value: 'CONTROLE DE QUALIDADE' },
+              { label: 'Ação', value: 'Aguardando análise do CQ' },
+            ]
+          }
+        ],
+        [
+          'Após a aprovação, você receberá uma notificação com os resultados.',
+          'Atenciosamente,',
+          '<strong>' + analystName + '</strong>',
+          '<strong>' + (roleDescription || 'Equipe GECAT - Naturgy') + '</strong>'
+        ],
+        [],
+        StudyStatus.CONTROLE_QUALIDADE
+      )
+    };
+  },
+
+  /**
+     * Email enviado pelo analista ao solicitante quando o estudo é enviado ANTES do CQ
+     * (analista → solicitante) — resposta antecipada por prazo
+     */
   generatePreQCResponseEmail: (
     request: FormData,
     analystEmail: string,
@@ -1221,14 +1348,16 @@ ${roleDescription || 'Equipe GECAT - Naturgy'}`,
         ],
         [],
         StudyStatus.ENVIADO_SEM_CQ
-      )
+      ),
+      requestId: request.id,
+      attachmentCategory: 'Resposta',
     };
   },
 
-/**
-   * Email enviado pelo analista ao sistema (prgc) informando envio antes do CQ
-   * (analista → prgc)
-   */
+  /**
+     * Email enviado pelo analista ao sistema (prgc) informando envio antes do CQ
+     * (analista → prgc)
+     */
   generatePreQCSysEmail: (
     request: FormData,
     analystEmail: string,
@@ -1346,10 +1475,8 @@ Aprovado por: ${qcName}
 ${observations || "Nenhuma observação adicional."}
 
 ▶️ PRÓXIMA AÇÃO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${withReservations 
-  ? '1. Verifique as ressalvas indicadas acima\n2. Realize as correções necessárias (se aplicável)\n3. Envie o e-mail de conclusão ao solicitante'
-  : 'Por favor, finalize o processo enviando o e-mail de conclusão para o solicitante através do Portal Técnico APR.'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Enviar documentação para o cliente interno (solicitante).
 
 ⚠️ O estudo retornou para sua fila com status "${statusLabel} pelo CQ".
 
@@ -1377,13 +1504,13 @@ ${signerRole}`,
           {
             title: "▶️ Próxima Ação",
             items: [
-              { label: "Ação", value: withReservations ? "Verificar ressalvas e realizar correções antes de finalizar" : "Enviar e-mail final ao solicitante e concluir estudo via Portal" },
+              { label: "Ação", value: "Enviar documentação para o cliente interno (solicitante)" },
               { label: "Status", value: `${statusLabel} PELO CQ` },
             ]
           }
         ],
         [
-          withReservations ? "⚠️ Verifique as ressalvas antes de finalizar." : "⚠️ Por favor, finalize o processo o quanto antes.",
+          withReservations ? "⚠️ Envie a documentação para o cliente interno (solicitante)." : "⚠️ Por favor, finalize o processo o quanto antes.",
           "Atenciosamente,",
           "<strong>" + qcName + "</strong>",
           "<strong>" + signerRole + "</strong>"
@@ -1533,6 +1660,77 @@ Naturgy`,
   },
 
   /**
+   * Email enviado quando uma solicitação é cancelada
+   */
+  generateCancellationEmail: (
+    request: FormData,
+    cancelledByName?: string,
+    cancelReason?: string,
+    roleDescription?: string,
+  ): EmailNotificationData => {
+    const studyRef = request.studyNumber?.trim();
+    const ccBase = request.additionalCCs ? `${request.additionalCCs}` : '';
+    return {
+      recipientEmail: request.email,
+      recipientName: safeName(request.requesterName),
+      senderEmail: SYSTEM_EMAIL,
+      senderName: cancelledByName || 'Administrador',
+      ccEmail: ccBase,
+      subject: `🚫 Solicitação Cancelada - Estudo Nº ${studyRef || request.id}`,
+      body: `🚫 SOLICITAÇÃO CANCELADA - Estudo Nº ${studyRef || request.id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prezado(a) ${safeName(request.requesterName)},
+
+Informamos que sua solicitação de Análise de Planificação de Rede foi CANCELADA.
+
+📋 DADOS DO ESTUDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Código: ${request.studyNumber || "Não informado"}
+Título: ${request.studyTitle || request.clientName || "Não informado"}
+Status: CANCELADO
+
+📝 MOTIVO DO CANCELAMENTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${cancelReason || "Motivo não informado."}
+
+Caso deseje reabrir esta solicitação ou criar uma nova, acesse o Portal Técnico APR.
+
+Atenciosamente,
+${cancelledByName || 'Administrador'}
+${roleDescription || 'Equipe GECAT - Naturgy'}`,
+      htmlBody: buildRefinedHtmlTemplate(
+        "🚫 Solicitação Cancelada",
+        `Prezado(a) ${safeName(request.requesterName)},<br/><br/>Informamos que sua solicitação de <strong>Análise de Planificação de Rede</strong> foi <span style="color: #ef4444; font-weight: bold;">CANCELADA</span>.`,
+        [
+          {
+            title: "📋 Dados do Estudo",
+            items: [
+              { label: "Código", value: request.studyNumber || "Não informado" },
+              { label: "Título", value: request.studyTitle || request.clientName || "Não informado" },
+              { label: "Status", value: "CANCELADO" },
+            ],
+          },
+          {
+            title: "📝 Motivo do Cancelamento",
+            items: [
+              { label: "Motivo", value: cancelReason || "Motivo não informado." },
+            ],
+          },
+        ],
+        [
+          "Caso deseje reabrir esta solicitação ou criar uma nova, acesse o Portal Técnico APR.",
+          "Atenciosamente,",
+          "<strong>" + (cancelledByName || 'Administrador') + "</strong>",
+          "<strong>" + (roleDescription || 'Equipe GECAT - Naturgy') + "</strong>",
+        ],
+        [],
+        StudyStatus.CANCELADO,
+      ),
+    };
+  },
+
+  /**
    * Converte EmailNotificationData para formato .eml
    */
   buildEmlContent: (emailData: EmailNotificationData): string => {
@@ -1636,6 +1834,8 @@ Naturgy`,
             htmlBody: emailData.htmlBody || emailData.body,
             senderName: emailData.senderName || '',
             attachments: emailData.attachmentPaths || [],
+            requestId: emailData.requestId || '',
+            category: emailData.attachmentCategory || 'Solicitacao',
           }),
         });
 

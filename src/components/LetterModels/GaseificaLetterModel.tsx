@@ -27,10 +27,15 @@ export const GaseificaLetterModel: React.FC<LetterModelProps> = ({ data, allUser
     }).join(' ');
   };
 
-  const analystName = toTitleCase(currentUser?.name || assignedUser?.name || data.assignedToName || data.analystName || 'Responsável Técnico').trim();
+  const analystName = toTitleCase(assignedUser?.name || data.assignedToName || data.analystName || currentUser?.name || 'Responsável Técnico').trim();
   const analystCompany = toTitleCase(assignedUser?.company || data.analystCompany || 'Empresa').trim();
   const analystRole = toTitleCase(assignedUser?.roleDescription || data.analystRole || 'Cargo').trim();
-  const analystGB = (currentUser?.gb || assignedUser?.gb || data.analystGB || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
+  const analystGB = (assignedUser?.gb || data.analystGB || currentUser?.gb || assignedUser?.sap || data.assignedTo || 'SISTEMA').trim();
+
+  // Signature uses current user if different from executor
+  const isNotExecutor = currentUser && assignedUser && currentUser.id !== assignedUser.id;
+  const signerName = isNotExecutor ? (currentUser.name || analystName) : analystName;
+  const signerGB = isNotExecutor ? (currentUser.gb || analystGB) : analystGB;
 
   const validUntilDate = (() => {
     const d = new Date(docDate);
@@ -323,7 +328,7 @@ export const GaseificaLetterModel: React.FC<LetterModelProps> = ({ data, allUser
 
         <div className="pt-10 flex flex-col items-end gap-1 mt-4">
           <p className="text-[9px] font-black text-slate-900 tracking-widest text-right italic">
-            {`Documento gerado pelo gb ${analystGB} ${analystName === 'Responsável Técnico' ? '' : analystName} em ${new Date(docDate).toLocaleDateString('pt-BR')} às ${new Date(docDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+            {`Documento gerado pelo gb ${signerGB} ${signerName === 'Responsável Técnico' ? '' : signerName} em ${new Date(docDate).toLocaleDateString('pt-BR')} às ${new Date(docDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
           </p>
         </div>
       </div>

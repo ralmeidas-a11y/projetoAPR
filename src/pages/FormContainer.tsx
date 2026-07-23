@@ -245,8 +245,8 @@ export const FormContainer: React.FC<FormContainerProps> = ({
           if (norm.length === 10 && /^\d+$/.test(norm)) return parseInt(norm.substring(8, 10));
           return 0;
         };
-        const dateA = a.requestDate || '';
-        const dateB = b.requestDate || '';
+        const dateA = String(a.requestDate || '');
+        const dateB = String(b.requestDate || '');
         if (dateA !== dateB) return dateB.localeCompare(dateA);
         return getRev(b.studyNumber) - getRev(a.studyNumber);
       });
